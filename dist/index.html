@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Kutu Harf Stüdyosu — Profesyonel 3D Tabela Tasarım ve İmalat Stüdyosu</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Crect x='9' y='7' width='14' height='18' rx='3' fill='%23ffb547'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./src/styles/studio.css">
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <!-- Top Header -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo-mark" aria-hidden="true"><i></i></span>
+        <div class="brand-text">
+          <strong>Kutu Harf Stüdyosu</strong>
+          <span>Profesyonel 3D Tabela CAD/CAM &amp; İmalat Stüdyosu</span>
+        </div>
+        <input id="projectNameInput" class="proj-name-in" type="text" value="Yeni Tabela Projesi" aria-label="Proje adı">
+      </div>
+
+      <div class="topbar-actions">
+        <div class="btn-group">
+          <button id="btnUndo" class="tb-btn" type="button" title="Geri Al (Ctrl+Z)">↶ Geri Al</button>
+          <button id="btnRedo" class="tb-btn" type="button" title="Yinele (Ctrl+Y)">↷ Yinele</button>
+        </div>
+
+        <select id="qualitySelect" class="tb-select" aria-label="Görüntü kalitesi">
+          <option value="performance">Performans</option>
+          <option value="balanced">Dengeli</option>
+          <option value="high" selected>Yüksek Kalite</option>
+          <option value="ultra">Ultra / Sunum</option>
+        </select>
+
+        <div class="btn-group">
+          <button id="btnExportPng" class="tb-btn" type="button" title="Yüksek çözünürlüklü PNG indir">PNG</button>
+          <button id="btnExportTransparentPng" class="tb-btn" type="button" title="Arka plansız şeffaf PNG indir">Şeffaf PNG</button>
+          <button id="btnExportSvg" class="tb-btn" type="button" title="Katmanlı SVG vektör indir">SVG</button>
+          <button id="btnExportDxf" class="tb-btn" type="button" title="CNC/Lazer için katmanlı DXF indir">DXF</button>
+          <button id="btnSaveJson" class="tb-btn" type="button" title="Proje JSON kaydet (Ctrl+S)">JSON</button>
+        </div>
+
+        <button id="btnShortcutsHelp" class="tb-btn" type="button" title="Klavye Kısayolları">?</button>
+        <div id="headerTotalBadge" class="price-badge" title="KDV Dahil Tahmini Toplam">₺0</div>
+      </div>
+    </header>
+
+    <!-- Main 3-Column Studio Workspace -->
+    <div class="studio-body">
+      <!-- Left CAD Toolbar -->
+      <aside class="cad-rail" aria-label="CAD Araç Çubuğu">
+        <div class="rail-group">
+          <button class="tool-btn active" data-tool="select" title="Seçim Aracı (Boşluk)">↖<span>Seç</span></button>
+          <button class="tool-btn" data-tool="move" title="Taşıma">✥<span>Taşı</span></button>
+          <button class="tool-btn" data-tool="scale" title="Ölçekle">⤢<span>Ölçek</span></button>
+          <button class="tool-btn" data-tool="rotate" title="Döndür">↻<span>Döndür</span></button>
+          <button class="tool-btn" data-tool="pan" title="Sahneyi Kaydır">✋<span>Kaydır</span></button>
+          <button class="tool-btn" data-tool="zoom" title="Yakınlaştır / Uzaklaştır">🔍<span>Yakın</span></button>
+        </div>
+        <div class="rail-sep"></div>
+        <div class="rail-group">
+          <button class="tool-btn" data-tool="rect" title="Dikdörtgen Ekle (F6)">▭<span>Dikdört.</span></button>
+          <button class="tool-btn" data-tool="ellipse" title="Elips Ekle (F7)">◯<span>Elips</span></button>
+          <button class="tool-btn" data-tool="text" title="Yeni Yazı Ekle (F8)">T<span>Yazı</span></button>
+          <button class="tool-btn" data-tool="logo" title="Logo İçe Aktar">🖼<span>Logo</span></button>
+          <button class="tool-btn" data-tool="pen" title="Kalem / Çokgen Çizimi">✒<span>Kalem</span></button>
+          <button class="tool-btn" data-tool="node" title="Düğüm Düzenleme">◈<span>Düğüm</span></button>
+          <button class="tool-btn" data-tool="measure" title="Mesafe Ölçüm Aracı">📏<span>Ölçüm</span></button>
+        </div>
+        <div class="rail-sep"></div>
+        <div class="rail-group">
+          <button class="tool-btn" data-action="duplicate" title="Çoğalt (Ctrl+D)">⧉<span>Çoğalt</span></button>
+          <button class="tool-btn" data-action="mirrorX" title="Yatay Aynala">⇆<span>Aynala Y</span></button>
+          <button class="tool-btn" data-action="mirrorY" title="Dikey Aynala">⇅<span>Aynala D</span></button>
+          <button class="tool-btn" data-action="toCurves" title="Eğriye Çevir">∿<span>Eğri</span></button>
+          <button class="tool-btn" data-action="union" title="Birleştir / Kaynak (2 nesne)">⊕<span>Birleştir</span></button>
+          <button class="tool-btn" data-action="difference" title="Kırp / Çıkar (2 nesne)">⊖<span>Çıkar</span></button>
+          <button class="tool-btn" data-action="intersection" title="Kesişim (2 nesne)">⊗<span>Kesişim</span></button>
+          <button class="tool-btn danger" data-action="delete" title="Sil (Delete)">🗑<span>Sil</span></button>
+        </div>
+      </aside>
+
+      <!-- Center Viewport Column -->
+      <main class="viewport-col">
+        <!-- Numeric CAD Property Bar -->
+        <div class="prop-bar" id="numericPropBar">
+          <div class="prop-field">
+            <label for="numX">X (mm)</label>
+            <input id="numX" type="number" step="5">
+          </div>
+          <div class="prop-field">
+            <label for="numY">Y (mm)</label>
+            <input id="numY" type="number" step="5">
+          </div>
+          <div class="prop-field">
+            <label for="numH">Yükseklik (mm)</label>
+            <input id="numH" type="number" min="20" max="3000" step="10">
+          </div>
+          <div class="prop-field">
+            <label for="numD">Derinlik (mm)</label>
+            <input id="numD" type="number" min="10" max="400" step="5">
+          </div>
+          <div class="prop-field">
+            <label for="numRot">Açı (°)</label>
+            <input id="numRot" type="number" min="-360" max="360" step="5">
+          </div>
+          <div class="prop-field">
+            <label for="numScale">Ölçek</label>
+            <input id="numScale" type="number" min="0.1" max="10" step="0.05">
+          </div>
+          <div class="prop-field">
+            <label for="numSpacing">Aralık (mm)</label>
+            <input id="numSpacing" type="number" min="-50" max="200" step="1">
+          </div>
+          <div class="prop-align">
+            <button type="button" data-align="left" title="Sola Hizala">◧</button>
+            <button type="button" data-align="centerX" title="Yatay Ortala">◫</button>
+            <button type="button" data-align="right" title="Sağa Hizala">◨</button>
+            <button type="button" data-align="top" title="Üste Hizala">⊤</button>
+            <button type="button" data-align="centerY" title="Dikey Ortala">⊟</button>
+            <button type="button" data-align="bottom" title="Alta Hizala">⊥</button>
+            <button type="button" data-dist="x" title="Yatay Dağıt (3+ nesne)">⋯</button>
+          </div>
+        </div>
+
+        <!-- 3D Canvas Stage -->
+        <div class="stage-wrap" id="stageWrap">
+          <div id="threeContainer" class="three-container"></div>
+
+          <!-- Ruler & Interactive 2D Overlay (Pen, Node, Measure, Photomontage) -->
+          <canvas id="cadOverlay" class="cad-overlay"></canvas>
+          <div id="photomontageLayer" class="photomontage-layer hidden"></div>
+
+          <!-- Top-left Dimensions Pill -->
+          <div class="stage-dims" id="stageDims">
+            <span>Harf <b id="dimHeight">400 mm</b></span>
+            <span>Toplam <b id="dimTotal">0 × 0 mm</b></span>
+            <span id="dimFileBadge">File <b id="dimFile">8 mm</b></span>
+          </div>
+
+          <!-- Top-right Camera Views -->
+          <div class="stage-views" role="group" aria-label="Kamera açısı">
+            <button type="button" data-view="left">Sol</button>
+            <button type="button" data-view="front">Ön</button>
+            <button type="button" data-view="right">Sağ</button>
+            <button type="button" data-view="hero" class="on">3/4</button>
+            <button type="button" data-view="top">Üst</button>
+          </div>
+
+          <!-- Warning Toast Banner -->
+          <div id="stageWarning" class="stage-warning hidden" role="alert"></div>
+
+          <!-- Bottom Quick Stage Controls -->
+          <div class="stage-bottom-tools">
+            <div class="seg" role="group" aria-label="Ortam">
+              <button type="button" id="btnDay">Gündüz</button>
+              <button type="button" id="btnNight" class="on">Gece</button>
+            </div>
+            <button type="button" id="btnLightToggle" class="pill on">
+              <span class="dot" id="lightDot"></span>
+              <span id="lightToggleLabel">Işık açık</span>
+            </button>
+            <div class="seg walls-seg" id="quickWallSeg" role="group" aria-label="Duvar">
+              <button type="button" data-wall="tugla" class="on">Tuğla</button>
+              <button type="button" data-wall="beton">Brüt Beton</button>
+              <button type="button" data-wall="ahsap">Ahşap Çıta</button>
+              <button type="button" data-wall="siva">Antrasit Sıva</button>
+              <button type="button" data-wall="mermer">Mermer</button>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Right Inspector Panel with 9 Workspaces -->
+      <aside class="inspector-col">
+        <nav class="workspace-tabs" id="workspaceTabs" aria-label="Çalışma Alanları">
+          <button type="button" data-ws="design" class="on">Tasarım</button>
+          <button type="button" data-ws="materials">3D Materyal</button>
+          <button type="button" data-ws="lighting">Aydınlatma</button>
+          <button type="button" data-ws="layers">Katmanlar</button>
+          <button type="button" data-ws="background">Fotomontaj</button>
+          <button type="button" data-ws="nesting">Plaka Nesting</button>
+          <button type="button" data-ws="cost">Maliyet</button>
+          <button type="button" data-ws="quote">Teklif</button>
+          <button type="button" data-ws="projects">Projeler</button>
+        </nav>
+
+        <div id="workspaceContent" class="workspace-content"></div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Keyboard Shortcuts Help Modal -->
+  <div id="shortcutsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="shortcutsTitle">Klavye Kısayolları</h3>
+        <button type="button" id="btnCloseShortcuts" class="close-btn">✕</button>
+      </div>
+      <div id="shortcutsBody" class="modal-body"></div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

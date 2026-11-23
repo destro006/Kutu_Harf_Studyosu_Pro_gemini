@@ -1,0 +1,359 @@
+import { parseFont } from '../vendor/opentype.mjs';
+import { ShapePath } from '../vendor/three.js';
+
+/**
+ * Font Manager with all 8 bundled Turkish-ready (latin + latin-ext) fonts,
+ * custom TTF/OTF/WOFF upload, persistent custom font storage, and Local Font Access API support.
+ */
+
+const FONT_ASSETS = [
+  {
+    id: 'montserrat',
+    label: 'Montserrat',
+    family: "'Montserrat', sans-serif",
+    weight: 800,
+    files: [
+      './public/fonts/montserrat-latin-800-normal-C3dfDxXV.woff',
+      './public/fonts/montserrat-latin-ext-800-normal-Wjq_OapB.woff',
+    ],
+  },
+  {
+    id: 'bebas',
+    label: 'Bebas Neue',
+    family: "'Bebas Neue', sans-serif",
+    weight: 400,
+    files: [
+      './public/fonts/bebas-neue-latin-400-normal-Bi-ndsyu.woff',
+      './public/fonts/bebas-neue-latin-ext-400-normal-HFKRJXnW.woff',
+    ],
+  },
+  {
+    id: 'oswald',
+    label: 'Oswald',
+    family: "'Oswald', sans-serif",
+    weight: 600,
+    files: [
+      './public/fonts/oswald-latin-600-normal-DRToI_2E.woff',
+      './public/fonts/oswald-latin-ext-600-normal-BUCHT9gM.woff',
+    ],
+  },
+  {
+    id: 'poppins',
+    label: 'Poppins',
+    family: "'Poppins', sans-serif",
+    weight: 700,
+    files: [
+      './public/fonts/poppins-latin-700-normal-BVuQR_eA.woff',
+      './public/fonts/poppins-latin-ext-700-normal-DctTR6Tg.woff',
+    ],
+  },
+  {
+    id: 'playfair',
+    label: 'Playfair',
+    family: "'Playfair Display', serif",
+    weight: 800,
+    files: [
+      './public/fonts/playfair-display-latin-800-normal-D0Xz4t1K.woff',
+      './public/fonts/playfair-display-latin-ext-800-normal-DD7uHqs8.woff',
+    ],
+  },
+  {
+    id: 'cinzel',
+    label: 'Cinzel',
+    family: "'Cinzel', serif",
+    weight: 700,
+    files: [
+      './public/fonts/cinzel-latin-700-normal-C-gK7hA8.woff',
+      './public/fonts/cinzel-latin-ext-700-normal-CORa-yIv.woff',
+    ],
+  },
+  {
+    id: 'righteous',
+    label: 'Righteous',
+    family: "'Righteous', sans-serif",
+    weight: 400,
+    files: [
+      './public/fonts/righteous-latin-400-normal-CRvo487o.woff',
+      './public/fonts/righteous-latin-ext-400-normal-EtPo6WgU.woff',
+    ],
+  },
+  {
+    id: 'pacifico',
+    label: 'Pacifico',
+    family: "'Pacifico', cursive",
+    weight: 400,
+    files: [
+      './public/fonts/pacifico-latin-400-normal-DArfF-vd.woff',
+      './public/fonts/pacifico-latin-ext-400-normal-nyRvH6_c.woff',
+    ],
+  },
+];
+
+const CUSTOM_FONTS_KEY = 'khs_custom_fonts_v1';
+
+export class FontManager {
+  constructor() {
+    this.fonts = new Map();
+    this.customCatalog = this.loadCustomCatalog();
+    this.cssRegistered = new Set();
+  }
+
+  getAllFontMetas() {
+    const builtIn = FONT_ASSETS.map(f => ({
+      id: f.id,
+      label: f.label,
+      family: f.family,
+      weight: f.weight,
+      isCustom: false,
+      turkishReady: true,
+    }));
+    const custom = this.customCatalog.map(f => ({
+      id: f.id,
+      label: f.label,
+      family: f.family,
+      weight: 400,
+      isCustom: true,
+      turkishReady: f.turkishReady ?? true,
+    }));
+    return [...builtIn, ...custom];
+  }
+
+  loadCustomCatalog() {
+    try {
+      const raw = localStorage.getItem(CUSTOM_FONTS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  saveCustomCatalog() {
+    try {
+      localStorage.setItem(CUSTOM_FONTS_KEY, JSON.stringify(this.customCatalog));
+    } catch {
+      // Ignore quota errors
+    }
+  }
+
+  async ensureCssFont(meta) {
+    if (this.cssRegistered.has(meta.id) || typeof document === 'undefined' || typeof FontFace === 'undefined') return;
+    this.cssRegistered.add(meta.id);
+    const asset = FONT_ASSETS.find(f => f.id === meta.id);
+    if (!asset) return;
+    for (const url of asset.files) {
+      try {
+        const name = meta.family.split(',')[0].replace(/['"]/g, '').trim();
+        const face = new FontFace(name, `url(${url})`, { weight: String(meta.weight) });
+        await face.load();
+        document.fonts.add(face);
+      } catch {
+        // Fallback silently
+      }
+    }
+  }
+
+  async loadFont(fontId) {
+    if (this.fonts.has(fontId)) return this.fonts.get(fontId);
+
+    const builtIn = FONT_ASSETS.find(f => f.id === fontId);
+    if (builtIn) {
+      const promise = Promise.all(
+        builtIn.files.map(url =>
+          fetch(url)
+            .then(r => {
+              if (!r.ok) throw new Error(`Font yüklenemedi: ${url}`);
+              return r.arrayBuffer();
+            })
+            .then(buf => parseFont(buf))
+        )
+      );
+      this.fonts.set(fontId, promise);
+      this.ensureCssFont(builtIn);
+      return promise;
+    }
+
+    const custom = this.customCatalog.find(f => f.id === fontId);
+    if (custom && custom.base64) {
+      const promise = (async () => {
+        const bin = atob(custom.base64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const parsed = parseFont(bytes.buffer);
+        return [parsed];
+      })();
+      this.fonts.set(fontId, promise);
+      return promise;
+    }
+
+    // Fallback to montserrat
+    return this.loadFont('montserrat');
+  }
+
+  async uploadCustomFont(file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['ttf', 'otf', 'woff'].includes(ext)) {
+      throw new Error('Desteklenen font biçimleri: TTF, OTF, WOFF.');
+    }
+    const buf = await file.arrayBuffer();
+    const parsed = parseFont(buf);
+    const label = file.name.replace(/\.[^.]+$/, '');
+    const id = 'custom_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+
+    // Check Turkish character coverage
+    const trChars = ['Ş', 'İ', 'Ğ', 'Ü', 'Ç', 'Ö', 'ş', 'ı', 'ğ', 'ü', 'ç', 'ö'];
+    const turkishReady = trChars.every(ch => parsed.charToGlyph(ch).index > 0);
+
+    // Store base64 in custom catalog
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    const base64 = btoa(bin);
+
+    const family = `'${label}', sans-serif`;
+    if (typeof FontFace !== 'undefined' && typeof document !== 'undefined') {
+      try {
+        const face = new FontFace(label, buf);
+        await face.load();
+        document.fonts.add(face);
+      } catch {
+        // Non-fatal
+      }
+    }
+
+    const entry = { id, label, family, weight: 400, isCustom: true, turkishReady, base64 };
+    this.customCatalog.push(entry);
+    this.saveCustomCatalog();
+    this.fonts.set(id, Promise.resolve([parsed]));
+    return entry;
+  }
+
+  removeCustomFont(id) {
+    this.customCatalog = this.customCatalog.filter(f => f.id !== id);
+    this.fonts.delete(id);
+    this.saveCustomCatalog();
+  }
+
+  /**
+   * Browser Local Font Access API (if supported & permitted by user).
+   * Never misrepresents availability — returns clear status.
+   */
+  async queryBrowserLocalFonts() {
+    if (typeof window === 'undefined' || typeof window.queryLocalFonts !== 'function') {
+      return {
+        supported: false,
+        message: 'Tarayıcınız yerel sistem fontlarına doğrudan erişimi desteklemiyor. TTF/OTF/WOFF dosyası yükleyebilirsiniz.',
+        fonts: [],
+      };
+    }
+    try {
+      const list = await window.queryLocalFonts();
+      const unique = [];
+      const seen = new Set();
+      for (const f of list) {
+        if (!seen.has(f.family)) {
+          seen.add(f.family);
+          unique.push({ family: f.family, fullName: f.fullName, style: f.style, fontData: f });
+        }
+      }
+      return {
+        supported: true,
+        message: `${unique.length} yerel font bulundu.`,
+        fonts: unique,
+      };
+    } catch (err) {
+      return {
+        supported: true,
+        message: 'Yerel font izni verilmedi veya iptal edildi. Dosyadan TTF/OTF yükleyebilirsiniz.',
+        fonts: [],
+      };
+    }
+  }
+
+  async activateBrowserLocalFont(fontData) {
+    const blob = await fontData.blob();
+    const buf = await blob.arrayBuffer();
+    const parsed = parseFont(buf);
+    const id = 'local_' + fontData.family.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const trChars = ['Ş', 'İ', 'Ğ', 'Ü', 'Ç', 'Ö'];
+    const turkishReady = trChars.every(ch => parsed.charToGlyph(ch).index > 0);
+    const entry = {
+      id,
+      label: fontData.family,
+      family: `'${fontData.family}', sans-serif`,
+      weight: 400,
+      isCustom: true,
+      turkishReady,
+    };
+    this.fonts.set(id, Promise.resolve([parsed]));
+    if (!this.customCatalog.some(c => c.id === id)) {
+      this.customCatalog.push(entry);
+      this.saveCustomCatalog();
+    }
+    return entry;
+  }
+}
+
+/**
+ * Converts an opentype glyph path into Three.js Shapes (preserving outer + holes).
+ */
+function commandsToShapes(commands, scale, offsetX) {
+  const sp = new ShapePath();
+  const tx = x => offsetX + x * scale;
+  const ty = y => -y * scale;
+  for (const c of commands) {
+    if (c.type === 'M') sp.moveTo(tx(c.x), ty(c.y));
+    else if (c.type === 'L') sp.lineTo(tx(c.x), ty(c.y));
+    else if (c.type === 'Q') sp.quadraticCurveTo(tx(c.x1), ty(c.y1), tx(c.x), ty(c.y));
+    else if (c.type === 'C') sp.bezierCurveTo(tx(c.x1), ty(c.y1), tx(c.x2), ty(c.y2), tx(c.x), ty(c.y));
+  }
+  sp.userData = { style: { fillRule: 'nonzero' } };
+  return sp.toShapes();
+}
+
+/**
+ * Layouts text into independent per-glyph 2D shapes in MILLIMETERS.
+ * Preserves spaces, Turkish characters (Ç, Ğ, İ, Ö, Ş, Ü, ı, ğ, ş), kerning, and letter spacing.
+ */
+export function layoutTextMm(fontList, text, heightMm, letterSpacingMm = 0) {
+  if (!fontList || !fontList.length) return { glyphs: [], widthMm: 0, heightMm };
+  const primary = fontList[0];
+  const capHeight = (primary.tables?.os2?.sCapHeight) || primary.unitsPerEm * 0.7;
+  const scale = heightMm / capHeight;
+  const defaultTracking = heightMm * 0.02 + letterSpacingMm;
+
+  const glyphs = [];
+  let cursorX = 0;
+  let prev = null;
+
+  for (const ch of [...(text || '')]) {
+    const font = fontList.find(f => f.charToGlyph(ch).index > 0) || primary;
+    const glyph = font.charToGlyph(ch);
+
+    if (prev && prev.font === font) {
+      cursorX += font.getKerningValue(prev.glyph, glyph) * scale;
+    }
+
+    if (!/\s/.test(ch)) {
+      const path = glyph.getPath(0, 0, font.unitsPerEm);
+      const localScale = scale * (primary.unitsPerEm / font.unitsPerEm);
+      const shapes = commandsToShapes(path.commands, localScale, cursorX);
+      if (shapes.length) {
+        glyphs.push({
+          char: ch,
+          xMm: cursorX,
+          shapes,
+        });
+      }
+    }
+
+    const advance = (glyph.advanceWidth ?? font.unitsPerEm * 0.32) * scale;
+    cursorX += advance + defaultTracking;
+    prev = { font, glyph };
+  }
+
+  return {
+    glyphs,
+    widthMm: Math.max(0, cursorX - defaultTracking),
+    heightMm,
+  };
+}
