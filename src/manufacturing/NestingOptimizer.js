@@ -60,5 +60,5 @@ export function optimizeNesting(items,config={},locked=[],onProgress=()=>{}){
   run({quickImport:false,nfpSearch:nfpCandidates,orderIds:new Map(order.map((id,i)=>[id,i])),anglePreferences,placementStrategy:strategy,deadline:Math.min(end,performance.now()+Math.max(150,budget/5))});
  }
  if(!best)throw Error('Geçerli yerleşim bulunamadı. Kilitli parçaları ve levha ölçülerini kontrol edin.');
- return {...best,optimization:{attempts,nfpAttempts,elapsedMs:Math.round(performance.now()-start),method:'Nesting v3 Pro + validated Clipper NFP fallback',proAttempts,proCompleted,selectedEngine,score:nestingScore(best,strategy)}};
+ return {...best,optimization:{attempts,nfpAttempts,elapsedMs:Math.round(performance.now()-start),engineVersion:'3.0-pro',method:'Nesting v3 Pro + validated Clipper NFP fallback',proAttempts,proCompleted,selectedEngine,score:nestingScore(best,strategy)}};
 }
