@@ -4,7 +4,7 @@ export const NESTING_TAB_FIELDS = [
   'sheetWidthMm','sheetHeightMm','marginMm','marginLeftMm','marginRightMm','marginTopMm','marginBottomMm',
   'clearanceMm','spacingMm','kerfMm','allowedAngles','fineAngleStep','rotationStepDeg',
   'placementStrategy','previewColors','copies','grainDirection','targetPart','allowHoleNesting',
-  'groupByMaterial','enforceGrainDirection','presetId','sheets','unplaced',
+  'groupByMaterial','enforceGrainDirection','presetId','sheets','unplaced','partOverrides','optimizationBudgetMs',
 ];
 const clone = value => value == null ? value : structuredCloneSafe(value);
 const asName = value => String(value||'Dosya').slice(0,90);
@@ -44,7 +44,7 @@ export function createNestingImportedTab(n, imported, options={}) {
   if(n.importedTabs.some(t=>t.id===id))throw Error('Bu nesting sekme kimliği zaten kullanımda.');
   const tab={id,name:asName(imported.filename||options.name),format:imported.format||'vector',
     items:markImmutableGeometry(clone(imported.items)),warnings:clone(imported.warnings||[]),
-    settings:{...snapshotNestingTab(n),sheets:[],unplaced:[]}};
+    settings:{...snapshotNestingTab(n),sheets:[],unplaced:[],partOverrides:{}}};
   n.importedTabs.push(tab);
   for(const field of NESTING_TAB_FIELDS)if(Object.hasOwn(tab.settings,field))n[field]=clone(tab.settings[field]);
   n.activeTabId=id;
@@ -68,4 +68,15 @@ export function getNestingTabTitle(n) {
   if(!n?.activeTabId||n.activeTabId==='design')return 'Bu Proje';
   if(n.activeTabId==='import')return 'Dosya İçe Aktar';
   return n.importedTabs?.find(t=>t.id===n.activeTabId)?.name||'Vektör dosyası';
+}
+
+// Edits belong to this nesting source, not to the original 3D document.
+export function applyNestingPartOverrides(items,n){
+  const overrides=n.partOverrides||{};
+  return items.filter(item=>!overrides[item.id]?.deleted).map(item=>{
+    const factor=overrides[item.id]?.scale||1;
+    if(factor===1)return item;
+    const scale=ring=>ring.map(p=>({x:p.x*factor,y:p.y*factor}));
+    return {...item,outer:scale(item.outer),holes:(item.holes||[]).map(scale),areaMm2:item.areaMm2*factor*factor};
+  });
 }

@@ -70,6 +70,8 @@ export function renderPropertyBar(state, ctx = {}) {
         <span class="chip on" style="cursor:default">Parça: ${escapeHtml(part.label)}</span>
         <div class="prop-field"><label>X (${u})</label><input id="npPartX" type="number" step="any" value="${show(part.xMm ?? part.bounds?.minX ?? 0)}"></div>
         <div class="prop-field"><label>Y (${u})</label><input id="npPartY" type="number" step="any" value="${show(part.yMm ?? part.bounds?.minY ?? 0)}"></div>
+        <div class="prop-field"><label>G (${u})</label><input id="npPartW" type="number" step="any" min="0.001" value="${show(part.bounds.width)}"></div>
+        <div class="prop-field"><label>Y (${u})</label><input id="npPartH" type="number" step="any" min="0.001" value="${show(part.bounds.height)}"></div>
         <div class="prop-field"><label>Açı</label><input id="npPartRot" type="number" step="15" value="${Math.round(part.angleDeg || 0)}"></div>
         <span class="chip" style="cursor:default">${escapeHtml(activeSheet?.materialLabel || '')} (${activeSheet?.thicknessMm || 1.2} mm)</span>
         <button type="button" id="npPartLock" class="tb-btn ${part.locked ? 'on' : ''}">${part.locked ? '🔒 Kilitli' : '🔓 Kilitle'}</button>
@@ -83,6 +85,8 @@ export function renderPropertyBar(state, ctx = {}) {
       bindNestingPartBar(bar, ctx, unit);
       return;
     }
+    bar.innerHTML=`${unitSelect}<span class="chip">Nesting · Parça seçin</span>`;
+    bindUnitControl(bar,ctx);return;
   }
 
   // 2. Multiple Objects Selected
@@ -240,6 +244,8 @@ function bindNestingPartBar(bar, ctx, unit) {
   bindUnitControl(bar, ctx);
   bar.querySelector('#npPartX')?.addEventListener('change', e => ctx.onNestingPartEdit?.('x', displayToMm(e.target.value, unit)));
   bar.querySelector('#npPartY')?.addEventListener('change', e => ctx.onNestingPartEdit?.('y', displayToMm(e.target.value, unit)));
+  bar.querySelector('#npPartW')?.addEventListener('change',e=>ctx.onNestingPartEdit?.('width',displayToMm(e.target.value,unit)));
+  bar.querySelector('#npPartH')?.addEventListener('change',e=>ctx.onNestingPartEdit?.('height',displayToMm(e.target.value,unit)));
   bar.querySelector('#npPartRot')?.addEventListener('change', e => ctx.onNestingPartEdit?.('rot', Number(e.target.value)));
   bar.querySelector('#npPartLock')?.addEventListener('click', () => ctx.onNestingPartEdit?.('toggleLock'));
   bar.querySelector('#npMoveSheet')?.addEventListener('change', e => {

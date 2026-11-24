@@ -18,9 +18,7 @@ export function renderNestingSvg(sheet, selectedPlacementId = null, colors = {})
   const toD = pts => 'M ' + pts.map(pt => `${pt.x.toFixed(1)},${(h - pt.y).toFixed(1)}`).join(' L ') + ' Z';
   // Color-code empty interior contours separately. This is only a preview
   // overlay; holes remain actual holes in the exported manufacturing geometry.
-  const holePreview = (sheet.placements || []).flatMap(p => p.holes || [])
-    .map(pts => `<path data-nest-hole="true" d="${toD(pts)}" fill="${holeColor}" fill-opacity="0.7" pointer-events="none" />`)
-    .join('\n');
+  const holePreview = holes=>holes.map(pts=>`<path data-nest-hole="true" d="${toD(pts)}" fill="${holeColor}" fill-opacity="0.7" pointer-events="none" />`).join('');
 
   const polysSvg = sheet.placements
     .map((p) => {
@@ -34,9 +32,11 @@ export function renderNestingSvg(sheet, selectedPlacementId = null, colors = {})
       const label = p.locked ? `🔒 ${p.label}` : p.label;
 
       return `
-        <g data-pid="${p.id}" style="cursor:pointer">
+        <g data-pid="${escapeXml(p.id)}" style="cursor:pointer">
+          <title>${escapeXml(label)}</title>
+          ${holePreview(p.holes||[])}
           <path data-nest-body="true" d="${d}" fill="${fill}" fill-opacity="${isSel ? '0.83' : '0.55'}" stroke="${stroke}" stroke-width="${isSel || isCol ? 4 : 2}" fill-rule="evenodd" />
-          ${(sheet.placements.length<=120||isSel)?`<text x="${cx}" y="${cy}" fill="#f8fafc" font-size="22" font-family="sans-serif" text-anchor="middle" dominant-baseline="middle" pointer-events="none">${escapeXml(label)}</text>`:''}
+          ${isSel&&p.bounds.width>70&&p.bounds.height>35?`<text x="${cx}" y="${cy}" fill="#f8fafc" font-size="${Math.min(20,p.bounds.width/7,p.bounds.height/3)}" text-anchor="middle" dominant-baseline="middle" pointer-events="none">${Math.round(p.bounds.width)}×${Math.round(p.bounds.height)}</text>`:''}
         </g>`;
     })
     .join('\n');
@@ -44,7 +44,6 @@ export function renderNestingSvg(sheet, selectedPlacementId = null, colors = {})
   return `<svg class="nesting-sheet-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${w} × ${h} mm nesting levhası">
     <rect x="0" y="0" width="${w}" height="${h}" fill="#12151b" />
     <rect x="${mL}" y="${mT}" width="${Math.max(10, w - mL - mR)}" height="${Math.max(10, h - mT - mB)}" fill="none" stroke="#334155" stroke-dasharray="10 8" stroke-width="2" />
-    ${holePreview}
     ${polysSvg}
   </svg>`;
 }

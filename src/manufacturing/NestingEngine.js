@@ -240,6 +240,7 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
     allowHoleNesting = true,
     groupByMaterial = true,
     quickImport = false,
+    itemOrder='area', deadline=Infinity,
   } = config;
 
   const mL = marginLeftMm ?? marginMm;
@@ -277,7 +278,15 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
   const unplaced = [];
 
   for (const [materialGroup, batchItems] of batches.entries()) {
-    const sorted = batchItems.slice().sort((a, b) => b.areaMm2 - a.areaMm2);
+    const extent=item=>polygonBounds(item.outer);
+    const sizes=new Map(batchItems.map(item=>[item,extent(item)]));
+    const sorted=batchItems.slice().sort((a,b)=>{
+      const x=sizes.get(a),y=sizes.get(b);
+      if(itemOrder==='box')return y.width*y.height-x.width*x.height||b.areaMm2-a.areaMm2;
+      if(itemOrder==='long')return Math.max(y.width,y.height)-Math.max(x.width,x.height)||b.areaMm2-a.areaMm2;
+      if(itemOrder==='short')return Math.min(y.width,y.height)-Math.min(x.width,x.height)||b.areaMm2-a.areaMm2;
+      return b.areaMm2-a.areaMm2;
+    });
     const batchSheets = [];
 
     // Preserve any locked placements for this materialGroup
@@ -316,12 +325,6 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
       }
 
       for (const placed of sheet.placements) {
-        // Check if candPoly fits cleanly inside a hole of placed part (True-Shape Hole Nesting)
-        if (allowHoleNesting && placed.holes?.length) {
-          const inHole = placed.holes.some(h => fitsInsideHole(candPoly, h, minSep));
-          if (inHole) continue;
-        }
-
         const pb = placed.bounds;
         if (
           candBounds.maxX + minSep <= pb.minX ||
@@ -332,6 +335,7 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
           continue;
         }
 
+        if(allowHoleNesting&&placed.holes?.some(h=>fitsInsideHole(candPoly,h,minSep)))continue;
         const dist = minDistanceBetweenPolygons(candPoly, placed.outer);
         if (dist < minSep) return false;
         if (polygonsIntersect(candPoly, placed.outer)) return false;
@@ -339,8 +343,9 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
       return true;
     };
 
-    const choose=(sheet,variants)=>quickImport?findQuickPlacement(sheet,variants,mL,mB,sheetWidthMm-mR,sheetHeightMm-mT,minSep):findBestPlacementOnSheet(sheet,variants,mL,mB,sheetWidthMm-mR,sheetHeightMm-mT,allowHoleNesting,fitsOnSheet,minSep,placementStrategy);
+    const choose=(sheet,variants)=>quickImport?findQuickPlacement(sheet,variants,mL,mB,sheetWidthMm-mR,sheetHeightMm-mT,minSep):findBestPlacementOnSheet(sheet,variants,mL,mB,sheetWidthMm-mR,sheetHeightMm-mT,allowHoleNesting,fitsOnSheet,minSep,placementStrategy,deadline);
     for (const item of sorted) {
+      if(performance.now()>deadline)throw Error('NEST_BUDGET');
       if (lockedIds.has(item.id)) continue;
 
       const variants = angles.map(ang => {
@@ -413,6 +418,7 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
       }
     }
     const usableArea = (sh.widthMm - sh.marginLeftMm - sh.marginRightMm) * (sh.heightMm - sh.marginTopMm - sh.marginBottomMm);
+    for(const p of sh.placements)totalCutLengthMm+=ringLength(p.outer)+(p.holes||[]).reduce((sum,h)=>sum+ringLength(h),0);
     sh.usableAreaMm2 = usableArea;
     sh.utilizationPct = Math.min(100, (sh.usedAreaMm2 / Math.max(1, usableArea)) * 100);
     sh.scrapAreaM2 = Math.max(0, (sh.widthMm * sh.heightMm - sh.usedAreaMm2) / 1_000_000);
@@ -433,6 +439,14 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
   };
 }
 
+export function ringLength(r){let length=0;for(let i=0;i<r.length;i++){const a=r[i],b=r[(i+1)%r.length];length+=Math.hypot(b.x-a.x,b.y-a.y);}return length;}
+export function refreshNestingSheet(sheet,minSep){
+  sheet.usedAreaMm2=sheet.placements.reduce((sum,p)=>sum+(p.areaMm2||0),0);
+  const usable=(sheet.widthMm-(sheet.marginLeftMm??sheet.marginMm??15)-(sheet.marginRightMm??sheet.marginMm??15))*(sheet.heightMm-(sheet.marginBottomMm??sheet.marginMm??15)-(sheet.marginTopMm??sheet.marginMm??15));
+  sheet.usableAreaMm2=Math.max(0,usable);sheet.utilizationPct=100*sheet.usedAreaMm2/Math.max(1,usable);
+  sheet.scrapAreaM2=Math.max(0,(sheet.widthMm*sheet.heightMm-sheet.usedAreaMm2)/1e6);
+  return validateSheetLayout(sheet,minSep);
+}
 export function editNestingPlacement(p,action,value){
   if(!p||p.locked||!Number.isFinite(value))return false;
   const b=p.bounds,x=b.minX,y=b.minY;
@@ -440,6 +454,10 @@ export function editNestingPlacement(p,action,value){
   if(action==='x'||action==='y'){
     const dx=action==='x'?value-x:0,dy=action==='y'?value-y:0;
     outer=translatePolygon(outer,dx,dy);holes=holes.map(h=>translatePolygon(h,dx,dy));
+  }else if(action==='scale'){
+    if(value<=0||value>100)return false;
+    const scale=pt=>({x:x+(pt.x-x)*value,y:y+(pt.y-y)*value});
+    outer=outer.map(scale);holes=holes.map(h=>h.map(scale));p.areaMm2*=value*value;
   }else if(action==='rot'){
     const d=(value-angle)*Math.PI/180,c=Math.cos(d),s=Math.sin(d);
     const rotate=pt=>({x:(pt.x-x)*c-(pt.y-y)*s,y:(pt.x-x)*s+(pt.y-y)*c});
@@ -501,7 +519,7 @@ function findQuickPlacement(sheet,variants,minX,minY,maxX,maxY,sep){
   return {angleDeg:v.ang,xMm:x,yMm:y,outer:translatePolygon(v.outer,x,y),holes:v.holes.map(r=>translatePolygon(r,x,y)),bounds:{minX:x,minY:y,maxX:x+w,maxY:y+h,width:w,height:h}};
 }
 
-function findBestPlacementOnSheet(sheet, variants, minX, minY, maxX, maxY, allowHoleNesting, fitsOnSheet, minSep = 5, strategy = 'compact') {
+function findBestPlacementOnSheet(sheet, variants, minX, minY, maxX, maxY, allowHoleNesting, fitsOnSheet, minSep = 5, strategy = 'compact',deadline=Infinity) {
   let best = null, bestScore = Infinity;
   const occupiedX = Math.max(minX, ...sheet.placements.map(p => p.bounds.maxX));
   const occupiedY = Math.max(minY, ...sheet.placements.map(p => p.bounds.maxY));
@@ -547,7 +565,9 @@ function findBestPlacementOnSheet(sheet, variants, minX, minY, maxX, maxY, allow
     const xs = [...candX].filter(x => x >= minX && x + v.bounds.width <= maxX + 1e-5).sort((a,b)=>a-b);
     const ys = [...candY].filter(y => y >= minY && y + v.bounds.height <= maxY + 1e-5).sort((a,b)=>a-b);
     for (const x of xs) {
+      if(performance.now()>deadline)throw Error('NEST_BUDGET');
       for (const y of ys) {
+        if(performance.now()>deadline)throw Error('NEST_BUDGET');
         const box = {minX:x,minY:y,maxX:x+v.bounds.width,maxY:y+v.bounds.height};
         const outline = translatePolygon(v.outer,x,y);
         if (!fitsOnSheet(sheet,outline,box)) continue;

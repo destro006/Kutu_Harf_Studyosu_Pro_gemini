@@ -1,6 +1,7 @@
 /** Runs geometry decoding and true-shape nesting away from the interactive UI thread. */
 import { importVectorText, groupRings } from './VectorFileImport.js';
 import { pdfOperatorRings } from './PdfVectorImport.js';
+import { optimizeNesting } from './NestingOptimizer.js';
 import { runTrueShapeNesting, validateSheetLayout } from './NestingEngine.js';
 
 function processJob(job){
@@ -34,7 +35,8 @@ function processJob(job){
     imported=job.imported;
   } else throw Error('Bilinmeyen içe aktarma işlemi.');
   if(!imported.items?.length)throw Error('Dosyada üretilebilir kapalı vektör parçası yok.');
-  const result=runTrueShapeNesting(imported.items,{...(job.nesting||{}),quickImport:job.operation!=='nest'||Boolean(job.nesting?.quickImport)},job.lockedSheets||[]);
+  const config={...(job.nesting||{}),quickImport:job.operation!=='nest'||Boolean(job.nesting?.quickImport)};
+  const result=job.operation==='nest'&&!config.quickImport?optimizeNesting(imported.items,config,job.lockedSheets||[]):runTrueShapeNesting(imported.items,config,job.lockedSheets||[]);
   for(const sheet of result.sheets){
     const test=validateSheetLayout(sheet,(job.nesting?.clearanceMm??5)+(job.nesting?.kerfMm??.4));
     if(!test.valid)throw Error('Nesting doğrulaması başarısız: kesim parçaları çakışıyor.');

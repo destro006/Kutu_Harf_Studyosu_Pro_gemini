@@ -1,5 +1,5 @@
 import { renderDetailedCostCenter } from './CostCenterView.js';
-import { SHEET_PRESETS } from '../manufacturing/NestingEngine.js';
+import { ringLength, SHEET_PRESETS } from '../manufacturing/NestingEngine.js';
 import { renderNestingSvg } from './NestingView.js';
 import { renderNestingSourceTabs, renderNestingImportPane } from './NestingImportView.js';
 import { MACHINE_PROFILES, validateNestedProduction } from '../export/CncGcodeExporter.js';
@@ -31,7 +31,7 @@ export function renderNestingCenter(state, ctx) {
   const presetId = SHEET_PRESETS.find(p => p.w === n.sheetWidthMm && p.h === n.sheetHeightMm)?.id || 'custom';
   const totalParts = sheets.reduce((a, sh) => a + sh.placements.length, 0);
   const avgUtil = sheets.length ? sheets.reduce((a, sh) => a + (sh.utilizationPct ?? sh.utilization ?? 0), 0) / sheets.length : 0;
-  const totalCutLenMm = sheets.reduce((a, sh) => a + sh.placements.reduce((s, p) => s + (p.bounds ? (p.bounds.width + p.bounds.height) * 2 : 0), 0), 0);
+  const totalCutLenMm = sheets.reduce((a, sh) => a + sh.placements.reduce((s, p) => s + (ringLength(p.outer)+(p.holes||[]).reduce((a,h)=>a+ringLength(h),0)), 0), 0);
 
   return `
     <div class="nesting-workspace" data-nesting-tab="${n.activeTabId || 'design'}">
@@ -73,6 +73,7 @@ export function renderNestingCenter(state, ctx) {
           <div style="display:flex;gap:6px">
             <button type="button" id="cwsRunNesting" class="cta-btn" style="padding:5px 12px" title="İçe aktarmadan sonra hassas true-shape optimizasyonu; işlem sürerken tekrar tıklayarak iptal edin">Otomatik Yerleştir</button>
             <button type="button" id="cwsReoptUnlocked" class="sec-btn">Kilitsizleri Optimize Et</button>
+            <button type="button" id="cwsDeletePart" class="sec-btn" ${ctx.selectedPlacementId?'':'disabled'} title="Seçili parçayı yalnızca bu nesting işinden sil">Parçayı Sil</button>
           </div>
         </div>
         <div id="cwsNestSvgBox" class="nesting-sheet-fit">
@@ -94,7 +95,7 @@ export function renderNestingCenter(state, ctx) {
         </div>
         <div class="field-row"><label>Levha Genişliği (mm)</label><input id="cwsNestW" type="number" value="${n.sheetWidthMm}"></div>
         <div class="field-row"><label>Levha Yüksekliği (mm)</label><input id="cwsNestH" type="number" value="${n.sheetHeightMm}"></div>
-        <div class="field-row"><label>Parça Aralığı (mm)</label><input id="cwsNestSp" type="number" value="${n.spacingMm}"></div>
+        <div class="field-row"><label>Parça Aralığı (mm)</label><input id="cwsNestSp" type="number" value="${n.clearanceMm??5}"></div>
         <div class="field-row"><label>Kenar Payı (mm)</label><input id="cwsNestMg" type="number" value="${n.marginLeftMm}"></div>
         <div class="field-row"><label>Delik İçi Yerleştirme</label><input id="cwsNestHoles" type="checkbox" ${n.allowHoleNesting ? 'checked' : ''}></div>
         <div class="field-row"><label>Fırça Yönü Kısıtı</label><input id="cwsNestGrain" type="checkbox" ${n.enforceGrainDirection ? 'checked' : ''}></div>
@@ -108,6 +109,8 @@ export function renderNestingCenter(state, ctx) {
           </select>
         </div>
         <h3 class="sec-title" style="margin-top:14px">Yerleşim Tercihi</h3>
+        <div class="field-row"><label>Optimizasyon süresi</label><select id="cwsNestBudget"><option value="3000" ${n.optimizationBudgetMs===3000?'selected':''}>Hızlı</option><option value="7000" ${!n.optimizationBudgetMs||n.optimizationBudgetMs===7000?'selected':''}>Dengeli</option><option value="30000" ${n.optimizationBudgetMs===30000?'selected':''}>Detaylı</option></select></div>
+        <small>Sol araç çubuğu: Seç, Taşı, Ölçek, Döndür. Delete yalnızca seçili nesting parçasını siler.</small>
         <div class="field-row"><label>Optimizasyon yönü</label>
           <select id="cwsNestStrategy">
             <option value="compact" ${(n.placementStrategy || 'compact') === 'compact' ? 'selected' : ''}>Kompakt · daha az fire</option>
