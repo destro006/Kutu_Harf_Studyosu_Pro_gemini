@@ -661,9 +661,10 @@ function drawCadOverlay(state) {
 /* ---------------- Workspace Renderer (All 9 Workspaces) ---------------- */
 const WS_META = [
   { id: 'objects', label: 'Nesneler', fn: renderObjectsTreeDocker },
-  { id: 'properties', label: 'Özellikler', fn: renderDesignWs },
+  { id: 'properties', label: 'Metin & Yapı', fn: renderDesignWs },
   { id: 'layers', label: 'Katmanlar', fn: renderLayersWs },
-  { id: 'materials', label: 'Malzemeler', fn: renderMaterialsAndLightDocker },
+  { id: 'materials', label: 'Malzeme & Renk', fn: renderMaterialsWs },
+  { id: 'lighting', label: 'Aydınlatma', fn: renderLightingWs },
   { id: 'manufacturing', label: 'İmalat', fn: renderManufacturingDocker },
   { id: 'align', label: 'Hizalama', fn: renderAlignDocker },
   { id: 'background', label: 'Arka Plan / Cephe', fn: renderBackgroundWs },
@@ -871,7 +872,7 @@ function renderFloatingWindows(state) {
   layer.dataset.floatingKey = floatingKey;
   layer.dataset.pendingRefresh = '0';
   const activeFocused = document.activeElement?.id;
-  layer.innerHTML = wsLayout.floating.map(fw => {
+  layer.innerHTML = wsLayout.floating.filter(fw=>sideIds.has(fw.id)).map(fw => {
     const meta = WS_META.find(m => m.id === fw.id);
     if (!meta) return '';
     return `
@@ -983,6 +984,7 @@ function renderQuickPalette(state) {
   `).join('')}</div><button type="button" class="quick-palette-more" id="btnOpenRalPalette" title="213 RAL Classic ve tüm renk seçenekleri">Tüm RAL ▸</button>`;
 }
 function openMaterialPalette() {
+  ribbonSuppressed=null;
   restoreWorkspaceToTab('materials');
   matColorTab = 'ral';
   store.update(s => { s.activeWorkspace = 'materials'; s.ui.stackMode = 'tabs'; });
@@ -992,11 +994,49 @@ function openMaterialPalette() {
   document.getElementById('inspectorCol')?.classList.add('mobile-open');
 }
 
+const ribbonIds=new Set(['properties','materials','lighting','manufacturing','align','background']);
+const sideIds=new Set(['objects','layers','projects']);
+let sideWorkspace='objects';
+let ribbonSuppressed=null;
+function renderRibbon(state){
+  const root=document.getElementById('ribbonPanelContent'),panel=document.getElementById('ribbonPanel'),host=document.getElementById('studioRibbon');
+  if(!root||!panel||!host)return;
+  const allowed=['model3d','materials','design2d'].includes(state.mainWorkspace||'model3d');
+  host.classList.toggle('hidden',!allowed);
+  const ws=state.activeWorkspace==='design'?'properties':state.activeWorkspace;
+  const open=allowed&&ribbonIds.has(ws)&&ribbonSuppressed!==ws;
+  panel.classList.toggle('hidden',!open);
+  document.querySelectorAll('[data-ribbon]').forEach(b=>{const active=open&&b.dataset.ribbon===ws;b.classList.toggle('on',active);b.setAttribute('aria-expanded',String(active));});
+  if(!open){if(root.childElementCount)root.innerHTML='';root.dataset.ribbonKey='';return;}
+  const meta=WS_META.find(x=>x.id===ws);if(!meta)return;
+  document.getElementById('ribbonPanelTitle').textContent=meta.label;
+  const key=[ws,state.selectedIds.join(','),state.pageLayout?.displayUnit,resolveObjectLighting(selectedLightingObjects(state)[0],state).mode].join('|');
+  if(!root._ribbonFocusBound){root._ribbonFocusBound=true;root.addEventListener('focusout',()=>setTimeout(()=>{if(root.dataset.pendingRefresh==='1'&&!root.contains(document.activeElement))renderRibbon(store.get());},0));}
+  if(root.dataset.ribbonKey===key&&root.contains(document.activeElement)&&/^(INPUT|SELECT|TEXTAREA)$/i.test(document.activeElement?.tagName||'')){root.dataset.pendingRefresh='1';return;}
+  root.dataset.ribbonKey=key;root.dataset.pendingRefresh='0';
+  const html=meta.fn(state);if(root._ribbonHtml===html&&root.childElementCount)return;
+  root._ribbonHtml=html;const scroll=root.scrollTop;root.innerHTML=html;bindWorkspaceEvents(ws,root);root.scrollTop=scroll;
+}
+function closeRibbon(){
+  ribbonSuppressed=store.get().activeWorkspace;
+  store.updateScoped([],s=>{s.activeWorkspace=sideWorkspace;});
+  renderActiveWorkspace();updateStageChrome(store.get());
+}
+function bindRibbon(){
+  document.querySelectorAll('[data-ribbon]').forEach(b=>b.addEventListener('click',()=>{
+    if(b.classList.contains('on')){closeRibbon();return;}
+    ribbonSuppressed=null;store.updateScoped([],s=>{s.activeWorkspace=b.dataset.ribbon;});renderActiveWorkspace();updateStageChrome(store.get());
+  }));
+  document.getElementById('ribbonClose')?.addEventListener('click',closeRibbon);
+  document.getElementById('ribbonPanel')?.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();closeRibbon();}});
+}
 function renderActiveWorkspace() {
   const state = store.get();
+  renderRibbon(state);
   if(state.mainWorkspace==='nesting')return;
   renderQuickPalette(state);
-  const ws = (WS_META.some(m => m.id === state.activeWorkspace) ? state.activeWorkspace : 'properties');
+  if(sideIds.has(state.activeWorkspace))sideWorkspace=state.activeWorkspace;
+  const ws=sideWorkspace;
   const stackMode = state.ui?.stackMode === 'stacked';
   arrangeDockerTabs();
   const tabsEl = document.getElementById('workspaceTabs');
@@ -1006,7 +1046,7 @@ function renderActiveWorkspace() {
   if (tabsEl) tabsEl.classList.toggle('hidden', stackMode);
   if (stackBtn) stackBtn.textContent = stackMode ? '⊟ Sekme Modu' : '⊞ Alt Alta Aç';
 
-  const floatIds = new Set(wsLayout.floating.map(f => f.id));
+  const floatIds = new Set(wsLayout.floating.filter(f=>sideIds.has(f.id)).map(f => f.id));
   document.querySelectorAll('#workspaceTabs button').forEach(b => {
     const id = b.dataset.ws;
     b.classList.toggle('on', id === ws);
@@ -1044,7 +1084,7 @@ function renderActiveWorkspace() {
 
   if (!stackMode) {
     const meta = WS_META.find(m => m.id === ws) || WS_META[0];
-    const dockedList = (wsLayout.dockedUnder[ws] || []).filter(id => id !== ws);
+    const dockedList = (wsLayout.dockedUnder[ws] || []).filter(id => id !== ws && sideIds.has(id));
     const dockedHtml = dockedList.map(cid => {
       const cm = WS_META.find(m => m.id === cid);
       if (!cm) return '';
@@ -1079,8 +1119,9 @@ function renderActiveWorkspace() {
       restoreWorkspaceToTab(btn.dataset.dockRemove);
     });
   } else {
-    const openSet = new Set(state.ui?.openSections || ['design', 'materials']);
-    root.innerHTML = WS_META.map(m => {
+    const openSet = new Set((state.ui?.openSections||[]).filter(id=>sideIds.has(id)));
+    if(!openSet.size)openSet.add(ws);
+    root.innerHTML = WS_META.filter(m=>sideIds.has(m.id)).map(m => {
       const isOpen = openSet.has(m.id);
       return `<div class="acc-item" data-acc="${m.id}">
         <button type="button" class="acc-head ${isOpen ? 'on' : ''}" data-acc-toggle="${m.id}">
@@ -1099,7 +1140,7 @@ function renderActiveWorkspace() {
       renderActiveWorkspace();
     });
 
-    for (const m of WS_META) {
+    for (const m of WS_META.filter(m=>sideIds.has(m.id))) {
       if (openSet.has(m.id)) {
         const body = root.querySelector(`[data-acc-body="${m.id}"]`);
         if (body) bindWorkspaceEvents(m.id, body);
@@ -2609,6 +2650,7 @@ function setMainWorkspace(ws) {
   syncWorkspaceRail(ws);
 
   if (ws === 'materials') {
+    ribbonSuppressed=null;
     store.updateScoped([],s => { s.activeWorkspace = 'materials'; });
     renderActiveWorkspace();
   }
@@ -2617,6 +2659,7 @@ function setMainWorkspace(ws) {
   }
   updateCenterWorkspaces(store.get());
   updateNumericBar(store.get());
+  renderRibbon(store.get());
 }
 
 // Keep the Nesting sheet-size editor mounted. Replacing the entire workspace DOM
@@ -3507,8 +3550,10 @@ function bindExportDialog() {
 /* ---------------- Bootstrap ---------------- */
 function init() {
   if (!autosaved) applyDefaultPriceTemplate();
+  ribbonSuppressed=store.get().activeWorkspace;
+  bindRibbon();
   document.getElementById('btnFloatActiveDocker')?.addEventListener('click', () => {
-    const active = store.get().activeWorkspace;
+    const active = sideWorkspace;
     detachWorkspaceToFloat(active, Math.max(36, window.innerWidth - 670), 100);
   });
   document.getElementById('btnResetDockLayout')?.addEventListener('click', () => {
@@ -3548,6 +3593,7 @@ function init() {
     renderQuickPalette(store.get());
   });
   document.getElementById('btnOpenBackgroundPanel')?.addEventListener('click', () => {
+    ribbonSuppressed=null;
     restoreWorkspaceToTab('background');
     store.update(s => { s.activeWorkspace = 'background'; s.ui.stackMode = 'tabs'; });
     renderActiveWorkspace();
@@ -3624,7 +3670,7 @@ function init() {
       signEngine.updateSelectionBox(store.get());
       updateStageChrome(store.get());
       updateNumericBar(store.get());
-      if (['layers','lighting'].includes(store.get().activeWorkspace)) renderActiveWorkspace();
+      renderActiveWorkspace();
     },
     onSelectObjects: (ids, additive) => {
       const candidates = new Set(ids);
@@ -3949,6 +3995,7 @@ function init() {
         store.updateScoped(['selectedIds'],s => { s.selectedIds = id ? selectLayer(s, id, additive) : []; });
         updateNumericBar(store.get());
         vector2D.render(store.get(), fontMap);
+        renderActiveWorkspace();
       },
       onTransformStart: () => { dragBeforeState = structuredCloneSafe(store.get()); },
       onLiveMove: (id, x, y) => {
@@ -4088,7 +4135,7 @@ function init() {
     setLightingMode: (m) => mutate('Aydınlatma', s => { s.lighting.mode = m; const o = getSelectedOrFirst(s); if (o) o.lightingMode = m; }),
     toggleNight: () => mutate('Ortam', s => { s.scene.night = !s.scene.night; }),
     runNesting: () => { setMainWorkspace('nesting'); runAutoNesting(); },
-    setDocker: (d) => { store.update(s => { s.activeWorkspace = d; }); renderActiveWorkspace(); },
+    setDocker: (d) => { ribbonSuppressed=null;store.updateScoped([],s => { s.activeWorkspace = d; }); renderActiveWorkspace(); },
     showShortcuts: () => document.getElementById('shortcutsModal')?.classList.remove('hidden'),
     resetDefaults: resetMaterialDefaults,
   });

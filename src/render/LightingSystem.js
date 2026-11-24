@@ -112,16 +112,15 @@ export function buildSceneLights(night, sizeM) {
     const amb = new THREE.AmbientLight('#9fb0d0', 0.08);
     group.add(amb);
 
-    const spot = new THREE.SpotLight('#ffd6a3', 22 + w * 14, 0, Math.min(1.05, 0.52 + w * 0.08), 1.0, 2.0);
-    spot.position.set(0, h / 2 + 1 + w * 0.15, 2 + w * 0.3);
-    spot.target.position.set(0, -h * 0.1, 0);
-    spot.castShadow = true;
-    spot.shadow.mapSize.set(2048, 2048);
-    spot.shadow.bias = -0.0004;
-    spot.shadow.normalBias = 0.015;
-    spot.shadow.radius = 6;
-    group.add(spot);
-    group.add(spot.target);
+    // A directional fill provides soft material visibility without a circular spotlight footprint.
+    const dir=new THREE.DirectionalLight('#ffd6a3',.42);
+    dir.position.set(-w*.5-1,h/2+2,3);
+    dir.castShadow=true;
+    const frustum=Math.max(2,w)*.8;
+    dir.shadow.camera.left=-frustum;dir.shadow.camera.right=frustum;
+    dir.shadow.camera.top=frustum;dir.shadow.camera.bottom=-frustum;
+    dir.shadow.mapSize.set(2048,2048);dir.shadow.bias=-.0004;dir.shadow.normalBias=.015;dir.shadow.radius=6;
+    group.add(dir);
   } else {
     const hemi = new THREE.HemisphereLight('#fff8ee', '#5d5045', 0.95);
     group.add(hemi);

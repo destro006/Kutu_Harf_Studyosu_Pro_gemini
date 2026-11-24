@@ -124,6 +124,21 @@
       <main class="viewport-col">
         <!-- Context-Sensitive Property Bar -->
         <div class="prop-bar" id="numericPropBar" aria-label="Bağlamsal Özellik Çubuğu"></div>
+        <div id="studioRibbon" class="studio-ribbon">
+          <nav id="ribbonCategories" class="ribbon-categories" aria-label="Üst araç kategorileri">
+            <button type="button" data-ribbon="properties">Metin &amp; Yapı ⌄</button>
+            <button type="button" data-ribbon="materials">Malzeme &amp; Renk ⌄</button>
+            <button type="button" data-ribbon="lighting">Aydınlatma ⌄</button>
+            <button type="button" data-ribbon="manufacturing">İmalat ⌄</button>
+            <button type="button" data-ribbon="align">Hizalama ⌄</button>
+            <button type="button" data-ribbon="background">Arka Plan &amp; Cephe ⌄</button>
+          </nav>
+          <div id="inspectorQuickColors" class="inspector-quick-colors" aria-label="Hızlı renk paleti"></div>
+          <div id="ribbonPanel" class="ribbon-panel hidden">
+            <div class="ribbon-panel-head"><strong id="ribbonPanelTitle"></strong><button type="button" id="ribbonClose" class="tb-btn" title="Kapat">✕</button></div>
+            <div id="ribbonPanelContent" class="ribbon-panel-content"></div>
+          </div>
+        </div>
 
         <!-- Central Multi-Workspace Stage -->
         <div class="stage-wrap" id="stageWrap">
@@ -202,7 +217,7 @@
       <!-- REGION 6: Right Docker Panels -->
       <aside class="inspector-col" id="inspectorCol">
         <div class="inspector-mode-bar">
-          <span>Çalışma Panelleri</span>
+          <span>Nesneler &amp; Proje</span>
           <div style="display:flex;gap:4px">
             <button type="button" id="btnSaveDefaults" class="tb-btn" style="padding:2px 7px;font-size:11px" title="Varsayılanları Kaydet">★ Kaydet</button>
             <button type="button" id="btnFloatActiveDocker" class="tb-btn" title="Aktif paneli serbest pencereye ayır">↗ Ayır</button>
@@ -210,27 +225,17 @@
             <button type="button" id="btnToggleStackMode" class="tb-btn" title="Panelleri alt alta aç">⊞ Alt Alta</button>
           </div>
         </div>
-        <div class="inspector-quick-colors" id="inspectorQuickColors" aria-label="Hızlı renk paleti"></div>
+
         <label class="inspector-panel-picker">Panel seç
           <select id="inspectorPanelSelect" aria-label="Aktif panel">
-            <option value="properties">Özellikler</option>
             <option value="objects">Nesneler</option>
-            <option value="materials">Malzemeler</option>
             <option value="layers">Katmanlar</option>
-            <option value="manufacturing">İmalat</option>
-            <option value="align">Hizalama</option>
-            <option value="background">Arka Plan / Cephe</option>
             <option value="projects">Projeler</option>
           </select>
         </label>
         <nav class="workspace-tabs" id="workspaceTabs" aria-label="Docker Sekmeleri">
           <button type="button" data-ws="objects">Nesneler</button>
-          <button type="button" data-ws="properties" class="on">Özellikler</button>
           <button type="button" data-ws="layers">Katmanlar</button>
-          <button type="button" data-ws="materials">Malzemeler</button>
-          <button type="button" data-ws="manufacturing">İmalat</button>
-          <button type="button" data-ws="align">Hizalama</button>
-          <button type="button" data-ws="background">Arka Plan / Cephe</button>
           <button type="button" data-ws="projects">Projeler</button>
         </nav>
 
@@ -307,6 +312,6 @@
 
   <div id="floatingWindowsLayer" class="floating-windows-layer"></div>
   <script defer src="./public/vendor/pdfjs/pdf.min.js"></script>
-  <script type="module" src="./src/main.js?v=20261124lightedit1"></script>
+  <script type="module" src="./src/main.js?v=20261124ribbonhalo2"></script>
 </body>
 </html>

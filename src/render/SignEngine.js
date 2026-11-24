@@ -797,23 +797,16 @@ export class SignEngine {
     this.lastSizeM = sizeM;
 
     // Independent halo masks and bounded wall-wash lights.
-    for(const [index,job] of haloJobs.entries()){
+    for(const job of haloJobs){
       const refs=this._objectLightRefs.get(job.obj.id),box=new THREE.Box2();
       for(const shape of job.shapes)for(const pt of shape.getPoints(6))box.expandByPoint(pt);
       if(box.isEmpty())continue;
-      const width=Math.max(.05,box.max.x-box.min.x),height=Math.max(.05,box.max.y-box.min.y);
+      const height=Math.max(.05,box.max.y-box.min.y);
       const halo=createHaloTexture(job.shapes,{minX:box.min.x,maxX:box.max.x,minY:box.min.y,maxY:box.max.y},{wallDistanceMm:job.light.wallDistanceMm,haloSpread:job.light.haloSpread,falloff:job.light.falloff,letterHeightM:height});
       halo.texture._disposeOnClear=true;
       const mesh=new THREE.Mesh(new THREE.PlaneGeometry(halo.widthM,halo.heightM),new THREE.MeshBasicMaterial({map:halo.texture,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:true}));
       mesh.position.set(halo.cxM,halo.cyM,.002);mesh.renderOrder=2;mesh.raycast=()=>{};this.signGroup.add(mesh);refs.halo=mesh;
-      if(index<5){
-        const count=Math.min(Math.max(1,Math.floor(5/Math.min(5,haloJobs.length))),Math.max(1,Math.round(width/.7)));
-        for(let i=0;i<count;i++){
-          const offset=count===1?0:(i/(count-1)-.5)*width*.78;
-          const pl=new THREE.PointLight(job.light.backColor,0,Math.max(.6,height*2.4*job.light.haloSpread),1.8);
-          pl.position.set(halo.cxM+offset,halo.cyM,.018);this.signGroup.add(pl);refs.points.push(pl);
-        }
-      }
+      // The contour mask alone illuminates the wall. Point lights create circular hotspots.
       refs.height=height;this.applyObjectLightAppearance(refs,job.light);
     }
 
@@ -1037,7 +1030,7 @@ export class SignEngine {
       refs.halo.material.color.set(light.backColor).multiplyScalar((night ? .55 : .42)+intensity*.45);
       refs.halo.material.opacity=intensity>0?Math.min(.98,(night ? .34 : .22)*intensity+.08):0;
     }
-    for(const pl of refs.points){pl.color.set(light.backColor);pl.intensity=(night ? .55 : .25)*intensity*Math.max(.6,(refs.height||.4)*2.2)/Math.sqrt(refs.points.length);}
+    // No point-light hotspot; the selected intensity controls only the contour glow.
   }
   updateLightAppearance(state){
     if(this.isDisposed||this._paused||!this._objectLightRefs)return false;

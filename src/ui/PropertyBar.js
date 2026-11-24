@@ -157,8 +157,8 @@ export function renderPropertyBar(state, ctx = {}) {
 
   if (mainWs === 'model3d' || mainWs === 'materials') {
     bar.innerHTML = `
-      ${baseCommon}
-      <div class="prop-sep"></div>
+      <div class="prop-row prop-row-measure"><span class="prop-row-caption">Konum & Ebat</span>${baseCommon}</div>
+      <div class="prop-row prop-row-details"><span class="prop-row-caption">Yapı & Işık</span>
       <div class="prop-field"><label for="numD">Derinlik (${u})</label><input id="numD" type="number" min="${show(1)}" step="any" value="${show(sel.depthMm ?? 80)}"></div>
       <div class="prop-field"><label for="pbFileW">File (${u})</label><input id="pbFileW" type="number" min="0" step="any" value="${show(sel.fileWidthMm ?? 5)}"></div>
       <div class="prop-field">
@@ -171,6 +171,7 @@ export function renderPropertyBar(state, ctx = {}) {
       </div>
       ${quickLightFields(light,sel.locked)}
       <button type="button" id="btnCenterOnPage" class="tb-btn" title="Sayfaya Ortala (P)">⌖ Ortala</button>
+      </div>
     `;
   } else if (sel.kind === 'text') {
     const fonts = ctx.fonts || [];
