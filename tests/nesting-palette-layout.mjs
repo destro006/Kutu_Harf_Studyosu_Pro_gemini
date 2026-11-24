@@ -42,6 +42,8 @@ assert.ok(card.includes('value="#abc123"'));
 assert.ok(card.includes('value="#123abc"'));
 assert.ok(card.includes('id="cwsNestStrategy"'));
 assert.ok(card.includes('Nesting v3 Pro'));
+assert.ok(!card.includes('cwsNestBudget'));
+assert.ok(!card.includes('Optimizasyon süresi'));
 assert.ok(!card.includes('Sol araç çubuğu: Seç, Taşı, Ölçek, Döndür.'));
 assert.ok(!card.includes('Delete yalnızca seçili nesting parçasını siler.'));
 assert.ok(card.includes('henüz hesaplanmadı'));
