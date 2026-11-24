@@ -135,6 +135,7 @@ export function renderNestingCenter(state, ctx) {
           <button type="button" id="cwsNestResetColors" class="sec-btn">Renkleri Sıfırla</button>
           <small>Bu renkler yalnızca nesting önizlemesidir; CNC, DXF ve SVG kesim konturları değişmez.</small>
         </div>
+        ${renderNestedCncPanel(state,activeSheet)}
         <h3 class="sec-title" style="margin-top:12px">Nesting Dışa Aktar</h3>
         <div style="display:flex;flex-direction:column;gap:6px">
           <button type="button" id="cwsExpSvg" class="sec-btn">Aktif Levhayı SVG İndir</button>
@@ -157,6 +158,49 @@ export function renderNestingCenter(state, ctx) {
   `;
 }
 
+function renderCncFields(state,prefix){
+ const cnc=state.cnc||{},unit=normalizeDisplayUnit(state.pageLayout?.displayUnit),show=mm=>formatMmAsUnit(mm,unit);
+ return `
+        <div class="field-row">
+          <label>Makine Profili</label>
+          <select id="${prefix}Profile">
+            ${MACHINE_PROFILES.map(p => `<option value="${p.id}" ${cnc.profile === p.id ? 'selected' : ''}>${p.label}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field-row"><label>Kesim Kerfi (${unit})</label><input id="${prefix}Kerf" type="number" step="${show(0.05)}" value="${show(cnc.kerfMm ?? 0.2)}"></div>
+        <div class="field-row"><label>Takım Çapı (${unit})</label><input id="${prefix}ToolDia" type="number" step="${show(0.5)}" value="${show(cnc.toolDiameterMm ?? 3.0)}"></div>
+        <div class="field-row">
+          <label>Takım Telafisi</label>
+          <select id="${prefix}Comp">
+            <option value="outside" ${cnc.compensation === 'outside' ? 'selected' : ''}>Dıştan Telafi (Outside)</option>
+            <option value="inside" ${cnc.compensation === 'inside' ? 'selected' : ''}>İçten Telafi (Inside)</option>
+            <option value="center" ${cnc.compensation === 'center' ? 'selected' : ''}>Merkez (On-Line)</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <label>Kesim Sırası</label>
+          <select id="${prefix}Seq">
+            <option value="hole_first" ${cnc.sequence !== 'outer_first' ? 'selected' : ''}>Önce İç Delikler (Önerilen)</option>
+            <option value="outer_first" ${cnc.sequence === 'outer_first' ? 'selected' : ''}>Önce Dış Kontur</option>
+          </select>
+        </div>
+        <div class="field-row"><label>Giriş / Çıkış (Lead-in/out ${unit})</label><input id="${prefix}LeadIn" type="number" step="${show(0.5)}" value="${show(cnc.leadInMm ?? 3)}"></div>
+        <div class="field-row"><label>Mikro Köprü (Micro-tabs)</label><input id="${prefix}Tabs" type="checkbox" ${cnc.microTabs ? 'checked' : ''}></div>
+        <div class="field-row"><label>Eğri Toleransı (${unit})</label><input id="${prefix}Tol" type="number" step="${show(0.05)}" value="${show(cnc.curveTolMm ?? 0.1)}"></div>
+`;
+}
+function renderNestedCncPanel(state,activeSheet){
+ const cnc=state.cnc||{},profile=MACHINE_PROFILES.find(p=>p.id===cnc.profile)||MACHINE_PROFILES[0];
+ const val=validateNestedProduction(activeSheet?[activeSheet]:[],cnc);
+ return `<div id="nestCncPanel">
+ <h3 class="sec-title" style="margin-top:14px">CNC Makine ve Ayarları</h3>
+ ${renderCncFields(state,'nestCnc')}
+ <div id="nestCncStatus" style="font-size:11px;margin:6px 0;color:var(--muted)">${val.valid?'Konturlar doğrulandı · aktif levha':escapeHtml(val.issues[0]?.msg||'Üretim kontrolü gerekli.')}
+ ${profile.kind==='gcode'?'<p>G-code taslağı: hız, güç ve Z değerleri sabittir; telafi, lead-in ve mikro köprüler CAM programında doğrulanıp uygulanmalıdır.</p>':''}</div>
+ <button type="button" id="nestCncExport" class="sec-btn" style="width:100%" ${val.valid?'':'disabled'}>Aktif Levha · ${profile.kind==='gcode'?'G-code Taslağı':profile.ext.toUpperCase()} İndir</button>
+ </div>`;
+}
+
 export function renderCncCenter(state) {
   const sheets = state.nesting?.sheets || [];
   const cnc = state.cnc || {};
@@ -167,32 +211,7 @@ export function renderCncCenter(state) {
     <div style="padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:1180px;margin:0 auto">
       <div class="sec">
         <h3 class="sec-title">CNC / Lazer Post-Processor Ayarları</h3>
-        <div class="field-row">
-          <label>Makine Profili</label>
-          <select id="cncProfile">
-            ${MACHINE_PROFILES.map(p => `<option value="${p.id}" ${cnc.profile === p.id ? 'selected' : ''}>${p.label}</option>`).join('')}
-          </select>
-        </div>
-        <div class="field-row"><label>Kesim Kerfi (${unit})</label><input id="cncKerf" type="number" step="${show(0.05)}" value="${show(cnc.kerfMm ?? 0.2)}"></div>
-        <div class="field-row"><label>Takım Çapı (${unit})</label><input id="cncToolDia" type="number" step="${show(0.5)}" value="${show(cnc.toolDiameterMm ?? 3.0)}"></div>
-        <div class="field-row">
-          <label>Takım Telafisi</label>
-          <select id="cncComp">
-            <option value="outside" ${cnc.compensation === 'outside' ? 'selected' : ''}>Dıştan Telafi (Outside)</option>
-            <option value="inside" ${cnc.compensation === 'inside' ? 'selected' : ''}>İçten Telafi (Inside)</option>
-            <option value="center" ${cnc.compensation === 'center' ? 'selected' : ''}>Merkez (On-Line)</option>
-          </select>
-        </div>
-        <div class="field-row">
-          <label>Kesim Sırası</label>
-          <select id="cncSeq">
-            <option value="hole_first" ${cnc.sequence !== 'outer_first' ? 'selected' : ''}>Önce İç Delikler (Önerilen)</option>
-            <option value="outer_first" ${cnc.sequence === 'outer_first' ? 'selected' : ''}>Önce Dış Kontur</option>
-          </select>
-        </div>
-        <div class="field-row"><label>Giriş / Çıkış (Lead-in/out ${unit})</label><input id="cncLeadIn" type="number" step="${show(0.5)}" value="${show(cnc.leadInMm ?? 3)}"></div>
-        <div class="field-row"><label>Mikro Köprü (Micro-tabs)</label><input id="cncTabs" type="checkbox" ${cnc.microTabs ? 'checked' : ''}></div>
-        <div class="field-row"><label>Eğri Toleransı (${unit})</label><input id="cncTol" type="number" step="${show(0.05)}" value="${show(cnc.curveTolMm ?? 0.1)}"></div>
+        ${renderCncFields(state,'cnc') }
       </div>
 
       <div class="sec">
