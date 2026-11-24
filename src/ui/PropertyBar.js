@@ -21,6 +21,31 @@ export function renderPropertyBar(state, ctx = {}) {
   const mainWs = state.mainWorkspace || 'model3d';
   const selObjs = (state.objects || []).filter(o => (state.selectedIds || []).includes(o.id));
   const sel = selObjs[0] || null;
+
+  // Preserve the actual DOM node of an open select or active numeric input.
+  // Replacing innerHTML on a scene update closes native menus, loses typed
+  // numbers and can swallow the click that was about to commit a selection.
+  const contextKey = [mainWs, ...selObjs.map(o => o.id), mainWs === 'nesting' ? (ctx.selectedPlacementId || '') : ''].join('|');
+  bar._refreshAfterFocus = ctx.onRefreshBar;
+  if (!bar._focusPreservationBound) {
+    bar._focusPreservationBound = true;
+    bar.addEventListener('focusout', () => {
+      setTimeout(() => {
+        if (bar.dataset.pendingRefresh === '1' && !bar.contains(document.activeElement)) {
+          bar.dataset.pendingRefresh = '0';
+          bar._refreshAfterFocus?.();
+        }
+      }, 0);
+    });
+  }
+  const activeControl = document.activeElement;
+  if (bar.dataset.lastContextKey === contextKey &&
+      bar.contains(activeControl) && /^(INPUT|SELECT|TEXTAREA)$/i.test(activeControl?.tagName || '')) {
+    bar.dataset.pendingRefresh = '1';
+    return;
+  }
+  bar.dataset.lastContextKey = contextKey;
+  bar.dataset.pendingRefresh = '0';
   const page = (state.pages || []).find(p => p.id === state.activePageId) || state.pages?.[0];
   const unit = normalizeDisplayUnit(state.pageLayout?.displayUnit);
   const u = displayUnitLabel(unit);

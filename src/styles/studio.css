@@ -1462,3 +1462,22 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 #nestingCenterWrap .nesting-import-caution {font-size:11px;color:#a5b1c3;line-height:1.6;margin:0}
 #nestingCenterWrap .nesting-source-metadata {padding:9px 10px;color:#c9b085;border:1px solid #665437;background:#2b2b29;border-radius:7px;font-size:11px;line-height:1.5;margin-bottom:10px}
 @media(max-width:700px){#nestingCenterWrap .nesting-import-controls {grid-template-columns:1fr} #nestingCenterWrap .nesting-import-mark {font-size:21px} #nestingCenterWrap .nesting-import-hero h2 {font-size:18px} #nestingCenterWrap .nesting-source-tabs-label {display:none} }
+
+/* Keep transform editing stable until explicitly closed; interactive inputs
+   must stay above the WebGL surface and retain native focus/dropdown UI. */
+#canvasTransformHud { pointer-events: auto; }
+#canvasTransformHud input, #canvasTransformHud select, #canvasTransformHud button {
+  pointer-events: auto;
+}
+#canvasTransformHud .hud-close-btn {
+  order: -1; flex: 0 0 auto; width: 22px; height: 22px; margin-right: 4px;
+  border: 1px solid rgba(245, 191, 113, .45); border-radius: 5px;
+  background: rgba(20, 26, 34, .8); color: #f3c18e;
+  cursor: pointer; display: grid; place-items: center; font-size: 12px;
+}
+#canvasTransformHud .hud-close-btn:hover { background:#51352c; color:#fff; }
+#numericPropBar :is(select,input):focus-visible,
+#workspaceContent :is(select,input,textarea):focus-visible,
+#floatingWindowsLayer :is(select,input,textarea):focus-visible {
+  outline: 2px solid #d2a363; outline-offset: 1px;
+}

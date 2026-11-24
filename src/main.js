@@ -397,6 +397,7 @@ function updateNumericBar(state) {
     onTool: (t) => activateTool(t),
     onAlign: (m) => mutate('Hizalama', s => alignSelectedObjects(s, m)),
     onDistribute: (ax) => mutate('Dağıtma', s => distributeSelectedObjects(s, ax)),
+    onRefreshBar: () => updateNumericBar(store.get()),
     onDisplayUnit: unit => {
       const safeUnit = normalizeDisplayUnit(unit);
       store.update(s => { s.pageLayout.displayUnit = safeUnit; });
@@ -779,6 +780,25 @@ function restoreWorkspaceToTab(wsId) {
 function renderFloatingWindows(state) {
   const layer = document.getElementById('floatingWindowsLayer');
   if (!layer) return;
+  const floatingKey = wsLayout.floating.map(f => f.id).join('|');
+  if (!layer._focusPreservationBound) {
+    layer._focusPreservationBound = true;
+    layer.addEventListener('focusout', () => setTimeout(() => {
+      if (layer.dataset.pendingRefresh === '1' && !layer.contains(document.activeElement)) {
+        layer.dataset.pendingRefresh = '0';
+        renderFloatingWindows(store.get());
+      }
+    }, 0));
+  }
+  const activeControl = document.activeElement;
+  if (layer.dataset.floatingKey === floatingKey &&
+      layer.contains(activeControl) &&
+      /^(INPUT|SELECT|TEXTAREA)$/i.test(activeControl?.tagName || '')) {
+    layer.dataset.pendingRefresh = '1';
+    return;
+  }
+  layer.dataset.floatingKey = floatingKey;
+  layer.dataset.pendingRefresh = '0';
   const activeFocused = document.activeElement?.id;
   layer.innerHTML = wsLayout.floating.map(fw => {
     const meta = WS_META.find(m => m.id === fw.id);
@@ -925,6 +945,30 @@ function renderActiveWorkspace() {
 
   const root = document.getElementById('workspaceContent');
   if (!root) return;
+  // Only rebuild the panel after a native input/select is committed or
+  // focus leaves it. Replacing DOM during pointerdown closes the dropdown.
+  const layoutKey = [ws, stackMode ? 'stack' : 'tabs',
+    wsLayout.floating.map(f => f.id).join(','),
+    JSON.stringify(wsLayout.dockedUnder)].join('|');
+  if (!root._focusPreservationBound) {
+    root._focusPreservationBound = true;
+    root.addEventListener('focusout', () => setTimeout(() => {
+      if (root.dataset.pendingRefresh === '1' && !root.contains(document.activeElement)) {
+        root.dataset.pendingRefresh = '0';
+        renderActiveWorkspace();
+      }
+    }, 0));
+  }
+  const activeControl = document.activeElement;
+  if (root.dataset.layoutKey === layoutKey &&
+      root.contains(activeControl) &&
+      /^(INPUT|SELECT|TEXTAREA)$/i.test(activeControl?.tagName || '')) {
+    root.dataset.pendingRefresh = '1';
+    return;
+  }
+  root.dataset.layoutKey = layoutKey;
+  root.dataset.pendingRefresh = '0';
+  const previousScroll = root.scrollTop;
 
   if (!stackMode) {
     const meta = WS_META.find(m => m.id === ws) || WS_META[0];
@@ -991,6 +1035,7 @@ function renderActiveWorkspace() {
     }
   }
 
+  root.scrollTop = previousScroll;
   renderFloatingWindows(state);
 }
 
@@ -1629,7 +1674,9 @@ function bindWorkspaceEvents(ws, root) {
     root.querySelectorAll('[data-ctype]').forEach(b => b.onclick = () => {
       mutate('Yapı tipi değiştirildi', s => {
         s.constructionType = b.dataset.ctype;
-        const ids = new Set(s.selectedIds || []);
+        // The inspector shows the first object when nothing is selected.
+        // Apply the change to that same object, not only to project defaults.
+        const ids = new Set((s.selectedIds || []).length ? s.selectedIds : [s.objects[0]?.id].filter(Boolean));
         for (const o of s.objects) {
           if (ids.has(o.id) && !o.locked) o.constructionType = b.dataset.ctype;
         }
@@ -2200,11 +2247,35 @@ function renderCanvasTransformHud(state) {
   if (!hud) return;
   if (!['design2d', 'model3d', 'materials'].includes(state.mainWorkspace || 'model3d')) { hud.classList.add('hidden'); return; }
   const tool = state.activeTool;
-  const sel = getSelectedOrFirst(state);
+  // The HUD belongs only to an explicitly selected object. Falling back to
+  // the first object caused its onFrame repositioner to hide it every frame.
+  const sel = state.objects.find(o => (state.selectedIds || []).includes(o.id));
   if (!sel || sel.locked) {
     hud.classList.add('hidden');
     return;
   }
+  const currentKey = tool + '|' + sel.id;
+  if (hud.dataset.dismissedKey === currentKey) {
+    hud.classList.add('hidden');
+    return;
+  }
+  if (!hud._focusPreservationBound) {
+    hud._focusPreservationBound = true;
+    hud.addEventListener('focusout', () => setTimeout(() => {
+      if (hud.dataset.pendingRefresh === '1' && !hud.contains(document.activeElement)) {
+        hud.dataset.pendingRefresh = '0';
+        renderCanvasTransformHud(store.get());
+      }
+    }, 0));
+  }
+  if (hud.dataset.hudTool === tool && hud.dataset.hudSel === sel.id &&
+      hud.contains(document.activeElement) &&
+      /^(INPUT|SELECT|TEXTAREA)$/i.test(document.activeElement?.tagName || '')) {
+    hud.dataset.pendingRefresh = '1';
+    positionCanvasTransformHud(state);
+    return;
+  }
+  hud.dataset.pendingRefresh = '0';
   if (!['select', 'scale', 'rotate', 'move'].includes(tool)) {
     const tips = {
       pan: '✋ Sahneyi sürükleyerek kaydırın • Çıkış: Esc',
@@ -2409,6 +2480,23 @@ function renderCanvasTransformHud(state) {
     });
   }
 
+  // Keep dismissal explicit; editing fields never closes the floating panel.
+  const header = hud.querySelector('.hud-head');
+  if (header) {
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.id = 'hudCloseBtn';
+    close.className = 'hud-close-btn';
+    close.title = 'Paneli kapat';
+    close.setAttribute('aria-label', 'Konum ve ebat panelini kapat');
+    close.textContent = '✕';
+    header.prepend(close);
+    close.onclick = e => {
+      e.stopPropagation();
+      hud.dataset.dismissedKey = currentKey;
+      hud.classList.add('hidden');
+    };
+  }
   hud.dataset.hudTool = tool;
   hud.dataset.hudSel = sel.id;
   hud.classList.remove('hidden');
