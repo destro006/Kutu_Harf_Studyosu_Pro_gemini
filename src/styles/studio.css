@@ -1481,3 +1481,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 #floatingWindowsLayer :is(select,input,textarea):focus-visible {
   outline: 2px solid #d2a363; outline-offset: 1px;
 }
+
+/* Background import progress and cancellation controls */
+.nesting-import-progress{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.nesting-import-progress .nesting-import-message{flex:1;min-width:200px;overflow-wrap:anywhere;}
+.nesting-import-cancel{border:1px solid #d77b7b;background:#653333;color:#fff;border-radius:7px;padding:9px 12px;cursor:pointer;}
+.nesting-import-cancel[hidden]{display:none!important;}
+.nesting-drop-busy{opacity:.6;cursor:progress!important;}

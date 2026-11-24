@@ -64,6 +64,8 @@ import { captureObjectClipboard, pasteObjectClipboard } from './core/ObjectClipb
 import { calculateManufacturingMetrics } from './manufacturing/MetricsCalculator.js';
 import { SHEET_PRESETS, extractNestingItems, runTrueShapeNesting, validateSheetLayout } from './manufacturing/NestingEngine.js';
 import { importVectorText } from './manufacturing/VectorFileImport.js';
+import { importPdfFile } from './manufacturing/PdfVectorImport.js';
+import { runVectorImportJob } from './manufacturing/AsyncVectorImport.js';
 import {
   createNestingImportedTab, getActiveNestingImportedItems, openNestingImportTab,
   switchNestingTab, closeNestingImportedTab, syncActiveNestingTab,
@@ -2721,44 +2723,85 @@ function openNestingVectorImport(openPicker = false) {
   if (openPicker) document.getElementById('nestVectorFileInput')?.click();
 }
 
+let currentNestingImportController = null;
 async function importNestingVectorFiles(fileList, root) {
   const files = Array.from(fileList || []);
   if (!files.length) return;
+  const status = root.querySelector('#nestImportMessage');
+  const cancel = root.querySelector('#nestImportCancel');
+  const picker = root.querySelector('#nestVectorFileInput');
+  const zone = root.querySelector('#nestVectorDropZone');
+  const say = message => { if (status) status.textContent = message; };
+  if (currentNestingImportController) {say('Mevcut içe aktarmayı tamamlayın veya iptal edin.');return;}
   const unit = root.querySelector('#nestImportUnit')?.value || 'auto';
   const scale = Number(root.querySelector('#nestImportScale')?.value || 1);
   const tolerance = Number(root.querySelector('#nestImportTolerance')?.value || 1);
-  const status = root.querySelector('#nestImportMessage');
-  let success = 0, failures = [];
-  if (!(scale > 0 && scale <= 1000)) {
-    if (status) status.textContent='Ölçek 0 ile 1000 arasında olmalıdır.';
-    return;
-  }
-  for (const file of files) {
-    try {
-      if (file.size > 12 * 1024 * 1024) throw new Error('Dosya 12 MB sınırını aşıyor.');
-      const content = await file.text();
-      const imported = importVectorText(content, file.name, {unit, scale, tolerance});
-      mutate('Vektör Nesting dosyası: ' + file.name, state => {
-        createNestingImportedTab(state.nesting, imported);
-      }, false);
-      runAutoNesting();
-      success++;
-    } catch (err) {
-      failures.push(file.name+': '+(err?.message||'Dosya okunamadı'));
+  if (!(scale > 0 && scale <= 1000) || !(tolerance > 0)) {say('Ölçek veya hassasiyet geçersiz.');return;}
+  const controller = new AbortController();
+  currentNestingImportController=controller;
+  if(cancel)cancel.hidden=false;
+  if(picker)picker.disabled=true;
+  zone?.classList.add('nesting-drop-busy');
+  const ready=[],errors=[];
+  try {
+    for (let j=0;j<files.length;j++){
+      if(controller.signal.aborted)break;
+      const file=files[j],ext=file.name.toLowerCase().split('.').pop();
+      say((j+1)+'/'+files.length+' · '+file.name+' okunuyor…');
+      try {
+        let job,filename=file.name;
+        const options={unit,scale,tolerance},nesting={...store.get().nesting};
+        if(ext==='pdf'||(ext==='ai'&&(await file.slice(0,12).text()).startsWith('%PDF-'))){
+          const output=await importPdfFile(file,options,text=>say(file.name+': '+text));
+          if(controller.signal.aborted)break;
+          job={jobId:j,operation:'importPdfRings',rings:output.rings,warnings:output.warnings,
+               filename:file.name,options,nesting};
+        }else{
+          let text;
+          if(ext==='svgz'){
+            if(typeof DecompressionStream!=='function')throw Error('Bu tarayıcı yerel SVGZ gzip açma desteğine sahip değil.');
+            text=await new Response(file.stream().pipeThrough(new DecompressionStream('gzip'))).text();
+            filename=filename.replace(/\.svgz$/i,'.svg');
+          }else text=await file.text();
+          if(controller.signal.aborted)break;
+          job={jobId:j,operation:'importText',text,filename,options,nesting};
+        }
+        const output=await runVectorImportJob(job,{
+          signal:controller.signal,onStatus:msg=>say(file.name+': '+msg)});
+        ready.push(output);
+        say(file.name+': '+output.imported.items.length+' parça çözümlendi; levha yerleşimi hazır.');
+        await new Promise(resolve=>setTimeout(resolve,0));
+      }catch(error){
+        if(controller.signal.aborted)break;
+        errors.push(file.name+': '+(error?.message||'İçe aktarılamadı'));
+      }
     }
-  }
-  if (success) {
-    setMainWorkspace('nesting');
-    updateCenterWorkspaces(store.get());
-  }
-  if (failures.length) {
-    const message=failures.join(' · ').slice(0,800);
-    const hint = document.getElementById('nestImportMessage');
-    if (hint) hint.textContent=message;
-    else {
+    // Preserve the entire import picker and native controls until all CPU-heavy
+    // worker calculations have completed; commit tabs in one state transaction.
+    if(ready.length){
+      mutate('Nesting vektör içe aktarımı ('+ready.length+' dosya)',state=>{
+        for(const job of ready){
+          switchNestingTab(state.nesting,'import');
+          createNestingImportedTab(state.nesting,job.imported);
+          state.nesting.sheets=job.nesting.sheets;
+          state.nesting.unplaced=job.nesting.unplaced;
+          syncActiveNestingTab(state.nesting);
+        }
+      },false);
+      activeSheetIdx=0;selectedNestingId=null;
+      setMainWorkspace('nesting');
+      updateCenterWorkspaces(store.get());
+    }
+    if(errors.length||controller.signal.aborted){
       const warning=document.getElementById('stageWarning');
-      if (warning) {warning.textContent=message;warning.classList.remove('hidden');}
-    }
+      if(warning){warning.textContent=(controller.signal.aborted?'İşlem iptal edildi. ':'')+errors.join(' · ').slice(0,800);warning.classList.remove('hidden');}
+      else say(errors.join(' · '));
+    }else if(!ready.length)say('İçe aktarılacak kapalı kontur bulunamadı.');
+  }finally{
+    currentNestingImportController=null;
+    if(cancel)cancel.hidden=true;
+    if(picker){picker.disabled=false;picker.value='';}
+    zone?.classList.remove('nesting-drop-busy');
   }
 }
 
@@ -2776,6 +2819,7 @@ function bindNestingCenterEvents(root) {
   });
   root.querySelector('[data-nest-import]')?.addEventListener('click',() => openNestingVectorImport(true));
   root.querySelector('#nestVectorFileInput')?.addEventListener('change', e => importNestingVectorFiles(e.target.files, root));
+  root.querySelector('#nestImportCancel')?.addEventListener('click', () => currentNestingImportController?.abort());
   const dropZone=root.querySelector('#nestVectorDropZone');
   if (dropZone) {
     dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('nesting-drop-hover');});

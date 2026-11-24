@@ -4,16 +4,17 @@
  */
 export const VECTOR_INPUT_FORMATS=[
  {id:'svg',ext:'.svg',label:'SVG · Gerçek vektör',ready:true},
+ {id:'pdf',ext:'.pdf',label:'PDF · Yerel PDF.js vektör konturları',ready:true},
  {id:'dxf',ext:'.dxf',label:'AutoCAD DXF · Kesim konturları',ready:true},
  {id:'plt',ext:'.plt',label:'HPGL/PLT · Plotter konturları',ready:true},
  {id:'hpgl',ext:'.hpgl',label:'HPGL · Plotter konturları',ready:true},
- ...['pdf','eps','ps','ai','cdr','dwg','wmf','emf','cgm','cmx','svgz','afdesign','sketch'].map(id=>({id,ext:'.'+id,label:id.toUpperCase()+' · Harici dönüştürme gerekli',ready:false})),
+ ...['eps','ps','ai','cdr','dwg','wmf','emf','cgm','cmx','svgz','afdesign','sketch'].map(id=>({id,ext:'.'+id,label:id.toUpperCase()+' · Harici dönüştürme gerekli',ready:false})),
 ];
 const D=1e-9;
 const round=v=>Math.round(v*1000)/1000;
 const signedArea=ring=>ring.reduce((s,p,i)=>{const q=ring[(i+1)%ring.length];return s+p.x*q.y-q.x*p.y},0)/2;
 const inside=(p,ring)=>{let value=false;for(let i=0,j=ring.length-1;i<ring.length;j=i++){const a=ring[i],b=ring[j];if((a.y>p.y)!==(b.y>p.y)&&p.x<(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x)value=!value;}return value};
-const bounds=ring=>({minX:Math.min(...ring.map(p=>p.x)),minY:Math.min(...ring.map(p=>p.y)),maxX:Math.max(...ring.map(p=>p.x)),maxY:Math.max(...ring.map(p=>p.y))});
+const bounds=ring=>{let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;for(const p of ring){if(p.x<minX)minX=p.x;if(p.y<minY)minY=p.y;if(p.x>maxX)maxX=p.x;if(p.y>maxY)maxY=p.y;}return {minX,minY,maxX,maxY};};
 const clean=ring=>{let out=[];for(const p of ring){if(!Number.isFinite(p.x)||!Number.isFinite(p.y))throw Error('Vektör koordinatı geçersiz.');if(!out.length||Math.hypot(p.x-out.at(-1).x,p.y-out.at(-1).y)>1e-5)out.push({x:p.x,y:p.y});}if(out.length>1&&Math.hypot(out[0].x-out.at(-1).x,out[0].y-out.at(-1).y)<1e-4)out.pop();return out};
 const matMul=(a,b)=>[a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],a[0]*b[4]+a[2]*b[5]+a[4],a[1]*b[4]+a[3]*b[5]+a[5]];
 const apply=(m,p)=>({x:m[0]*p.x+m[2]*p.y+m[4],y:m[1]*p.x+m[3]*p.y+m[5]});
@@ -58,7 +59,7 @@ export function svgPathRings(d, tolerance=1.5) {
  const point=(x,y,rel)=>({x:x+(rel?curr.x:0),y:y+(rel?curr.y:0)});
  const endRing=()=>{const cleaned=clean(pts);if(cleaned.length>=3&&Math.abs(signedArea(cleaned))>0.0001)rings.push(cleaned);pts=[]};
  const push=p=>{pts.push(p);curr=p};
- while(i<tokens.length){if(++guard>100000)throw Error('SVG path çok karmaşık.');if(isCmd(tokens[i]))cmd=tokens[i++];if(!cmd)throw Error('SVG path komutu bulunamadı.');
+ while(i<tokens.length){if(++guard>5000000)throw Error('SVG path birincil kontur başına çok karmaşık; dosyayı daha küçük üretim parçalara ayırın.');if(isCmd(tokens[i]))cmd=tokens[i++];if(!cmd)throw Error('SVG path komutu bulunamadı.');
  const lower=cmd.toLowerCase(),rel=cmd!==cmd.toUpperCase();
  if(lower==='z'){if(pts.length)endRing();curr={...start};prevC=prevQ=null;prevCmd='z';cmd='';continue;}
  if(lower==='m'){const [x,y]=nums(2);const p=point(x,y,rel);if(pts.length)pts=[];push(p);start=p;cmd=rel?'l':'L';prevC=prevQ=null;prevCmd='m';continue;}
@@ -74,20 +75,41 @@ export function svgPathRings(d, tolerance=1.5) {
 }
 const svgNums=s=>[...(s||'').matchAll(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g)].map(x=>+x[0]);
 function svgLength(v){if(!v)return null;const m=String(v).trim().match(/^([-+]?(?:\d+(?:\.\d*)?|\.\d+))(mm|cm|m|in|pt|pc|px)?$/i);if(!m)return null;const k={mm:1,cm:10,m:1000,in:25.4,pt:25.4/72,pc:25.4/6,px:25.4/96};return Number(m[1])*(k[m[2]?.toLowerCase()||'px']);}
-function groupRings(input,fileName,format,unitFactor,warnings=[]){
+export function groupRings(input,fileName,format,unitFactor,warnings=[]){
  const valid=input.map((ring)=>clean(ring)).filter(r=>r.length>=3&&Math.abs(signedArea(r))>0.001);
  if(!valid.length)throw Error('İçe aktarılan dosyada kapalı vektör kesim konturu bulunamadı. Açık çizgileri CorelDRAW’da kapatıp SVG/DXF olarak dışa aktarın.');
- if(valid.length>10000)throw Error('Dosyada çok fazla kesim konturu var (en fazla 10000).');
+ if(valid.length>10000)warnings.push('Büyük iş: '+valid.length+' kontur analiz ediliyor; optimizasyon cihazınıza bağlı olarak uzun sürebilir.');
  const scaled=valid.map(r=>r.map(p=>({x:p.x*unitFactor,y:p.y*unitFactor})));
- const candidates=scaled.map((r,i)=>({ring:r,index:i,area:Math.abs(signedArea(r)),parent:null,depth:0})).sort((a,b)=>b.area-a.area);
- for(let i=0;i<candidates.length;i++)for(let j=0;j<i;j++){
-   const inner=candidates[i],outer=candidates[j];if(inside(inner.ring[0],outer.ring)){
-     if(inner.parent==null||outer.area<inner.parent.area)inner.parent=outer;
+ const candidates=scaled.map((r,i)=>({ring:r,index:i,area:Math.abs(signedArea(r)),bbox:bounds(r),parent:null,depth:0})).sort((a,b)=>b.area-a.area);
+ // Spatially indexed containment: ordinary CAD files contain thousands of
+ // unrelated paths; comparing every path against every other path is O(N²).
+ const allBounds={minX:Infinity,minY:Infinity,maxX:-Infinity,maxY:-Infinity};
+ for(const c of candidates){const b=c.bbox;allBounds.minX=Math.min(allBounds.minX,b.minX);allBounds.minY=Math.min(allBounds.minY,b.minY);allBounds.maxX=Math.max(allBounds.maxX,b.maxX);allBounds.maxY=Math.max(allBounds.maxY,b.maxY);}
+ const cells=Math.min(48,Math.max(4,Math.ceil(Math.sqrt(candidates.length)/2)));
+ const stepX=Math.max(1e-6,(allBounds.maxX-allBounds.minX)/cells),stepY=Math.max(1e-6,(allBounds.maxY-allBounds.minY)/cells);
+ const index=new Map(),broad=[];
+ const gridX=x=>Math.max(0,Math.min(cells-1,Math.floor((x-allBounds.minX)/stepX)));
+ const gridY=y=>Math.max(0,Math.min(cells-1,Math.floor((y-allBounds.minY)/stepY)));
+ for(const c of candidates){
+   const bx=gridX(c.ring[0].x),by=gridY(c.ring[0].y);
+   const possible=[...(index.get(by*cells+bx)||[]),...broad];
+   for(const outer of possible){
+     const a=outer.bbox,b=c.bbox;
+     if(outer.area<=c.area||a.minX>b.minX+1e-5||a.minY>b.minY+1e-5||a.maxX<b.maxX-1e-5||a.maxY<b.maxY-1e-5)continue;
+     if(c.parent&&outer.area>=c.parent.area)continue;
+     if(inside(c.ring[0],outer.ring))c.parent=outer;
+   }
+   c.depth=c.parent?c.parent.depth+1:0;
+   const x0=gridX(c.bbox.minX),x1=gridX(c.bbox.maxX),y0=gridY(c.bbox.minY),y1=gridY(c.bbox.maxY);
+   if((x1-x0+1)*(y1-y0+1)>512){broad.push(c);continue;}
+   for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+     const key=y*cells+x;
+     if(!index.has(key))index.set(key,[]);
+     index.get(key).push(c);
    }
  }
- for(const c of candidates)c.depth=c.parent?c.parent.depth+1:0;
  const root=candidates.filter(x=>x.depth%2===0);
- const items=[];const offsets={minX:Math.min(...scaled.flat().map(p=>p.x)),minY:Math.min(...scaled.flat().map(p=>p.y))};
+ const items=[];
  for(const c of root){const holes=candidates.filter(x=>x.parent===c && x.depth===c.depth+1).map(h=>h.ring);
   const b=bounds(c.ring),shift=p=>({x:round(p.x-b.minX),y:round(p.y-b.minY)});
   const outer=c.ring.map(shift),hh=holes.map(h=>h.map(shift));
@@ -95,11 +117,52 @@ function groupRings(input,fileName,format,unitFactor,warnings=[]){
   items.push({id:'import_'+items.length,projectId:'external',projectName:fileName,parentId:'external',label:fileName.replace(/\.[^.]+$/,'')+' · Parça '+(items.length+1),partType:'Gövde',operation:'CUT_OUTER',material:'İçe Aktarılan Vektör',thicknessMm:1,materialGroup:'İçe Aktarılan Vektör · 1 mm',outer,holes:hh,areaMm2:Math.max(0,area),locked:false});
  }
  if(valid.length!==root.length)warnings.push((valid.length-root.length)+' iç kontur/delik geometrik olarak eşleştirildi.');
- const b=bounds(scaled.flat());return {filename:fileName,format,items,contourCount:valid.length,widthMm:round(b.maxX-b.minX),heightMm:round(b.maxY-b.minY),warnings};
+ const b=allBounds;return {filename:fileName,format,items,contourCount:valid.length,widthMm:round(b.maxX-b.minX),heightMm:round(b.maxY-b.minY),warnings};
+}
+
+/** Worker-safe strict SVG tag reader (DOMParser is not available in Web Workers).
+ * Only geometry and transforms are accepted; scripts/external references are rejected.
+ */
+function parseSvgXmlInWorker(xml){
+ if(/<!DOCTYPE|<!ENTITY|<\?xml-stylesheet/i.test(xml))throw Error('SVG içindeki DTD/harici varlıklar güvenlik nedeniyle engellendi.');
+ let root=null,stack=[],total=0;
+ const tags=xml.matchAll(/<(?:"[^"]*"|'[^']*'|[^'">])*>/g);
+ for(const match of tags){
+   const token=match[0];
+   if(token.startsWith('<!--')||token.startsWith('<?')||token.startsWith('<!'))continue;
+   if(token.startsWith('</')){
+     const name=token.slice(2).split(/[\s>]/)[0].toLowerCase().split(':').pop();
+     const last=stack.pop();
+     if(!last||last.localName!==name)throw Error('SVG XML kapanış etiketi bozuk: '+name);
+     continue;
+   }
+   const nameMatch=token.match(/^<([A-Za-z_][\w:.-]*)\b/);
+   if(!nameMatch)continue;
+   const tag=nameMatch[1].toLowerCase().split(':').pop();
+   const attrs={};
+   const body=token.slice(nameMatch[0].length,token.length-1);
+   const attrPattern=/([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+   let v;
+   while((v=attrPattern.exec(body)))attrs[v[1]]=String(v[2]??v[3]).replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
+   const node={localName:tag,children:[],getAttribute(key){return attrs[key]??null;}};
+   if(!root)root=node;
+   if(stack.length)stack.at(-1).children.push(node);
+   if(!/\/\s*>$/.test(token))stack.push(node);
+   if(++total>1000000)throw Error('SVG 1 milyon öğeyi aşıyor; işlenecek konturları ayırın.');
+ }
+ if(stack.length)throw Error('SVG XML kapatılmamış öğeler içeriyor.');
+ if(root?.localName!=='svg')throw Error('Geçerli SVG kök elementi bulunamadı.');
+ const forbidden=new Set(['script','foreignobject','image','use','iframe','animation','animate','set']);
+ function querySelector(selectors){
+   const patterns=new Set(selectors.toLowerCase().split(',').map(s=>s.trim()));
+   const pending=[root];while(pending.length){const a=pending.pop();if(patterns.has(a.localName))return a;pending.push(...a.children);}
+   return null;
+ }
+ for(const tag of forbidden)if(querySelector(tag))throw Error('SVG harici referans/çalışan içerik içeriyor: '+tag+'. Tüm öğeleri eğriye dönüştürün.');
+ return {documentElement:root,querySelector};
 }
 export function importSvgText(text,filename='vektor.svg', options={}){
- if(!globalThis.DOMParser)throw Error('SVG içe aktarımı tarayıcı DOM ayrıştırıcısı gerektiriyor.');
- const doc=new DOMParser().parseFromString(text,'image/svg+xml');
+ const doc=typeof globalThis.DOMParser==='function'?new DOMParser().parseFromString(text,'image/svg+xml'):parseSvgXmlInWorker(text);
  if(doc.querySelector('parsererror'))throw Error('SVG XML dosyası bozuk.');
  const svg=doc.documentElement;if(svg.localName!=='svg')throw Error('Geçerli SVG kök elementi bulunamadı.');
  const forbidden=doc.querySelector('script, foreignObject, image, use, iframe, animation, animate, set');
@@ -197,7 +260,8 @@ export function importVectorText(text,filename,options={}){
  const meta=VECTOR_INPUT_FORMATS.find(x=>x.id===ext);
  if(!meta)throw Error('Desteklenmeyen uzantı: '+ext+'. SVG, DXF veya HPGL/PLT kullanın.');
  if(!meta.ready)throw Error(ext.toUpperCase()+' dosyasını doğrudan okumak için güvenilir dönüştürücü gerekiyor. CorelDRAW/Illustrator/AutoCAD içinden vektörleri SVG veya ASCII DXF biçiminde dışa aktarıp içe aktarın. Dosyanın uzantısını değiştirmek yeterli değildir.');
- if(text.length>12*1024*1024)throw Error('Dosya 12 MB sınırını aşıyor.');
+ // No arbitrary file-byte limit: conversion runs in a cancellable worker.
+ if(ext==='pdf')throw Error('PDF dosyası binary olarak yerel PDF.js motoruyla açılmalıdır.');
  if(ext==='svg')return importSvgText(text,filename,options);
  if(ext==='dxf')return importDxfText(text,filename,options);
  return importHpglText(text,filename,options);
