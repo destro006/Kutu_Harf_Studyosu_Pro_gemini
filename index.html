@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Kutu Harf Stüdyosu — Profesyonel 3D Tabela CAD/CAM &amp; İmalat Stüdyosu</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Crect x='9' y='7' width='14' height='18' rx='3' fill='%23ffb547'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./src/styles/studio.css?v=pro3-multi4">
+  <link rel="stylesheet" href="./src/styles/studio.css?v=toolbar5">
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -42,11 +42,6 @@
     <div class="doc-tabs-bar" id="documentTabsBar" aria-label="Üstte açık proje sekmeleri">
       <button type="button" id="btnNewDocTab" class="doc-new-tab-btn" title="Yeni proje sekmesi oluştur (Ctrl+N)" aria-label="Yeni Sekme">＋ <span>Yeni Sekme</span></button>
       <div id="documentTabsList" class="doc-tabs-list" role="tablist" aria-label="Açık proje sekmeleri"></div>
-      <div class="doc-tab-actions" aria-label="Sekmeler arası nesne aktarımı">
-        <span id="docClipboardStatus" class="doc-clipboard-status" aria-live="polite" title="Sekmeler arası kopyalanan nesneler">Sekmeler arasında nesne taşı</span>
-        <button type="button" id="btnCopyBetweenTabs" class="tb-btn" title="Seçili nesneleri kopyala (Ctrl+C)">⧉ Kopyala</button>
-        <button type="button" id="btnPasteBetweenTabs" class="tb-btn accent-outline" title="Aktif proje sekmesine yapıştır (Ctrl+V)">↳ Yapıştır</button>
-      </div>
     </div>
 
     <!-- REGION 3: Main Workspace Navigation (6 Workspaces for Active Document) -->
@@ -60,14 +55,6 @@
         <button type="button" data-main-ws="cost">₺ Maliyet ve Teklif</button>
       </div>
       <div class="ws-nav-actions">
-        <select id="qualitySelect" class="tb-select" aria-label="Görüntü kalitesi">
-          <option value="performance">Performans</option>
-          <option value="balanced">Dengeli</option>
-          <option value="high" selected>Yüksek Kalite</option>
-          <option value="ultra">Ultra / Sunum</option>
-        </select>
-        <span id="qualityStatus" class="quality-status" title="3D görüntüleme çözünürlüğü">3D kalite: Yüksek</span>
-        <button id="btnOpenExport" class="tb-btn export-open-btn" type="button" title="Dışa Aktar (Ctrl+E)">⇧ Dışa Aktar <kbd>Ctrl+E</kbd></button>
         <div id="legacyExportActions" hidden>
           <button id="btnExportPng" type="button">PNG</button>
           <button id="btnExportTransparentPng" type="button">Şeffaf PNG</button>
@@ -124,7 +111,19 @@
       <!-- REGION 5: Central Viewport & Context-Sensitive Property Bar -->
       <main class="viewport-col">
         <!-- Context-Sensitive Property Bar -->
+        <div class="numeric-toolbar-row">
         <div class="prop-bar" id="numericPropBar" aria-label="Bağlamsal Özellik Çubuğu"></div>
+          <div id="propertyFileActions" class="property-file-actions" aria-label="Performans ve dosya işlemleri">
+        <select id="qualitySelect" class="tb-select" aria-label="Görüntü kalitesi">
+          <option value="performance">Performans</option>
+          <option value="balanced">Dengeli</option>
+          <option value="high" selected>Yüksek Kalite</option>
+          <option value="ultra">Ultra / Sunum</option>
+        </select>
+        <button id="btnOpenExport" class="tb-btn export-open-btn" type="button" title="Dışa Aktar (Ctrl+E)">⇧ Dışa Aktar <kbd>Ctrl+E</kbd></button>
+            <button id="btnOpenImport" class="tb-btn import-open-btn" type="button" title="İçe Aktar (Ctrl+I)">⇩ İçe Aktar <kbd>Ctrl+I</kbd></button>
+          </div>
+        </div>
         <div id="studioRibbon" class="studio-ribbon">
           <nav id="ribbonCategories" class="ribbon-categories" aria-label="Üst araç kategorileri">
             <button type="button" data-ribbon="properties">Metin &amp; Yapı ⌄</button>
@@ -321,6 +320,6 @@
 
   <div id="floatingWindowsLayer" class="floating-windows-layer"></div>
   <script defer src="./public/vendor/pdfjs/pdf.min.js"></script>
-  <script type="module" src="./src/main.js?v=20261124-pro3-multi4"></script>
+  <script type="module" src="./src/main.js?v=20261124-toolbar5"></script>
 </body>
 </html>
