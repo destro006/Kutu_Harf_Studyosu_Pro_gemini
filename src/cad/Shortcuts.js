@@ -30,7 +30,7 @@ export const SHORTCUT_GROUPS = [
       { keys: 'Ctrl + Q', label: 'Eğriye Çevir (Convert to Curves)' },
       { keys: 'Ctrl + K', label: 'Harflere / Parçalara Ayır (Break Apart)' },
       { keys: 'Ctrl + L', label: 'Bileşik Yol Yap (Combine)' },
-      { keys: 'Ctrl + I', label: 'Logo / SVG İçe Aktar' },
+      { keys: 'Ctrl + I', label: 'İçe Aktar (Aktif Çalışma Alanı)' },
     ],
   },
   {
@@ -93,6 +93,7 @@ export function attachShortcuts(handlers) {
       if (ctrl && key === 'y') { e.preventDefault(); handlers.onRedo?.(); return; }
       if (ctrl && key === 's') { e.preventDefault(); handlers.onSave?.(); return; }
       if (ctrl && key === 'e') { e.preventDefault(); handlers.onExport?.(); return; }
+      if (ctrl && key === 'i') { e.preventDefault(); handlers.onImport?.(); return; }
     }
 
     // Never intercept single-key tools or Delete while typing in any input/select
@@ -116,7 +117,6 @@ export function attachShortcuts(handlers) {
     if (ctrl && key === 'k') { e.preventDefault(); handlers.onBreakApart?.(); return; }
     if (ctrl && key === 'l') { e.preventDefault(); handlers.onCombine?.(); return; }
     if (ctrl && key === 'n') { e.preventDefault(); handlers.onNewDoc?.(); return; }
-    if (ctrl && key === 'i') { e.preventDefault(); handlers.onTool?.('logo'); return; }
     if (ctrl && key === 'd') { e.preventDefault(); handlers.onDuplicate?.(); return; }
     if (ctrl && key === 'c') { e.preventDefault(); handlers.onCopy?.(); return; }
     if (ctrl && key === 'x') { e.preventDefault(); handlers.onCut?.(); return; }
