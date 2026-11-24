@@ -53,6 +53,7 @@ export function renderPropertyBar(state, ctx = {}) {
     return;
   }
   bar.dataset.lastContextKey = contextKey;
+  bar.classList?.toggle("compact-property-line",["model3d","materials","design2d"].includes(mainWs));
   bar.dataset.pendingRefresh = '0';
   const page = (state.pages || []).find(p => p.id === state.activePageId) || state.pages?.[0];
   const unit = normalizeDisplayUnit(state.pageLayout?.displayUnit);
@@ -157,8 +158,8 @@ export function renderPropertyBar(state, ctx = {}) {
 
   if (mainWs === 'model3d' || mainWs === 'materials') {
     bar.innerHTML = `
-      <div class="prop-row prop-row-measure"><span class="prop-row-caption">Konum & Ebat</span>${baseCommon}</div>
-      <div class="prop-row prop-row-details"><span class="prop-row-caption">Yapı & Işık</span>
+      ${baseCommon}
+      <div class="prop-sep" aria-hidden="true"></div>
       <div class="prop-field"><label for="numD">Derinlik (${u})</label><input id="numD" type="number" min="${show(1)}" step="any" value="${show(sel.depthMm ?? 80)}"></div>
       <div class="prop-field"><label for="pbFileW">File (${u})</label><input id="pbFileW" type="number" min="0" step="any" value="${show(sel.fileWidthMm ?? 5)}"></div>
       <div class="prop-field">
@@ -171,7 +172,6 @@ export function renderPropertyBar(state, ctx = {}) {
       </div>
       ${quickLightFields(light,sel.locked)}
       <button type="button" id="btnCenterOnPage" class="tb-btn" title="Sayfaya Ortala (P)">⌖ Ortala</button>
-      </div>
     `;
   } else if (sel.kind === 'text') {
     const fonts = ctx.fonts || [];

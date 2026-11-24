@@ -1525,3 +1525,23 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 @media(max-width:850px){.ribbon-panel-content{grid-template-columns:1fr}.prop-row-caption{flex-basis:100%}.ribbon-panel{max-height:50vh}.ribbon-categories button{font-size:11px;padding:4px 6px}}
 
 .ribbon-panel-content{grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr))}
+
+/* Exactly two tool strips in design: numeric/context controls + category ribbon.
+   Compact controls stay accessible on smaller screens via horizontal scrolling,
+   rather than creating a third line or shrinking hit targets. */
+#numericPropBar.compact-property-line{flex-wrap:nowrap;align-items:center;gap:4px 6px;padding:5px 7px;min-height:34px;overflow-x:auto;overflow-y:hidden;white-space:nowrap;scrollbar-width:thin}
+#numericPropBar.compact-property-line>*{flex-shrink:0}
+#numericPropBar.compact-property-line .prop-field{gap:3px}
+#numericPropBar.compact-property-line .prop-field label{font-size:10px}
+#numericPropBar.compact-property-line .prop-field input[id^="num"]{width:65px;min-width:0}
+#numericPropBar.compact-property-line #numX,#numericPropBar.compact-property-line #numY,#numericPropBar.compact-property-line #numScale,#numericPropBar.compact-property-line #numRot{width:47px}
+#numericPropBar.compact-property-line #pbFileW{width:48px}
+#numericPropBar.compact-property-line #pbDisplayUnit{max-width:100px}
+#numericPropBar.compact-property-line #pbCtype{max-width:135px}
+#numericPropBar.compact-property-line #pbLmode{max-width:120px}
+#studioRibbon{flex-wrap:nowrap;min-height:35px}
+#studioRibbon .ribbon-categories{flex:0 1 auto;min-width:0;flex-wrap:nowrap;white-space:nowrap;overflow-x:auto;scrollbar-width:thin;padding:4px 7px}
+#studioRibbon .ribbon-categories button{flex-shrink:0;padding:4px 7px;font-size:11px}
+#studioRibbon .inspector-quick-colors{flex:1 1 245px;min-width:120px;max-width:360px;flex-wrap:nowrap;white-space:nowrap;padding:3px 6px}
+#studioRibbon .quick-palette-swatches{min-width:0;flex:1 1 auto}
+@media(max-width:720px){#studioRibbon .inspector-quick-colors{flex-basis:105px;min-width:90px}#studioRibbon .quick-palette-label{display:none}}
