@@ -29,7 +29,8 @@ const js=entries.find(x=>x==='libredwg-web.js'),wasm=entries.find(x=>x==='libred
 if(!js||!wasm)throw Error('LibreDWG npm package does not contain the expected runtime assets.');
 await fs.copyFile(path.join(wasmDir,js),path.join(out,'libredwg-web.js'));
 await fs.copyFile(path.join(wasmDir,wasm),path.join(out,'libredwg-web.wasm'));
-await fs.copyFile(path.join(node,'dist/libredwg-web.js'),path.join(out,'libredwg-api.js'));
+const dwgApi=await fs.readFile(path.join(node,'dist/libredwg-web.js'),'utf8');
+await fs.writeFile(path.join(out,'libredwg-api.js'),dwgApi.replaceAll('../wasm/libredwg-web.js','./libredwg-web.js'));
 const gsRoot=path.join(root,'node_modules/@wasmedia/wghostscript'),gsOut=path.join(out,'ghostscript');
 await fs.cp(gsRoot,gsOut,{recursive:true});
 const gsEntry=fileURLToPath(import.meta.resolve('@wasmedia/wghostscript'));
