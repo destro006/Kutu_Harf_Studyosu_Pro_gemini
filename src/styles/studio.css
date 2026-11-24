@@ -1573,3 +1573,15 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .nesting-part-delete:hover:not(:disabled) {color:var(--danger);background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.3);}
 .nesting-part-delete:disabled {opacity:.35;cursor:not-allowed;}
 #nestingSelectedCount {color:var(--accent);font-size:11px;white-space:nowrap;}
+
+/* Static file actions aligned with the contextual Ortala property toolbar. */
+.numeric-toolbar-row{display:flex;align-items:stretch;min-width:0;flex-shrink:0;background:#141b25;border-bottom:1px solid #35404c;}
+.numeric-toolbar-row>#numericPropBar{flex:1 1 auto;min-width:0;border-bottom:0;overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;white-space:nowrap;}
+.numeric-toolbar-row>#numericPropBar>*{flex-shrink:0;}
+.property-file-actions{display:flex;align-items:center;justify-content:flex-end;flex:0 0 auto;gap:5px;padding:4px 7px;border-left:1px solid #35404c;white-space:nowrap;}
+.property-file-actions .tb-btn,.property-file-actions .tb-select{white-space:nowrap;font-size:11px;padding:4px 7px;}
+.property-file-actions .tb-select{max-width:125px;}
+.import-open-btn{border-color:#bb925b;color:#ffe4b4;white-space:nowrap;font-weight:700;}
+.import-open-btn kbd{font-size:9px;font-weight:500;opacity:.8;margin-left:5px;}
+@media(max-width:850px){.property-file-actions kbd{display:none}.property-file-actions .tb-select{max-width:98px}.property-file-actions{gap:3px;padding:3px 4px}.property-file-actions .tb-btn{padding:4px 5px}}
+@media(max-width:540px){.numeric-toolbar-row{flex-wrap:wrap}.numeric-toolbar-row>#numericPropBar{flex-basis:100%;max-width:100%}.property-file-actions{margin-left:auto;border-left:0;border-top:1px solid #35404c;max-width:100%;overflow-x:auto}}
