@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {polygonSize,resizeObjectToMm} from '../src/core/ObjectDimensions.js';
+import {calculateProjectCosts,changeRateCurrency} from '../src/manufacturing/CostEngine.js';
+import {createDefaultState} from '../src/core/state.js';
+const size=polygonSize([{outer:[{x:-10,y:-25},{x:190,y:75}]}]);
+assert.deepEqual(size,{widthMm:200,heightMm:100});
+const o={heightMm:30,scaleX:1,scaleY:1};assert(resizeObjectToMm(o,'h',250,size));assert.equal(o.scaleX,2.5);assert.equal(o.scaleY,2.5);
+o.proportionalLock=false;assert(resizeObjectToMm(o,'w',400,{widthMm:500,heightMm:250}));assert.equal(o.scaleX,2);assert.equal(o.scaleY,2.5);assert(!resizeObjectToMm(o,'w',0,size));
+const s=createDefaultState(),m={componentCount:1,cuttingLengthM:5,perimeterM:2,sidewallAreaM2:1},all=calculateProjectCosts(m,s),cut=all.lines.find(l=>l.key==='process:cutting');
+assert(cut.costAmount>0&&cut.sellAmount>0);s.costConfig.excludedCostKeys={'process:cutting':true};const off=calculateProjectCosts(m,s);
+assert.equal(off.lines.find(l=>l.key===cut.key).included,false);assert(Math.abs(all.directCost-off.directCost-cut.costAmount)<1e-7);assert(Math.abs(all.baseSales-off.baseSales-cut.sellAmount)<1e-7);
+delete s.costConfig.excludedCostKeys[cut.key];assert.equal(calculateProjectCosts(m,s).directCost,all.directCost);
+assert.deepEqual(changeRateCurrency({value:345,currency:'TRY'},'USD',{USD:34.5}),{value:10,currency:'USD'});assert.equal(changeRateCurrency({value:100,currency:'TRY'},'EUR',{}),null);
+console.log('✓ Real dimensions, cost inclusion and currency conversion');

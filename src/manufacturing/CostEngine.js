@@ -20,6 +20,12 @@ export function toTargetCurrency(amount, fromCurr = 'TRY', targetCurr = 'TRY', r
   return finite(amount) * from / to;
 }
 
+export function changeRateCurrency(rate,currency,rates){
+  if(!CAD_CURRENCIES.includes(currency)||!rate)return null;
+  if(rate.currency===currency)return {...rate};
+  if((rate.currency!=='TRY'&&!(Number(rates?.[rate.currency])>0))||(currency!=='TRY'&&!(Number(rates?.[currency])>0)))return null;
+  return {value:round6(toTargetCurrency(rate.value,rate.currency,currency,rates)),currency};
+}
 export function formatMoney(amount, currency = 'TRY') {
   const locale = currency === 'TRY' ? 'tr-TR' : currency === 'EUR' ? 'de-DE' : 'en-US';
   return new Intl.NumberFormat(locale, {
@@ -195,13 +201,14 @@ export function calculateProjectCosts(metrics, state) {
   }
   const lines=[...lineMap.values()].map(row=>{
     const qty=round6(row.quantity);
+    const included=cfg.excludedCostKeys?.[row.key]!==true;
     const buyUnit=toTargetCurrency(row.card.buy.value,row.card.buy.currency,curr,rates);
     const saleUnit=toTargetCurrency(row.card.sell.value,row.card.sell.currency,curr,rates);
     return {
       key:row.key,label:row.label,group:row.group,unit:row.unit,quantity:qty,
       qty:`${Number(qty.toFixed(qty>=10?2:4))} ${row.unit}`,
       buyRate:row.card.buy,sellRate:row.card.sell,buyUnit,saleUnit,
-      costAmount:qty*buyUnit,sellAmount:qty*saleUnit, amount:qty*buyUnit,
+      included,costAmount:included?qty*buyUnit:0,sellAmount:included?qty*saleUnit:0,amount:included?qty*buyUnit:0,
     };
   });
   const directCost=lines.reduce((a,l)=>a+l.costAmount,0);

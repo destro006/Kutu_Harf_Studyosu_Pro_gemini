@@ -144,8 +144,8 @@
 
           <!-- Top-left Dimensions Pill -->
           <div class="stage-dims" id="stageDims">
-            <span>Harf <b id="dimHeight">400 mm</b></span>
-            <span>Toplam <b id="dimTotal">0 × 0 mm</b></span>
+            <span>Yükseklik <b id="dimHeight">—</b></span>
+            <span>Ebat <b id="dimTotal">0 × 0 mm</b></span>
             <span id="dimFileBadge">File <b id="dimFile">5 mm</b></span>
           </div>
 
@@ -174,12 +174,14 @@
               <span id="lightToggleLabel">Işık açık</span>
             </button>
             <div class="seg walls-seg" id="quickWallSeg" role="group" aria-label="Duvar">
-              <button type="button" data-wall="tugla" class="on">Tuğla</button>
+              <button type="button" data-wall="studioPremium" class="on">Grafit Stüdyo</button>
+              <button type="button" data-wall="tugla">Tuğla</button>
               <button type="button" data-wall="beton">Brüt Beton</button>
               <button type="button" data-wall="ahsap">Ahşap Çıta</button>
               <button type="button" data-wall="siva">Antrasit Sıva</button>
               <button type="button" data-wall="mermer">Mermer</button>
             </div>
+            <label class="quick-wall-picker" for="quickWallSelect"><span>Arka plan</span><select id="quickWallSelect" aria-label="Arka plan materyali seç"></select></label>
             <button type="button" id="btnOpenBackgroundPanel" class="stage-open-background" title="Hazır duvarlar, cephe ve fotoğraf montajı">▤ Arka Planlar</button>
           </div>
         </div>

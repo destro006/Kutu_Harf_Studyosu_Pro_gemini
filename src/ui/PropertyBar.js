@@ -1,3 +1,4 @@
+import { nominalSize, roundMm, resizeObjectToMm } from '../core/ObjectDimensions.js';
 import { DISPLAY_UNITS, PAGE_SIZE_PRESETS, normalizeDisplayUnit, displayUnitLabel, mmToDisplay, displayToMm, formatMmAsUnit } from '../core/units.js';
 const CONSTRUCTION_TYPES = [
   { id: 'fileli', label: 'Fileli Kutu Harf' },
@@ -136,11 +137,13 @@ export function renderPropertyBar(state, ctx = {}) {
 
   // 4. Single Object Selected (adapt to 3D vs 2D / kind)
   const locked = sel.proportionalLock !== false;
-  const scaledH = Math.round((sel.heightMm || 400) * (sel.scaleY ?? 1));
+  const size=ctx.getObjectSize?.(sel)||nominalSize(sel);
+  const scaledH=roundMm(size.heightMm),scaledW=roundMm(size.widthMm);
   const baseCommon = `
     ${unitSelect}
     <div class="prop-field"><label for="numX">X (${u})</label><input id="numX" type="number" step="any" value="${show(sel.xMm || 0)}"></div>
     <div class="prop-field"><label for="numY">Y (${u})</label><input id="numY" type="number" step="any" value="${show(sel.yMm || 0)}"></div>
+    <div class="prop-field"><label for="numW">Genişlik (${u})</label><input id="numW" type="number" min="${show(0.01)}" step="any" value="${show(scaledW)}"></div>
     <div class="prop-field"><label for="numH">Yükseklik (${u})</label><input id="numH" type="number" min="${show(0.5)}" step="any" value="${show(scaledH)}"></div>
     <div class="prop-field"><label for="numScale">Ölçek</label><input id="numScale" type="number" min="0.1" max="10" step="0.05" value="${Number((sel.scaleX ?? 1).toFixed(2))}"><button type="button" id="btnPropLock" class="tb-btn ${locked ? 'on' : ''}" style="padding:2px 6px" title="Oranı Kilitle">${locked ? '🔒' : '🔓'}</button></div>
     <div class="prop-field"><label for="numRot">Açı</label><input id="numRot" type="number" min="-360" max="360" step="5" value="${Math.round(sel.rotationDeg || 0)}"></div>
@@ -179,7 +182,6 @@ export function renderPropertyBar(state, ctx = {}) {
     bar.innerHTML = `
       ${baseCommon}
       <div class="prop-sep"></div>
-      <div class="prop-field"><label>Genişlik (${u})</label><input id="pbRectW" type="number" min="${show(1)}" step="any" value="${show((sel.widthMm || 320) * (sel.scaleX ?? 1))}"></div>
       <div class="prop-field"><label>Köşe Radyüs (${u})</label><input id="pbCornerR" type="number" min="0" step="any" value="${show(sel.cornerRadiusMm || 0)}"></div>
       <button type="button" class="tb-btn" data-pb-act="toCurves">∿ Eğriye Çevir</button>
     `;
@@ -247,7 +249,7 @@ function bindNestingPartBar(bar, ctx, unit) {
 
 function bindObjectBarEvents(bar, sel, ctx, unit) {
   bindUnitControl(bar, ctx);
-  const dimensionIds = new Set(['numX','numY','numH','numD','numSpacing','pbFileW','pbCornerR','pbRectW']);
+  const dimensionIds = new Set(['numX','numY','numW','numH','numD','numSpacing','pbFileW','pbCornerR','pbRectW']);
   const num = (id, fn) => bar.querySelector('#' + id)?.addEventListener('change', e => {
     const parsed = Number(e.target.value);
     if (!Number.isFinite(parsed)) return;
@@ -271,18 +273,8 @@ function bindObjectBarEvents(bar, sel, ctx, unit) {
     o.scaleX = val;
     if (o.proportionalLock !== false) o.scaleY = val;
   });
-  num('numH', (o, v) => {
-    const newH = Math.max(20, v);
-    const sy = o.scaleY ?? 1;
-    const baseH = Math.max(10, o.heightMm || 400);
-    if (o.proportionalLock !== false) {
-      const f = newH / (baseH * sy);
-      o.scaleX = Math.max(0.05, (o.scaleX ?? 1) * f);
-      o.scaleY = Math.max(0.05, sy * f);
-    } else {
-      o.scaleY = Math.max(0.05, newH / baseH);
-    }
-  });
+  num('numW',(o,v)=>resizeObjectToMm(o,'w',v,ctx.getObjectSize?.(o)||nominalSize(o)));
+  num('numH',(o,v)=>resizeObjectToMm(o,'h',v,ctx.getObjectSize?.(o)||nominalSize(o)));
 
   bar.querySelector('#btnPropLock')?.addEventListener('click', () => ctx.onEditSelected?.(o => { o.proportionalLock = !(o.proportionalLock !== false); }));
   bar.querySelector('#btnCenterOnPage')?.addEventListener('click', () => ctx.onEditSelected?.(o => { o.xMm = 0; o.yMm = 0; }));

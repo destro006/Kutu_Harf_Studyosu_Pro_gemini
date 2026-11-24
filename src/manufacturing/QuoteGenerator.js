@@ -17,7 +17,7 @@ export function buildQuoteHtml(state, metrics, costs, previewDataUrl = null) {
   const companyLogo=safeImage(q.companyLogoDataUrl);
   const customerLogo=safeImage(q.customerLogoDataUrl);
   const preview=safeImage(previewDataUrl);
-  const detail=Array.isArray(activeCosts.lines)?activeCosts.lines.filter(l=>Number(l.quantity)>0):[];
+  const detail=Array.isArray(activeCosts.lines)?activeCosts.lines.filter(l=>l.included!==false&&Number(l.quantity)>0):[];
   const rawTotal=detail.reduce((a,l)=>a+(Number(l.sellAmount)||0),0);
   const mode=state.costConfig?.pricingMode||'unit';
   const rate=mode!=='unit' && rawTotal>0 ? (Number(activeCosts.preDiscountPrice)||0)/rawTotal : 1;

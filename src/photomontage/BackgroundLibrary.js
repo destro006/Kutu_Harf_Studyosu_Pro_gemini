@@ -8,6 +8,12 @@ import THREE from '../vendor/three.js';
  */
 
 export const BACKGROUND_SCENES = [
+  { id:'studioPremium',label:'Premium Grafit Stüdyo',category:'studio',roughness:.77,bump:.12,tileM:4 },
+  { id:'traverten',label:'Bej Traverten',category:'luxury',roughness:.83,bump:.45,tileM:2.2 },
+  { id:'kompozit',label:'Antrasit Kompozit Panel',category:'storefront',roughness:.43,bump:.28,tileM:3 },
+  { id:'siyahMermer',label:'Nero Mermer',category:'luxury',roughness:.26,bump:.12,tileM:2.5 },
+  { id:'cevizPanel',label:'Ceviz Ahşap Panel',category:'interior',roughness:.56,bump:.38,tileM:2.2 },
+  { id:'beyazSiva',label:'Kırık Beyaz Mikrobeton',category:'wall',roughness:.86,bump:.22,tileM:3 },
   { id: 'tugla', label: 'Tuğla', category: 'wall', roughness: 0.92, bump: 1.4, tileM: 2.0 },
   { id: 'beton', label: 'Brüt Beton', category: 'wall', roughness: 0.88, bump: 0.8, tileM: 2.4 },
   { id: 'ahsap', label: 'Ahşap Çıta', category: 'wall', roughness: 0.62, bump: 1.6, tileM: 1.2 },
@@ -243,7 +249,25 @@ function genStudioNotr() {
   });
 }
 
+function genArchitectural(kind){
+ return makeTexturePair(SIZE,(x,y,o)=>{
+  const fine=hash2d(x,y,187)-.5,noise=fbm(x/44,y/44,183,3)-.5;
+  let h=.09,s=.045,l=.23+noise*.038+fine*.014,b=.5+noise*.08+fine*.06;
+  if(kind==='traverten'){const band=fbm(x/65,y/8,127,3)-.5;h=.10;s=.18;l=.66+band*.18+noise*.10+fine*.035;b=.5+band*.25+fine*.12;}
+  else if(kind==='kompozit'){const seam=x%256<2||y%256<2;h=.60;s=.045;l=seam ? .095 : .27+noise*.03+fine*.012;b=seam ? .25 : .5+fine*.025;}
+  else if(kind==='siyahMermer'){const vein=Math.pow(1-Math.abs(Math.sin((x/72+y/106+noise*4.5)*Math.PI)),12);h=.10;s=.12;l=.12+vein*.48+noise*.045;b=.5+vein*.03;}
+  else if(kind==='cevizPanel'){const seam=x%128<2,grain=Math.sin(x*.72+fbm(x/11,y/80,59,3)*19);h=.075;s=.36;l=seam ? .055 : .26+grain*.035+noise*.08;b=seam ? .28 : .5+grain*.045;}
+  else if(kind==='beyazSiva'){h=.10;s=.055;l=.78+noise*.075+fine*.025;b=.5+noise*.1+fine*.08;}
+  const rgb=hslToRgb(h,s,Math.max(.03,Math.min(.94,l)));o[0]=rgb[0];o[1]=rgb[1];o[2]=rgb[2];o[3]=b;
+ });
+}
 const GENERATORS = {
+  studioPremium:()=>genArchitectural('studioPremium'),
+  traverten:()=>genArchitectural('traverten'),
+  kompozit:()=>genArchitectural('kompozit'),
+  siyahMermer:()=>genArchitectural('siyahMermer'),
+  cevizPanel:()=>genArchitectural('cevizPanel'),
+  beyazSiva:()=>genArchitectural('beyazSiva'),
   tugla: genTugla,
   beton: genBeton,
   ahsap: genAhsap,

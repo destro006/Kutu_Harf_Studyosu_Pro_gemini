@@ -625,6 +625,14 @@ export class SignEngine {
         shapesMmGroups = [{ label: obj.name, shapes }];
       }
 
+      // Scale physical contours before building parts; don't scale file widths/depth.
+      const scaleX=(obj.scaleX??1)*(obj.mirrorX?-1:1),scaleY=(obj.scaleY??1)*(obj.mirrorY?-1:1);
+      if(scaleX!==1||scaleY!==1){
+        const pts=path=>path.getPoints(24).map(p=>new THREE.Vector2(p.x*scaleX,p.y*scaleY));
+        shapesMmGroups=shapesMmGroups.map(g=>({...g,shapes:g.shapes.map(shape=>{
+          const out=new THREE.Shape(pts(shape));out.holes=(shape.holes||[]).map(h=>new THREE.Path(pts(h)));return out;
+        })}));
+      }
       // Compute centering offset for the object's local origin
       const rawPts = shapesMmGroups.flatMap(g => g.shapes.flatMap(s => s.getPoints(6)));
       let lMinX = Infinity, lMaxX = -Infinity, lMinY = Infinity, lMaxY = -Infinity;
@@ -641,9 +649,8 @@ export class SignEngine {
       const oyM = (obj.yMm || 0) * 0.001;
       objGroup.position.set(oxM, oyM, zOffsetM);
       objGroup.rotation.set(((obj.rotXDeg || 0) * Math.PI) / 180, ((obj.rotYDeg || 0) * Math.PI) / 180, ((obj.rotationDeg || 0) * Math.PI) / 180);
-      const sx = (obj.scaleX ?? 1) * (obj.mirrorX ? -1 : 1);
-      const sy = (obj.scaleY ?? 1) * (obj.mirrorY ? -1 : 1);
-      objGroup.scale.set(sx, sy, 1);
+      const sx=1,sy=1;
+      objGroup.scale.set(1,1,1);
 
       const compMeshGroup = new THREE.Group();
       compMeshGroup.position.set(-cxMm * 0.001, -cyMm * 0.001, 0);

@@ -5,6 +5,7 @@ import { DocumentManager } from './core/DocumentManager.js';
 import { Vector2DCanvas } from './cad/Vector2DCanvas.js';
 import { ContextMenu } from './ui/ContextMenu.js';
 import { renderPropertyBar } from './ui/PropertyBar.js';
+import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js';
 import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js';
@@ -70,7 +71,7 @@ import {
   createNestingImportedTab, getActiveNestingImportedItems, openNestingImportTab,
   switchNestingTab, closeNestingImportedTab, syncActiveNestingTab,
 } from './manufacturing/NestingTabs.js';
-import { calculateProjectCosts, formatMoney, getPriceCard } from './manufacturing/CostEngine.js';
+import { calculateProjectCosts, formatMoney, getPriceCard, listPriceCatalog, changeRateCurrency } from './manufacturing/CostEngine.js';
 import { buildQuoteHtml } from './manufacturing/QuoteGenerator.js';
 import {
   downloadBlob,
@@ -328,10 +329,26 @@ function updateUndoRedoButtons() {
   if (r) r.disabled = !history.canRedo();
 }
 
+function objectPhysicalSize(o){
+  if(!o)return null;
+  const polys=vector2D?._getObjectPolysWorld({...o,xMm:0,yMm:0,rotationDeg:0},fontMap);
+  const size=polygonSize(polys);
+  return size&&size.widthMm>0&&size.heightMm>0?size:nominalSize(o);
+}
+function syncInspectorDimensions(state){
+  const size=objectPhysicalSize(getSelectedOrFirst(state));
+  for(const [id,value] of [['wsHeightMm',size?.heightMm??state.dimensions.heightMm],['wsWidthMm',size?.widthMm]]){
+    for(const el of document.querySelectorAll('#'+id))if(value!=null&&document.activeElement!==el)el.value=roundMm(value);
+  }
+}
 function updateStageChrome(state) {
   const selObj = state.objects.find(o => state.selectedIds.includes(o.id)) || state.objects[0];
-  document.getElementById('dimHeight').textContent = `${Math.round((selObj?.heightMm || state.dimensions.heightMm) * (selObj?.scaleY ?? 1))} mm`;
-  document.getElementById('dimTotal').textContent = `${lastMetrics.totalWidthMm} × ${lastMetrics.totalHeightMm} mm`;
+  const selected=state.objects.filter(o=>state.selectedIds.includes(o.id));
+  const size=selected.length===1?objectPhysicalSize(selected[0]):null;
+  document.getElementById('dimHeight').textContent=size?`${roundMm(size.heightMm)} mm`:'—';
+  document.getElementById('dimTotal').textContent=size?`${roundMm(size.widthMm)} × ${roundMm(size.heightMm)} mm`:`${lastMetrics.totalWidthMm} × ${lastMetrics.totalHeightMm} mm`;
+  document.getElementById('dimTotal').title=size?'Seçili nesnenin gerçek ebatı':'Projenin toplam ebatı';
+  syncInspectorDimensions(state);
 
   const fileBadge = document.getElementById('dimFileBadge');
   const isFileli = (selObj?.constructionType || state.constructionType) === 'fileli';
@@ -369,6 +386,7 @@ function updateStageChrome(state) {
   document.getElementById('lightToggleLabel').textContent = state.lighting.enabled ? 'Işık açık' : 'Işık kapalı';
 
   // Wall buttons
+  const quickWallSelect=document.getElementById('quickWallSelect');if(quickWallSelect)quickWallSelect.value=state.scene.wallId;
   document.querySelectorAll('#quickWallSeg button').forEach(b => {
     b.classList.toggle('on', b.dataset.wall === state.scene.wallId);
   });
@@ -392,6 +410,7 @@ function updateNumericBar(state) {
     activeSheetIdx,
     selectedPlacementId: selectedNestingId,
     fonts: fontManager.getAllFontMetas(),
+    getObjectSize: objectPhysicalSize,
     onEditSelected: (fn) => mutate('Özellik düzenlendi', s => {
       const o = getSelectedOrFirst(s);
       if (o && !o.locked) fn(o);
@@ -1109,9 +1128,10 @@ function renderDesignWs(state) {
     <section class="sec">
       <h3 class="sec-title">3. Ölçüler (mm)</h3>
       <div class="field-row">
-        <label>Harf Yüksekliği (mm)</label>
-        <input id="wsHeightMm" type="number" min="50" max="2500" step="10" value="${Math.round(obj?.heightMm || state.dimensions.heightMm)}">
+        <label>Nesne Yüksekliği (mm)</label>
+        <input id="wsHeightMm" type="number" min="0.01" step="any" value="${roundMm(objectPhysicalSize(obj)?.heightMm??state.dimensions.heightMm)}">
       </div>
+      ${obj?`<div class="field-row"><label>Nesne Genişliği (mm)</label><input id="wsWidthMm" type="number" min="0.01" step="any" value="${roundMm(objectPhysicalSize(obj).widthMm)}"></div>`:''}
       <div class="field-row">
         <label>Kenar Çıta Ebatı (mm)</label>
         <input id="wsDepthMm" type="number" min="15" max="300" step="5" value="${Math.round(obj?.depthMm || state.dimensions.depthMm)}">
@@ -1764,11 +1784,11 @@ function bindWorkspaceEvents(ws, root) {
 
     const bindNum = (id, fn) => root.querySelector('#' + id)?.addEventListener('change', e => mutate('Ölçü değiştirildi', s => fn(s, Number(e.target.value))));
     bindNum('wsHeightMm', (s, v) => {
-      const val = Math.max(30, Math.min(3000, v || 400));
-      s.dimensions.heightMm = val;
-      const o = getSelectedOrFirst(s);
-      if (o && !o.locked) o.heightMm = val;
+      if(!Number.isFinite(v)||v<=0)return;
+      const o=getSelectedOrFirst(s);
+      if(o)resizeObjectToMm(o,'h',v,objectPhysicalSize(o));else s.dimensions.heightMm=v;
     });
+    bindNum('wsWidthMm',(s,v)=>{const o=getSelectedOrFirst(s);if(o)resizeObjectToMm(o,'w',v,objectPhysicalSize(o));});
     bindNum('wsDepthMm', (s, v) => {
       const val = Math.max(10, Math.min(400, v || 80));
       s.dimensions.depthMm = val;
@@ -2296,13 +2316,8 @@ function renderCanvasTransformHud(state) {
     return;
   }
 
-  const bounds = signEngine?.getSelectedScreenBounds([sel.id]);
-  const sx = sel.scaleX ?? 1;
-  const sy = sel.scaleY ?? 1;
-  const curW = bounds?.widthMm || Math.round((lastMetrics.totalWidthMm || 400));
-  const curH = bounds?.heightMm || Math.round((sel.heightMm || 400) * sy);
-  const baseW = Math.max(1, curW / sx);
-  const baseH = Math.max(1, curH / sy);
+  const actualSize=objectPhysicalSize(sel);
+  const curW=roundMm(actualSize.widthMm),curH=roundMm(actualSize.heightMm);
   const locked = sel.proportionalLock !== false;
 
   // Avoid clobbering active input focus unless tool/selection changed
@@ -2336,33 +2351,7 @@ function renderCanvasTransformHud(state) {
       if (o) o.proportionalLock = !(o.proportionalLock !== false);
     });
 
-    const applyDim = (axis, newMm) => {
-      const val = Math.max(10, Number(newMm) || 10);
-      mutate('Ebat ölçekleme', s => {
-        const o = s.objects.find(x => x.id === sel.id);
-        if (!o || o.locked) return;
-        const isLocked = o.proportionalLock !== false;
-        if (axis === 'w') {
-          const nextSx = Math.max(0.05, Math.min(20, val / baseW));
-          if (isLocked) {
-            const ratio = nextSx / (o.scaleX ?? 1);
-            o.scaleX = nextSx;
-            o.scaleY = Math.max(0.05, Math.min(20, (o.scaleY ?? 1) * ratio));
-          } else {
-            o.scaleX = nextSx;
-          }
-        } else {
-          const nextSy = Math.max(0.05, Math.min(20, val / baseH));
-          if (isLocked) {
-            const ratio = nextSy / (o.scaleY ?? 1);
-            o.scaleY = nextSy;
-            o.scaleX = Math.max(0.05, Math.min(20, (o.scaleX ?? 1) * ratio));
-          } else {
-            o.scaleY = nextSy;
-          }
-        }
-      });
-    };
+    const applyDim = (axis,newMm) => {mutate('Ebat ölçekleme',s=>{const o=s.objects.find(x=>x.id===sel.id);if(o)resizeObjectToMm(o,axis,newMm,objectPhysicalSize(o));});};
 
     hud.querySelector('#hudScaleW').onchange = (e) => applyDim('w', e.target.value);
     hud.querySelector('#hudScaleH').onchange = (e) => applyDim('h', e.target.value);
@@ -2436,33 +2425,7 @@ function renderCanvasTransformHud(state) {
       const o = s.objects.find(x => x.id === sel.id);
       if (o) o.proportionalLock = !(o.proportionalLock !== false);
     });
-    const applyDim2 = (axis, newMm) => {
-      const val = Math.max(10, Number(newMm) || 10);
-      mutate('Ebat ölçekleme', s => {
-        const o = s.objects.find(x => x.id === sel.id);
-        if (!o || o.locked) return;
-        const isLocked = o.proportionalLock !== false;
-        if (axis === 'w') {
-          const nextSx = Math.max(0.05, Math.min(20, val / baseW));
-          if (isLocked) {
-            const ratio = nextSx / (o.scaleX ?? 1);
-            o.scaleX = nextSx;
-            o.scaleY = Math.max(0.05, Math.min(20, (o.scaleY ?? 1) * ratio));
-          } else {
-            o.scaleX = nextSx;
-          }
-        } else {
-          const nextSy = Math.max(0.05, Math.min(20, val / baseH));
-          if (isLocked) {
-            const ratio = nextSy / (o.scaleY ?? 1);
-            o.scaleY = nextSy;
-            o.scaleX = Math.max(0.05, Math.min(20, (o.scaleX ?? 1) * ratio));
-          } else {
-            o.scaleY = nextSy;
-          }
-        }
-      });
-    };
+    const applyDim2 = (axis,newMm) => {mutate('Ebat ölçekleme',s=>{const o=s.objects.find(x=>x.id===sel.id);if(o)resizeObjectToMm(o,axis,newMm,objectPhysicalSize(o));});};
     hud.querySelector('#hudScaleW').onchange = (e) => applyDim2('w', e.target.value);
     hud.querySelector('#hudScaleH').onchange = (e) => applyDim2('h', e.target.value);
     hud.querySelector('#hudDepthMm').onchange = (e) => mutate('Kenar çıta ebatı', s => {
@@ -3073,6 +3036,15 @@ function bindCostCenterEvents(root) {
       cfg[path.at(-1)]=val;
     },false);
   }));
+  root.querySelectorAll('[data-cost-include]').forEach(el=>el.addEventListener('change',()=>{mutate('Maliyet kalemi seçimi',s=>{s.costConfig.excludedCostKeys||={};if(el.checked)delete s.costConfig.excludedCostKeys[el.dataset.costInclude];else s.costConfig.excludedCostKeys[el.dataset.costInclude]=true;},false);}));
+  root.querySelectorAll('[data-bulk-currency]').forEach(el=>el.addEventListener('change',()=>{
+    const currency=el.value,which=el.dataset.bulkCurrency,role=el.dataset.bulkRole;
+    if(!['TRY','USD','EUR'].includes(currency)||!['buy','sell'].includes(which))return;
+    const current=store.get(),cards=listPriceCatalog(current).filter(r=>r.key.startsWith(role+':'));
+    const changes=cards.map(r=>({r,rate:changeRateCurrency(r[which],currency,current.costConfig.rates)}));
+    if(changes.some(x=>!x.rate)){alert('Önce geçerli döviz kurunu girin.');el.value='';return;}
+    mutate('Toplu para birimi değişikliği',s=>{s.costConfig.priceBook||={};for(const {r,rate} of changes){s.costConfig.priceBook[r.key]||={buy:{...r.buy},sell:{...r.sell}};s.costConfig.priceBook[r.key][which]=rate;}},false);
+  }));
   root.querySelectorAll('[data-rate-key]').forEach(el=>el.addEventListener('change',()=>{
     const key=el.dataset.rateKey, [which,field]=el.dataset.ratePath.split('.');
     const val=field==='value'?Number(el.value):el.value;
@@ -3080,8 +3052,8 @@ function bindCostCenterEvents(root) {
     mutate('Malzeme alış / satış tarifesi',s=>{
       s.costConfig.priceBook ||= {};
       s.costConfig.priceBook[key] ||= {buy:{...getPriceCard(s,key).buy},sell:{...getPriceCard(s,key).sell}};
-      s.costConfig.priceBook[key][which][field]=val;
-      s.costConfig.pricingMode='unit';
+      if(field==='currency'){const next=changeRateCurrency(s.costConfig.priceBook[key][which],val,s.costConfig.rates);if(next)s.costConfig.priceBook[key][which]=next;}
+      else s.costConfig.priceBook[key][which][field]=val;
     },false);
   }));
   root.querySelectorAll('[data-cost-reset-rate]').forEach(b=>b.addEventListener('click',()=>{
@@ -3593,6 +3565,8 @@ function init() {
   document.getElementById('btnLightToggle').onclick = () => mutate('Işık aç/kapat', s => { s.lighting.enabled = !s.lighting.enabled; });
   document.querySelectorAll('#quickWallSeg button').forEach(b => b.onclick = () => mutate('Duvar seçimi', s => { s.scene.wallId = b.dataset.wall; }));
 
+  const quickWallSelect=document.getElementById('quickWallSelect');
+  if(quickWallSelect){quickWallSelect.innerHTML=BACKGROUND_SCENES.map(b=>`<option value="${b.id}">${escapeHtml(b.label)}</option>`).join('');quickWallSelect.value=store.get().scene.wallId;quickWallSelect.onchange=e=>{if(BACKGROUND_SCENES.some(b=>b.id===e.target.value))mutate('Arka plan seçimi',s=>{s.scene.wallId=e.target.value;});};}
   // Project Name & Quality
   if (document.getElementById('projectNameInput')) document.getElementById('projectNameInput').onchange = (e) => store.update(s => { s.projectName = e.target.value; });
   document.getElementById('qualitySelect').onchange = (e) => {
@@ -3634,41 +3608,7 @@ function init() {
   document.querySelectorAll('.cad-rail [data-tool]').forEach(b => b.onclick = () => activateTool(b.dataset.tool));
   document.querySelectorAll('.cad-rail [data-action]').forEach(b => b.onclick = () => runCadAction(b.dataset.action));
 
-  // Numeric Property Bar
-  const bindProp = (id, fn) => { const el = document.getElementById(id); if (el) el.onchange = (e) => mutate('Sayısal düzenleme', s => {
-    const o = getSelectedOrFirst(s);
-    if (o && !o.locked) fn(o, Number(e.target.value));
-  }); };
-  bindProp('numX', (o, v) => { o.xMm = v; });
-  bindProp('numY', (o, v) => { o.yMm = v; });
-  bindProp('numH', (o, v) => {
-    const newH = Math.max(20, v);
-    const sy = o.scaleY ?? 1;
-    const baseH = Math.max(10, o.heightMm || 400);
-    if (o.proportionalLock !== false) {
-      const factor = newH / (baseH * sy);
-      o.scaleX = Math.max(0.05, Math.min(20, (o.scaleX ?? 1) * factor));
-      o.scaleY = Math.max(0.05, Math.min(20, sy * factor));
-    } else {
-      o.scaleY = Math.max(0.05, Math.min(20, newH / baseH));
-    }
-  });
-  bindProp('numD', (o, v) => { o.depthMm = Math.max(10, v); });
-  bindProp('numRot', (o, v) => { o.rotationDeg = v; });
-  bindProp('numScale', (o, v) => {
-    const val = Math.max(0.1, v);
-    o.scaleX = val;
-    if (o.proportionalLock !== false) o.scaleY = val;
-  });
-  const propLockBtn = document.getElementById('btnPropLock');
-  if (propLockBtn) propLockBtn.onclick = () => mutate('Oran kilidi', s => {
-    const o = getSelectedOrFirst(s);
-    if (o && !o.locked) o.proportionalLock = !(o.proportionalLock !== false);
-  });
-  bindProp('numSpacing', (o, v) => { o.letterSpacingMm = v; });
-
-  document.querySelectorAll('[data-align]').forEach(b => b.onclick = () => mutate('Hizalama', s => alignSelectedObjects(s, b.dataset.align)));
-  document.querySelectorAll('[data-dist]').forEach(b => b.onclick = () => mutate('Dağıtma', s => distributeSelectedObjects(s, b.dataset.dist)));
+  // PropertyBar owns numeric events.
 
   // Interactive CAD Overlay (Pen + Live Hover/Drag Measure)
   const overlay = document.getElementById('cadOverlay');

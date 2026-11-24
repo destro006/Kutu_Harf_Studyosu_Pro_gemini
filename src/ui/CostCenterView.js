@@ -25,6 +25,7 @@ function logoCard(name,field,value){
 }
 function card(title,value,meta,kind='') {return `<div class="cst-kpi ${kind}"><small>${esc(title)}</small><strong>${value}</strong><span>${esc(meta)}</span></div>`;}
 const TH = '<thead><tr><th>İmalat Kalemi</th><th class="number">Miktar</th><th class="number">Alış / Birim</th><th class="number">Gerçek Maliyet</th><th class="number">Satış / Birim</th><th class="number">Müşteri Tutarı</th></tr></thead>';
+function includeToggle(key,checked,label){return `<input class="cst-include-toggle" type="checkbox" data-cost-include="${esc(key)}" aria-label="${esc(label)} maliyete dahil et"${checked?' checked':''}>`;}
 function ledger(state, cost){
  const cur=cost.currency;
  const rows=cost.lines.map(l=>{
@@ -33,7 +34,7 @@ function ledger(state, cost){
     ? `<small>Kur ile: ${esc(cur)}</small>`:'';
   const buy=extra?money(l.buyUnit,cur):`<label class="cst-inline-rate"><input aria-label="${esc(l.label)} alış birim fiyatı" data-rate-key="${esc(l.key)}" data-rate-path="buy.value" type="number" min="0" step="0.01" value="${dec(l.buyRate?.value)}"><small>${esc(l.buyRate?.currency||cur)}</small></label>`;
   const sell=extra?money(l.saleUnit,cur):`<label class="cst-inline-rate"><input aria-label="${esc(l.label)} müşteri birim satış fiyatı" data-rate-key="${esc(l.key)}" data-rate-path="sell.value" type="number" min="0" step="0.01" value="${dec(l.sellRate?.value)}"><small>${esc(l.sellRate?.currency||cur)}</small></label>`;
-  return `<tr><td><b>${esc(l.label)}</b><small>${esc(l.group||'Malzeme')}</small></td>
+  return `<tr class="${l.included===false?'cst-excluded':''}"><td><label class="cst-line-label">${includeToggle(l.key,l.included!==false,l.label)}<b>${esc(l.label)}</b></label><small>${esc(l.group||'Malzeme')}</small></td>
  <td class="number">${dec(l.quantity)} ${esc(l.unit)}</td><td class="number">${buy}</td>
  <td class="number cst-cost-num">${money(l.costAmount,cur)}</td>
  <td class="number">${sell}${exchangeNotice}</td><td class="number cst-sale-num">${money(l.sellAmount,cur)}</td></tr>`;
@@ -85,9 +86,9 @@ function catalogTable(state, cost, role){
  const used=new Set(cost.lines.map(l=>l.key));
  const rows=listPriceCatalog(state).filter(r=>roleOf(r.key)===role);
  const currs=['TRY','USD','EUR'];
- return `<div class="cst-table-scroller"><table class="cst-price-table cst-rate-table"><thead><tr><th>Malzeme / İşlem</th><th>Birim</th><th>Üretici Alış</th><th>Alış Para</th><th>Müşteri Satış</th><th>Satış Para</th><th>İşlem</th></tr></thead>
- <tbody>${rows.map(r=>`<tr class="${used.has(r.key)?'cst-used':''}" data-cost-catalog-item="${esc(r.key)}">
- <td><b>${esc(r.label)}</b>${used.has(r.key)?'<small>Bu projede kullanılıyor</small>':''}</td><td>${esc(r.unit)}</td>
+ return `<div class="cst-table-scroller"><table class="cst-price-table cst-rate-table"><thead><tr><th>Malzeme / İşlem</th><th>Birim</th><th>Üretici Alış</th><th>Alış Para<select class="cst-bulk-currency" data-bulk-currency="buy" data-bulk-role="${esc(role)}" aria-label="Tüm alış para birimleri"><option value="">Tümünü seç</option>${currs.map(c=>option(c,c,'')).join('')}</select></th><th>Müşteri Satış</th><th>Satış Para<select class="cst-bulk-currency" data-bulk-currency="sell" data-bulk-role="${esc(role)}" aria-label="Tüm satış para birimleri"><option value="">Tümünü seç</option>${currs.map(c=>option(c,c,'')).join('')}</select></th><th>İşlem</th></tr></thead>
+ <tbody>${rows.map(r=>`<tr class="${used.has(r.key)?'cst-used':''} ${state.costConfig?.excludedCostKeys?.[r.key]?'cst-excluded':''}" data-cost-catalog-item="${esc(r.key)}">
+ <td><label class="cst-line-label">${includeToggle(r.key,state.costConfig?.excludedCostKeys?.[r.key]!==true,r.label)}<b>${esc(r.label)}</b></label>${used.has(r.key)?'<small>Bu projede kullanılıyor</small>':''}</td><td>${esc(r.unit)}</td>
  <td><input aria-label="${esc(r.label)} alış fiyatı" data-rate-key="${esc(r.key)}" data-rate-path="buy.value" type="number" min="0" step="0.01" value="${dec(r.buy.value)}"></td>
  <td><select data-rate-key="${esc(r.key)}" data-rate-path="buy.currency" aria-label="Alış para birimi">${currs.map(c=>option(c,c,r.buy.currency)).join('')}</select></td>
  <td><input aria-label="${esc(r.label)} satış fiyatı" data-rate-key="${esc(r.key)}" data-rate-path="sell.value" type="number" min="0" step="0.01" value="${dec(r.sell.value)}"></td>

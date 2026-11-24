@@ -96,7 +96,7 @@ export function createDefaultState() {
 
     scene: {
       night: true,
-      wallId: 'tugla',
+      wallId: 'studioPremium',
       transparentBg: false,
       cameraPreset: 'hero',
       showRuler: true,
@@ -226,6 +226,7 @@ export function createDefaultState() {
       manualAdjustment: 0,
       mountingId: 'duvar', // 'duvar' | 'profil' | 'yok'
       priceBook: {}, // per-material independent buy/sell rates, keyed by face|side|file|acrylic|process
+      excludedCostKeys: {},
       extraItems: [], // custom project costs and customer sell amounts
       unitCosts: {
         acrylicPerM2: { value: 1450, currency: 'TRY' },
