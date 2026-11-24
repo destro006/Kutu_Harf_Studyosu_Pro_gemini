@@ -1,5 +1,6 @@
 import { parseFont } from '../vendor/opentype.mjs';
-import { ShapePath } from '../vendor/three.js';
+import { ShapePath, Shape, Path } from '../vendor/three.js';
+import Clipper from '../../public/vendor/cad/clipper-runtime.js';
 
 /**
  * Font Manager with all 8 bundled Turkish-ready (latin + latin-ext) fonts,
@@ -303,7 +304,7 @@ function commandsToShapes(commands, scale, offsetX) {
     else if (c.type === 'C') sp.bezierCurveTo(tx(c.x1), ty(c.y1), tx(c.x2), ty(c.y2), tx(c.x), ty(c.y));
   }
   sp.userData = { style: { fillRule: 'nonzero' } };
-  return sp.toShapes();
+  return unionConnectedGlyphShapes(sp.toShapes());
 }
 
 /**
@@ -406,4 +407,29 @@ export function layoutTextMm(fontList, text, heightMm, letterSpacingMm = 0, line
     widthMm: maxWidth,
     heightMm: heightMm + Math.max(0, rawLines.length - 1) * lineStep,
   };
+}
+
+/** Union overlapping filled contours within a single glyph. Never bridge air gaps. */
+export function unionConnectedGlyphShapes(shapes){
+ if(shapes.length<2)return shapes;
+ const S=10000,paths=[];
+ const ring=(path,positive)=>{
+  const points=path.getPoints(24).map(p=>({X:Math.round(p.x*S),Y:Math.round(p.y*S)}));
+  if(Clipper.Clipper.Orientation(points)!==positive)points.reverse();
+  return points;
+ };
+ try{
+  for(const shape of shapes){paths.push(ring(shape,true));for(const h of shape.holes||[])paths.push(ring(h,false));}
+  const cl=new Clipper.Clipper(),tree=new Clipper.PolyTree();
+  cl.AddPaths(paths,Clipper.PolyType.ptSubject,true);
+  if(!cl.Execute(Clipper.ClipType.ctUnion,tree,Clipper.PolyFillType.pftNonZero,Clipper.PolyFillType.pftNonZero))return shapes;
+  const result=[];
+  const toPath=(pts,Type)=>{const p=new Type();pts.forEach((v,i)=>i?p.lineTo(v.X/S,v.Y/S):p.moveTo(v.X/S,v.Y/S));p.closePath();return p;};
+  const visit=node=>{for(const c of node.Childs()){
+   if(!c.IsHole()){const sh=toPath(c.Contour(),Shape);sh.holes=c.Childs().filter(h=>h.IsHole()).map(h=>toPath(h.Contour(),Path));result.push(sh);}
+   visit(c);
+  }};
+  visit(tree);
+  return result.length>0&&result.length<shapes.length?result:shapes;
+ }catch{return shapes;}
 }
