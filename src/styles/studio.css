@@ -1563,3 +1563,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .lighting-column .field-row input[type=number]{flex:0 0 64px;max-width:100%}
 .lighting-selection-note{font-size:11px;color:var(--muted);margin:0;padding:0 6px 4px;line-height:1.4}
 #workspaceContent .lighting-column,#workspaceContent .material-ribbon-column{margin-bottom:8px}
+
+/* Compact, keyboard-friendly nesting part list */
+.nesting-part-row {gap:5px; padding:5px 6px; user-select:none; cursor:pointer;}
+.nesting-part-row [data-cws-check] {width:15px;height:15px;min-width:15px;margin:0;accent-color:var(--accent);cursor:pointer;flex:none;}
+.nesting-part-row .layer-name {font-size:11.5px;}
+.nesting-part-size {font-size:11px;white-space:nowrap;color:var(--muted);flex:none;}
+.nesting-part-delete {width:21px;height:21px;flex:none;display:grid;place-items:center;padding:0;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--muted);font-size:19px;line-height:1;}
+.nesting-part-delete:hover:not(:disabled) {color:var(--danger);background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.3);}
+.nesting-part-delete:disabled {opacity:.35;cursor:not-allowed;}
+#nestingSelectedCount {color:var(--accent);font-size:11px;white-space:nowrap;}
