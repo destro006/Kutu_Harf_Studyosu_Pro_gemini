@@ -26,6 +26,6 @@ export async function runVectorImportJob(job,{signal,onStatus=()=>{}}={}){
   worker.onerror=e=>complete(new Error('Nesting işlem motoru: '+(e.message||'beklenmeyen hata')));
   signal?.addEventListener('abort',abort,{once:true});
   onStatus('Yerel vektörler çözümleniyor ve levhaya yerleştiriliyor…');
-  worker.postMessage(job);
+  worker.postMessage(job,job.bytes instanceof ArrayBuffer?[job.bytes]:[]);
  });
 }

@@ -2,13 +2,15 @@
  * Safe, browser-only manufacturing contour import. All returned coordinates are millimeters.
  * No silent fallback for CDR/AI/PDF/EPS/DWG: those need verified native converters.
  */
+import {importLegacyPostScript} from './LegacyPostScriptImport.js';
 export const VECTOR_INPUT_FORMATS=[
  {id:'svg',ext:'.svg',label:'SVG · Gerçek vektör',ready:true},
  {id:'pdf',ext:'.pdf',label:'PDF · Yerel PDF.js vektör konturları',ready:true},
  {id:'dxf',ext:'.dxf',label:'AutoCAD DXF · Kesim konturları',ready:true},
  {id:'plt',ext:'.plt',label:'HPGL/PLT · Plotter konturları',ready:true},
  {id:'hpgl',ext:'.hpgl',label:'HPGL · Plotter konturları',ready:true},
- ...['eps','ps','ai','cdr','dwg','wmf','emf','cgm','cmx','svgz','afdesign','sketch'].map(id=>({id,ext:'.'+id,label:id.toUpperCase()+' · Harici dönüştürme gerekli',ready:false})),
+ ...['eps','ps','ai'].map(id=>({id,ext:'.'+id,label:id.toUpperCase()+' · Statik konturlar',ready:true})),
+ ...['cdr','dwg','wmf','emf','cgm','cmx','svgz','afdesign','sketch'].map(id=>({id,ext:'.'+id,label:id.toUpperCase()+' · Harici dönüştürme gerekli',ready:false})),
 ];
 const D=1e-9;
 const round=v=>Math.round(v*1000)/1000;
@@ -182,7 +184,7 @@ export function importSvgText(text,filename='vektor.svg', options={}){
   if(el.getAttribute('display')==='none'||el.getAttribute('visibility')==='hidden')return;
   const mm=matMul(m,svgTransform(el.getAttribute('transform')));
   let shapes=[];const num=(name,def=0)=>Number(el.getAttribute(name)??def)||0;
-  if(tag==='path')shapes=svgPathRings(el.getAttribute('d')||'',Number(options.tolerance)||1.5);
+  if(tag==='path'){const physicalScale=Math.max(Math.hypot(mm[0]*fx,mm[1]*fy),Math.hypot(mm[2]*fx,mm[3]*fy))*scale;shapes=svgPathRings(el.getAttribute('d')||'',(Number(options.tolerance)||1)/Math.max(physicalScale,1e-8));}
   if(tag==='polygon'||tag==='polyline'){
     const pts=svgNums(el.getAttribute('points'));if(pts.length>=6&&pts.length%2===0&&(tag==='polygon'||/\bclosed\b/i.test(el.getAttribute('class')||''))){shapes=[Array.from({length:pts.length/2},(_,i)=>({x:pts[i*2],y:pts[i*2+1]}))];}
   }
@@ -263,6 +265,7 @@ export function importVectorText(text,filename,options={}){
  if(!meta.ready)throw Error(ext.toUpperCase()+' dosyasını doğrudan okumak için güvenilir dönüştürücü gerekiyor. CorelDRAW/Illustrator/AutoCAD içinden vektörleri SVG veya ASCII DXF biçiminde dışa aktarıp içe aktarın. Dosyanın uzantısını değiştirmek yeterli değildir.');
  // No arbitrary file-byte limit: conversion runs in a cancellable worker.
  if(ext==='pdf')throw Error('PDF dosyası binary olarak yerel PDF.js motoruyla açılmalıdır.');
+ if(['ai','eps','ps'].includes(ext))return importLegacyPostScript(text,filename,options);
  if(ext==='svg')return importSvgText(text,filename,options);
  if(ext==='dxf')return importDxfText(text,filename,options);
  return importHpglText(text,filename,options);

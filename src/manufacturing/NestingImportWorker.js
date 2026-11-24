@@ -1,4 +1,7 @@
 /** Runs geometry decoding and true-shape nesting away from the interactive UI thread. */
+import {detectVectorFormat,extractPostScript} from './VectorFormatDetect.js';
+import {binaryDxfToText} from './BinaryDxfImport.js';
+import {importLegacyPostScript} from './LegacyPostScriptImport.js';
 import { importVectorText, groupRings } from './VectorFileImport.js';
 import { pdfOperatorRings } from './PdfVectorImport.js';
 import { optimizeNesting } from './NestingOptimizer.js';
@@ -6,7 +9,13 @@ import { runTrueShapeNesting, validateSheetLayout } from './NestingEngine.js';
 
 function processJob(job){
   let imported;
-  if(job.operation==='importText') {
+  if(job.operation==='importBinary'){
+    const data=new Uint8Array(job.bytes),kind=detectVectorFormat(data,job.filename);
+    if(['postscript','eps-binary','ai','eps','ps'].includes(kind))imported=importLegacyPostScript(extractPostScript(data),job.filename,job.options||{});
+    else if(kind==='dxf-binary')imported=importVectorText(binaryDxfToText(data),'converted.dxf',job.options||{});
+    else imported=importVectorText(new TextDecoder().decode(data),'converted.'+kind,job.options||{});
+    imported.filename=job.filename;for(const [i,item] of imported.items.entries()){item.projectName=job.filename;item.label=job.filename.replace(/\.[^.]+$/,'')+' · Parça '+(i+1);}
+  } else if(job.operation==='importText') {
     imported=importVectorText(job.text,job.filename,job.options||{});
   } else if(job.operation==='importPdfPages'){
     const scale=Number(job.options?.scale??1);

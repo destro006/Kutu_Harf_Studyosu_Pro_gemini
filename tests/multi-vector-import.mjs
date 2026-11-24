@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {detectVectorFormat,extractPostScript} from '../src/manufacturing/VectorFormatDetect.js';
+import {runNestingImportJob} from '../src/manufacturing/NestingImportWorker.js';
+const enc=new TextEncoder(),cfg={sheetWidthMm:1000,sheetHeightMm:500,marginMm:15,clearanceMm:5,kerfMm:.4};
+const ai='%!PS-Adobe-3.0 EPSF-3.0\n%%Creator: Adobe Illustrator\n%%EndComments\n%%EndSetup\n0 0 m\n200 0 l\n200 100 l\n0 100 l\nf\n*u\n220 0 m\n420 0 l\n420 100 l\n220 100 l\nn\n250 20 m\n250 80 l\n350 80 l\n350 20 l\nf\n*U\n%%EOF';
+const job=(bytes,filename)=>runNestingImportJob({operation:'importBinary',bytes:bytes.buffer,filename,options:{scale:1,tolerance:.2},nesting:cfg});
+const out=job(enc.encode(ai),'legacy.ai');assert.equal(out.imported.items.length,2);assert.equal(out.imported.items[1].holes.length,1);assert.equal(out.nesting.unplaced.length,0);
+const ps='%!PS-Adobe-3.0 EPSF-3.0\n%%EndComments\n%%EndProlog\n2 2 scale\n0 0 moveto 72 0 lineto 72 36 lineto 0 36 lineto closepath fill\nshowpage\n%%EOF';
+const eps=job(enc.encode(ps),'test.eps');assert(Math.abs(eps.imported.widthMm-50.8)<.001);
+assert.throws(()=>job(enc.encode(ps.replace('showpage','(bad) run')),'unsafe.eps'),/karmaşık/);
+assert.equal(detectVectorFormat(enc.encode('prefix %PDF-1.7'),'test.ai'),'pdf');
+const raw=enc.encode(ps),bin=new Uint8Array(30+raw.length),dv=new DataView(bin.buffer);bin.set([197,208,211,198]);dv.setUint32(4,30,true);dv.setUint32(8,raw.length,true);bin.set(raw,30);assert.equal(extractPostScript(bin),ps);assert.equal(job(bin,'binary.eps').imported.items.length,1);
+const bytes=Array.from(enc.encode('AutoCAD Binary DXF\r\n\x1a\0'));
+const add=(k,val)=>{bytes.push(k&255,k>>8);if(typeof val==='string')bytes.push(...enc.encode(val),0);else{const buf=new ArrayBuffer(k===70?2:8),d=new DataView(buf);if(k===70)d.setInt16(0,val,true);else d.setFloat64(0,val,true);bytes.push(...new Uint8Array(buf));}};
+for(const [k,val] of [[0,'SECTION'],[2,'HEADER'],[9,'$INSUNITS'],[70,4],[0,'ENDSEC'],[0,'SECTION'],[2,'ENTITIES'],[0,'LWPOLYLINE'],[70,1],[10,0],[20,0],[10,100],[20,0],[10,100],[20,50],[10,0],[20,50],[0,'ENDSEC'],[0,'EOF']])add(k,val);
+const dxf=job(new Uint8Array(bytes),'binary.dxf');assert.equal(dxf.imported.widthMm,100);assert.equal(dxf.imported.heightMm,50);
+console.log('✓ Legacy AI compound paths, static EPS, binary EPS/DXF, signature recognition, no PostScript execution');

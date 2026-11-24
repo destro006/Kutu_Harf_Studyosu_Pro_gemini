@@ -27,6 +27,7 @@ import { ACRYLIC_PALETTE, MATERIAL_PRESETS, PAINT_PALETTE } from './render/Mater
 import { RAL_COLORS, RAL_GROUPS } from './render/RalColors.js';
 import { ENVIRONMENT_PRESETS } from './render/EnvironmentManager.js';
 import { LIGHT_COLOR_PRESETS, LIGHTING_MODES } from './render/LightingSystem.js';
+import {detectVectorFormat} from './manufacturing/VectorFormatDetect.js';
 import { BACKGROUND_SCENES } from './photomontage/BackgroundLibrary.js';
 import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js';
 import { renderNestingSvg } from './ui/NestingView.js';
@@ -2782,20 +2783,23 @@ async function importNestingVectorFiles(fileList, root) {
       try {
         let job,filename=file.name;
         const options={unit,scale,tolerance},nesting=Object.fromEntries(Object.entries(store.get().nesting).filter(([key])=>!['sheets','unplaced','importedTabs','designTabSnapshot'].includes(key)));
-        if(ext==='pdf'||(ext==='ai'&&(await file.slice(0,12).text()).startsWith('%PDF-'))){
+        const kind=detectVectorFormat(new Uint8Array(await file.slice(0,65536).arrayBuffer()),file.name);
+        if(kind==='pdf'){
           const output=await importPdfFile(file,options,text=>say(file.name+': '+text),controller.signal);
           if(controller.signal.aborted)break;
           job={jobId:j,operation:'importPdfPages',pages:output.pages,ops:output.ops,warnings:output.warnings,
                filename:file.name,options,nesting};
         }else{
-          let text;
-          if(ext==='svgz'){
-            if(typeof DecompressionStream!=='function')throw Error('Bu tarayıcı yerel SVGZ gzip açma desteğine sahip değil.');
-            text=await new Response(file.stream().pipeThrough(new DecompressionStream('gzip'))).text();
-            filename=filename.replace(/\.svgz$/i,'.svg');
-          }else text=await file.text();
-          if(controller.signal.aborted)break;
-          job={jobId:j,operation:'importText',text,filename,options,nesting};
+          if(kind==='svgz'){
+            if(typeof DecompressionStream!=='function')throw Error('Bu tarayıcı SVGZ gzip desteğine sahip değil.');
+            const text=await new Response(file.stream().pipeThrough(new DecompressionStream('gzip'))).text();
+            filename=filename.replace(/\.[^.]+$/i,'.svg');
+            job={jobId:j,operation:'importText',text,filename,options,nesting};
+          }else{
+            const bytes=await file.arrayBuffer();
+            if(controller.signal.aborted)break;
+            job={jobId:j,operation:'importBinary',bytes,filename,options,nesting};
+          }
         }
         const output=await runVectorImportJob(job,{
           signal:controller.signal,onStatus:msg=>say(file.name+': '+msg)});
