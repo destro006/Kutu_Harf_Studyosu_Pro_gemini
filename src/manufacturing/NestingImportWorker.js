@@ -67,7 +67,14 @@ if(typeof self!=='undefined'&&typeof self.addEventListener==='function'){
           self.postMessage({jobId:job.jobId,result:processJob({...job,operation:'nest',imported,nesting:{...job.nesting,quickImport:true}})});return;
         }
       }
-      self.postMessage({jobId:job.jobId,result:processJob(job)});
+      try{self.postMessage({jobId:job.jobId,result:processJob(job)});}
+      catch(original){
+        if(job.operation!=='importBinary'||!['postscript','eps-binary'].includes(detectVectorFormat(new Uint8Array(job.bytes),job.filename)))throw original;
+        self.postMessage({jobId:job.jobId,status:'AI/EPS için gelişmiş yerel PostScript motoru yükleniyor…'});
+        const {postScriptToPdf}=await import('./PostScriptWasmImport.js');
+        const pdf=await postScriptToPdf(job.bytes);
+        self.postMessage({jobId:job.jobId,result:{convertedPdf:pdf}},[pdf.buffer]);
+      }
     }
     catch(err){self.postMessage({jobId:job.jobId,error:String(err?.message||err)});}
   });

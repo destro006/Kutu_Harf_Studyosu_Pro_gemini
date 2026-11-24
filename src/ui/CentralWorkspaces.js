@@ -13,6 +13,8 @@ import { buildQuoteHtml } from '../manufacturing/QuoteGenerator.js';
  *  - Maliyet ve Teklif (Live BOM, LED/PSU estimates, margin/taxes, printable PDF quote)
  */
 
+const ringLengths=new WeakMap();
+function cachedRingLength(ring){if(Object.isFrozen(ring)){if(ringLengths.has(ring))return ringLengths.get(ring);const n=ringLength(ring);ringLengths.set(ring,n);return n;}return ringLength(ring);}
 export function renderNestingCenter(state, ctx) {
   const n = state.nesting;
   if ((n.activeTabId || 'design') === 'import') {
@@ -31,7 +33,7 @@ export function renderNestingCenter(state, ctx) {
   const presetId = SHEET_PRESETS.find(p => p.w === n.sheetWidthMm && p.h === n.sheetHeightMm)?.id || 'custom';
   const totalParts = sheets.reduce((a, sh) => a + sh.placements.length, 0);
   const avgUtil = sheets.length ? sheets.reduce((a, sh) => a + (sh.utilizationPct ?? sh.utilization ?? 0), 0) / sheets.length : 0;
-  const totalCutLenMm = sheets.reduce((a, sh) => a + sh.placements.reduce((s, p) => s + (ringLength(p.outer)+(p.holes||[]).reduce((a,h)=>a+ringLength(h),0)), 0), 0);
+  const totalCutLenMm = sheets.reduce((a, sh) => a + sh.placements.reduce((s, p) => s + (cachedRingLength(p.outer)+(p.holes||[]).reduce((a,h)=>a+cachedRingLength(h),0)), 0), 0);
 
   return `
     <div class="nesting-workspace" data-nesting-tab="${n.activeTabId || 'design'}">

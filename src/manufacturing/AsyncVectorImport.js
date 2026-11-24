@@ -11,8 +11,8 @@ export async function runVectorImportJob(job,{signal,onStatus=()=>{}}={}){
  }
  const worker = new Worker(new URL('./NestingImportWorker.js',import.meta.url),{type:'module'});
  return new Promise((resolve,reject)=>{
-  let finished=false;
-  const cleanup=()=>{worker.terminate();signal?.removeEventListener('abort',abort);};
+  let finished=false,timeout;
+  const cleanup=()=>{clearTimeout(timeout);worker.terminate();signal?.removeEventListener('abort',abort);};
   const complete=(error,result)=>{
    if(finished)return;
    finished=true;cleanup();error?reject(error):resolve(result);
@@ -27,6 +27,7 @@ export async function runVectorImportJob(job,{signal,onStatus=()=>{}}={}){
   worker.onerror=e=>complete(new Error('Nesting işlem motoru: '+(e.message||'beklenmeyen hata')));
   signal?.addEventListener('abort',abort,{once:true});
   onStatus('Yerel vektörler çözümleniyor ve levhaya yerleştiriliyor…');
+  timeout=setTimeout(()=>complete(new Error('Dosya çözümleme süresi aşıldı. Dosyayı daha küçük parçalara ayırın.')),180000);
   worker.postMessage(job,job.bytes instanceof ArrayBuffer?[job.bytes]:[]);
  });
 }

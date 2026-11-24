@@ -29,8 +29,15 @@ const js=entries.find(x=>x==='libredwg-web.js'),wasm=entries.find(x=>x==='libred
 if(!js||!wasm)throw Error('LibreDWG npm package does not contain the expected runtime assets.');
 await fs.copyFile(path.join(wasmDir,js),path.join(out,'libredwg-web.js'));
 await fs.copyFile(path.join(wasmDir,wasm),path.join(out,'libredwg-web.wasm'));
+await fs.copyFile(path.join(node,'dist/libredwg-web.js'),path.join(out,'libredwg-api.js'));
+const gsRoot=path.join(root,'node_modules/@wasmedia/wghostscript'),gsOut=path.join(out,'ghostscript');
+await fs.cp(gsRoot,gsOut,{recursive:true});
+const gsEntry=fileURLToPath(import.meta.resolve('@wasmedia/wghostscript'));
+const gsRelative=path.relative(gsRoot,gsEntry).split(path.sep).join('/');
+if(gsRelative.startsWith('..'))throw Error('Ghostscript package entry is outside its package.');
+await fs.writeFile(path.join(out,'ghostscript-entry.js'),'export {initWGhostscript} from '+JSON.stringify('./ghostscript/'+gsRelative)+';\n');
 await build({stdin:{contents:"export {WASI,File,OpenFile,PreopenDirectory} from '@bjorn3/browser_wasi_shim'; export {unzipSync} from 'fflate';",resolveDir:root},outfile:path.join(out,'cdr-runtime.js'),format:'esm',platform:'browser',bundle:true,legalComments:'linked'});
-await fs.writeFile(path.join(out,'NOTICE.txt'),'CDR engine: https://github.com/nobbs/go-libcdr/tree/57427ba5c758239f1debf10ca6034a7955227c73 (MIT/MPL-2.0 and bundled notices).\nDWG engine: @mlightcad/libredwg-web 0.8.8, GPL-3.0; source and build instructions: https://github.com/mlightcad/libredwg-web . Distribution must comply with GPL-3.0.\nWASI shim: @bjorn3/browser_wasi_shim 0.4.2, MIT/Apache-2.0. fflate 0.8.2 MIT.\n');
+await fs.writeFile(path.join(out,'NOTICE.txt'),'CDR engine: https://github.com/nobbs/go-libcdr/tree/57427ba5c758239f1debf10ca6034a7955227c73 (MIT/MPL-2.0 and bundled notices).\nDWG engine: @mlightcad/libredwg-web 0.8.8, GPL-3.0; source and build instructions: https://github.com/mlightcad/libredwg-web . Distribution must comply with GPL-3.0.\nWASI shim: @bjorn3/browser_wasi_shim 0.4.2, MIT/Apache-2.0. fflate 0.8.2 MIT.\\nGhostscript: @wasmedia/wghostscript 0.2.0, AGPL-3.0-or-later; redistribution requires license/source compliance.\n');
 const fixture=path.join(root,'tests/native-cad-fixtures');await fs.mkdir(fixture,{recursive:true});
 await pinned(dwg+'test/test-data/2018/circle.dwg',path.join(fixture,'circle2018.dwg'),'7e524a9d2770ab7011a85c12c1d1134bb1011154');
 await pinned(dwg+'test/test-data/2000/Polygon.dwg',path.join(fixture,'polygon2000.dwg'),'d1d4663a841210ff99192df61c5102dc4b4e1fbb');

@@ -1,4 +1,5 @@
 import { createDefaultState, structuredCloneSafe, markImmutableGeometry } from './state.js';
+import {freezeNestingContours} from '../manufacturing/NestingTabs.js';
 
 /**
  * Versioned Project Serialization, Migration, Autosave & Local Project Library
@@ -53,6 +54,7 @@ export function deserializeProject(jsonText) {
   const merged = deepMergePreserveUnknown(defaults, raw);
   merged.schemaVersion = CURRENT_SCHEMA_VERSION;
   for(const tab of merged.nesting?.importedTabs||[])if(Array.isArray(tab.items))markImmutableGeometry(tab.items);
+  freezeNestingContours(merged.nesting);
   if (!Array.isArray(merged.objects)) merged.objects = defaults.objects;
   if (!Array.isArray(merged.selectedIds)) merged.selectedIds = [];
   return merged;

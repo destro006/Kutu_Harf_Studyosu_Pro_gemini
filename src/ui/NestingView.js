@@ -4,6 +4,7 @@
  * locked badges, and red collision highlights.
  */
 
+const pathCache=new WeakMap();
 export function renderNestingSvg(sheet, selectedPlacementId = null, colors = {}) {
   if (!sheet) return '';
   const w = sheet.widthMm;
@@ -15,7 +16,7 @@ export function renderNestingSvg(sheet, selectedPlacementId = null, colors = {})
   const validColor = (value, fallback) => /^#[0-9a-f]{6}$/i.test(value || '') ? value : fallback;
   const bodyColor = validColor(colors?.body, '#c89343');
   const holeColor = validColor(colors?.holes, '#c89343');
-  const toD = pts => 'M ' + pts.map(pt => `${pt.x.toFixed(1)},${(h - pt.y).toFixed(1)}`).join(' L ') + ' Z';
+  const toD=pts=>{const cached=pathCache.get(pts);if(cached?.h===h)return cached.d;const d='M '+pts.map(pt=>`${pt.x.toFixed(1)},${(h-pt.y).toFixed(1)}`).join(' L ')+' Z';if(Object.isFrozen(pts))pathCache.set(pts,{h,d});return d;};
   // Color-code empty interior contours separately. This is only a preview
   // overlay; holes remain actual holes in the exported manufacturing geometry.
   const holePreview = holes=>holes.map(pts=>`<path data-nest-hole="true" d="${toD(pts)}" fill="${holeColor}" fill-opacity="0.7" pointer-events="none" />`).join('');
@@ -32,7 +33,7 @@ export function renderNestingSvg(sheet, selectedPlacementId = null, colors = {})
       const label = p.locked ? `🔒 ${p.label}` : p.label;
 
       return `
-        <g data-pid="${escapeXml(p.id)}" style="cursor:pointer">
+        <g data-pid="${escapeXml(p.id)}" class="${isSel?'nest-picked ':''}${isCol?'nest-collision':''}" style="cursor:pointer">
           <title>${escapeXml(label)}</title>
           ${holePreview(p.holes||[])}
           <path data-nest-body="true" d="${d}" fill="${fill}" fill-opacity="${isSel ? '0.83' : '0.55'}" stroke="${stroke}" stroke-width="${isSel || isCol ? 4 : 2}" fill-rule="evenodd" />

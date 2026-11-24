@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {structuredCloneSafe,createDefaultState} from '../src/core/state.js';
+import {freezeNestingContours,syncActiveNestingTab} from '../src/manufacturing/NestingTabs.js';
+import {editNestingPlacement} from '../src/manufacturing/NestingEngine.js';
+import {postScriptToPdf} from '../src/manufacturing/PostScriptWasmImport.js';
+const s=createDefaultState(),ring=Array.from({length:10000},(_,i)=>({x:50+30*Math.cos(i/10000*2*Math.PI),y:50+30*Math.sin(i/10000*2*Math.PI)}));
+const p={id:'p',outer:ring,holes:[],bounds:{minX:20,minY:20,maxX:80,maxY:80,width:60,height:60},xMm:20,yMm:20,areaMm2:2800};
+s.nesting.sheets=[{widthMm:3000,heightMm:1500,placements:[p]}];freezeNestingContours(s.nesting);syncActiveNestingTab(s.nesting);
+const before=performance.now();for(let i=0;i<100;i++){const clone=structuredCloneSafe(s);assert.equal(clone.nesting.sheets[0].placements[0].outer,ring);assert.notEqual(clone.nesting.sheets[0].placements[0],p);}console.log('100 contour-preserving snapshots: '+Math.round(performance.now()-before)+' ms');
+const copy=structuredCloneSafe(s);editNestingPlacement(copy.nesting.sheets[0].placements[0],'x',100);assert.notEqual(copy.nesting.sheets[0].placements[0].outer,ring);assert.equal(s.nesting.sheets[0].placements[0].xMm,20);
+const ps=new TextEncoder().encode('%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 144 72\n%%EndComments\n/box {0 0 moveto 144 0 lineto 144 72 lineto 0 72 lineto closepath fill} def\nbox\nshowpage\n%%EOF');
+const pdf=await postScriptToPdf(ps.buffer);assert.equal(new TextDecoder().decode(pdf.subarray(0,5)),'%PDF-');
+console.log('✓ Complex PostScript to real PDF and immutable contour snapshots');

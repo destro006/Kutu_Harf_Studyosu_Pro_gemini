@@ -339,7 +339,7 @@ function mutate(label, fn, renderWorkspace = true, rebuildScene=true) {
   updateUndoRedoButtons();
   if(rebuildScene)scheduleRebuild(true);
   else{const state=store.get();lastCosts=calculateProjectCosts(lastMetrics,state);updateStageChrome(state);updateNumericBar(state);updateCenterWorkspaces(state);writeAutosave(state);}
-  if (renderWorkspace) renderActiveWorkspace();
+  if (renderWorkspace && store.get().mainWorkspace!=='nesting') renderActiveWorkspace();
 }
 function mutateData(label,fn,renderWorkspace=false){return mutate(label,fn,renderWorkspace,false);}
 
@@ -979,6 +979,7 @@ function openMaterialPalette() {
 
 function renderActiveWorkspace() {
   const state = store.get();
+  if(state.mainWorkspace==='nesting')return;
   renderQuickPalette(state);
   const ws = (WS_META.some(m => m.id === state.activeWorkspace) ? state.activeWorkspace : 'properties');
   const stackMode = state.ui?.stackMode === 'stacked';
@@ -2624,7 +2625,7 @@ function setMainWorkspace(ws) {
   syncWorkspaceRail(ws);
 
   if (ws === 'materials') {
-    store.update(s => { s.activeWorkspace = 'materials'; });
+    store.updateScoped([],s => { s.activeWorkspace = 'materials'; });
     renderActiveWorkspace();
   }
   if (ws === 'design2d' && vector2D) {
@@ -2801,8 +2802,13 @@ async function importNestingVectorFiles(fileList, root) {
             job={jobId:j,operation:'importBinary',bytes,filename,options,nesting};
           }
         }
-        const output=await runVectorImportJob(job,{
+        let output=await runVectorImportJob(job,{
           signal:controller.signal,onStatus:msg=>say(file.name+': '+msg)});
+        if(output.convertedPdf){
+          const pdfFile=new File([output.convertedPdf],file.name,{type:'application/pdf'});
+          const parsed=await importPdfFile(pdfFile,options,msg=>say(file.name+': '+msg),controller.signal);
+          output=await runVectorImportJob({jobId:j,operation:'importPdfPages',pages:parsed.pages,ops:parsed.ops,warnings:['AI/EPS: PostScript yerel PDF vektörlerine dönüştürüldü.',...parsed.warnings],filename:file.name,options,nesting},{signal:controller.signal,onStatus:msg=>say(file.name+': '+msg)});
+        }
         ready.push(output);
         say(file.name+': '+output.imported.items.length+' parça çözümlendi; hızlı levha yerleşimi hazır.');
         await new Promise(resolve=>setTimeout(resolve,0));
@@ -2883,15 +2889,21 @@ function syncWorkspaceRail(ws){
   for(const b of document.querySelectorAll('.cad-rail [data-action]'))b.disabled=isNest&&b.dataset.action!=='delete';
 }
 function selectNestingPart(id){
-  selectedNestingId=id;
-  // Do not replace the SVG during a captured pointer gesture.
+  if(id===selectedNestingId)return;
+  const previous=selectedNestingId;selectedNestingId=id;
+  // A selection changes two existing nodes, not the entire complex sheet.
   const root=document.getElementById('nestingCenterWrap');
-  if(nestingGesture?.active){
-    root?.querySelectorAll('[data-pid]').forEach(g=>g.classList.toggle('nest-picked',g.dataset.pid===id));
-    updateNumericBar(store.get());return;
-  }
-  updateCenterWorkspaces(store.get());updateNumericBar(store.get());
+  const paint=(pid,on)=>{
+    if(pid==null||!root)return;
+    const g=root.querySelector('[data-pid="'+CSS.escape(pid)+'"]');
+    if(g){g.classList.toggle('nest-picked',on);const path=g.querySelector('[data-nest-body]');if(path&&!g.classList.contains('nest-collision')){path.setAttribute('stroke',on?'#ffffff':(store.get().nesting.previewColors?.body||'#c89343'));path.setAttribute('stroke-width',on?'4':'2');path.setAttribute('fill-opacity',on?'0.83':'0.55');}g.querySelector('text')?.remove();}
+    root.querySelector('[data-cws-pid="'+CSS.escape(pid)+'"]')?.classList.toggle('on',on);
+  };
+  paint(previous,false);paint(id,true);
+  const btn=root?.querySelector('#cwsDeletePart');if(btn)btn.disabled=!id;
+  updateNumericBar(store.get());
 }
+
 function bindNestingGestures(root){
   const svg=root.querySelector('.nesting-sheet-svg');if(!svg||svg._gestureBound)return;
   svg._gestureBound=true;svg.style.touchAction='none';
@@ -2973,9 +2985,7 @@ function bindNestingCenterEvents(root) {
     updateNumericBar(store.get());
   });
   root.querySelectorAll('[data-cws-pid]').forEach(el => el.onclick = () => {
-    selectedNestingId = el.dataset.cwsPid;
-    updateCenterWorkspaces(store.get());
-    updateNumericBar(store.get());
+    selectNestingPart(el.dataset.cwsPid);
   });
   root.querySelectorAll('#cwsNestSvgBox [data-pid]').forEach(g => {
     g.onclick = e=>{e.stopPropagation();};
@@ -2989,9 +2999,7 @@ function bindNestingCenterEvents(root) {
   // dismiss or rebuild the sheet-size and optimization settings sidebar.
   root.querySelector('#cwsNestSvgBox')?.addEventListener('click', e => {
     if (e.target.closest('[data-pid]') || !selectedNestingId) return;
-    selectedNestingId = null;
-    updateCenterWorkspaces(store.get());
-    updateNumericBar(store.get());
+    selectNestingPart(null);
   });
   root.querySelector('#cwsAddSheet')?.addEventListener('click', () => {
     mutateData('Yeni nesting levhası', s => {

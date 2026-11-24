@@ -8,6 +8,19 @@ export const NESTING_TAB_FIELDS = [
 ];
 const clone = value => value == null ? value : structuredCloneSafe(value);
 const asName = value => String(value||'Dosya').slice(0,90);
+// Only coordinates are immutable. Part metadata, locks and sheet arrays
+// remain independent in every undo/redo revision. Moves replace contour arrays.
+export function freezeNestingContours(n){
+ if(!n)return;
+ const seen=new Set();
+ const freezeSheet=sh=>{
+  if(!sh||seen.has(sh))return;seen.add(sh);
+  for(const p of sh.placements||[]){if(p.outer)markImmutableGeometry(p.outer);if(p.holes)markImmutableGeometry(p.holes);}
+ };
+ for(const sh of n.sheets||[])freezeSheet(sh);
+ for(const sh of n.designTabSnapshot?.sheets||[])freezeSheet(sh);
+ for(const tab of n.importedTabs||[])for(const sh of tab.settings?.sheets||[])freezeSheet(sh);
+}
 export function snapshotNestingTab(n) {
   return Object.fromEntries(NESTING_TAB_FIELDS.map(k => [k, clone(n[k])]));
 }
@@ -15,6 +28,7 @@ export function syncActiveNestingTab(n) {
   if (!n || !Array.isArray(n.importedTabs)) return;
   const tabId=n.activeTabId || 'design';
   if(tabId === 'import') return;
+  freezeNestingContours(n);
   // Share the current revision's placement graph instead of serializing it again.
   const snapshot=Object.fromEntries(NESTING_TAB_FIELDS.map(k=>[k,['sheets','unplaced'].includes(k)?n[k]:clone(n[k])]));
   if(tabId==='design') n.designTabSnapshot=snapshot;
@@ -44,8 +58,8 @@ export function createNestingImportedTab(n, imported, options={}) {
   const id = options.id || ('nest_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,6));
   if(n.importedTabs.some(t=>t.id===id))throw Error('Bu nesting sekme kimliği zaten kullanımda.');
   const tab={id,name:asName(imported.filename||options.name),format:imported.format||'vector',
-    items:markImmutableGeometry(clone(imported.items)),warnings:clone(imported.warnings||[]),
-    settings:{...snapshotNestingTab(n),sheets:[],unplaced:[],partOverrides:{},optimizationInfo:null}};
+    items:markImmutableGeometry(imported.items),warnings:clone(imported.warnings||[]),
+    settings:{...Object.fromEntries(NESTING_TAB_FIELDS.filter(k=>!['sheets','unplaced','partOverrides','optimizationInfo'].includes(k)).map(k=>[k,clone(n[k])])),sheets:[],unplaced:[],partOverrides:{},optimizationInfo:null}};
   n.importedTabs.push(tab);
   for(const field of NESTING_TAB_FIELDS)if(Object.hasOwn(tab.settings,field))n[field]=clone(tab.settings[field]);
   n.activeTabId=id;
