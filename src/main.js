@@ -2491,9 +2491,12 @@ function syncNestingSettingsControls(sidebar, nesting) {
     cwsNestPreset: SHEET_PRESETS.find(p => p.w === nesting.sheetWidthMm && p.h === nesting.sheetHeightMm)?.id || 'custom',
     cwsNestW: nesting.sheetWidthMm,
     cwsNestH: nesting.sheetHeightMm,
-    cwsNestSp: nesting.spacingMm,
+    cwsNestSp: nesting.clearanceMm,
     cwsNestMg: nesting.marginLeftMm,
-    cwsNestRot: nesting.rotationStepDeg,
+    cwsNestRot: nesting.rotationStepDeg ?? 90,
+    cwsNestStrategy: nesting.placementStrategy || 'compact',
+    cwsNestBodyColor: nesting.previewColors?.body || '#246b83',
+    cwsNestHoleColor: nesting.previewColors?.holes || '#dca653',
     cwsNestHoles: nesting.allowHoleNesting,
     cwsNestGrain: nesting.enforceGrainDirection,
   };
@@ -2544,38 +2547,46 @@ function updateCenterWorkspaces(state) {
   }
 }
 
-// Resizing a sheet changes the manufacturing envelope, not just the input value.
-// Repack in one undoable transaction so CNC exports and the SVG preview remain in sync.
-function applyNestingSheetSize(width, height, presetId = 'custom') {
-  const w = Number(width), h = Number(height);
-  if (!Number.isFinite(w) || !Number.isFinite(h) || w < 200 || h < 200) return;
+// All geometry-affecting settings repack in one undoable operation, keeping
+// the physical sheet, stored placements, DXF and preview synchronized.
+function repackNestingSettings(label, updateNesting) {
   const previous = store.get();
-  const config = { ...previous.nesting, sheetWidthMm: w, sheetHeightMm: h, presetId };
-  const items = extractNestingItems(lastSceneResult.metricsList || [], { ...previous, nesting: config });
-  const result = runTrueShapeNesting(items, config);
+  const next = structuredCloneSafe(previous.nesting);
+  updateNesting(next);
+  const items = extractNestingItems(lastSceneResult.metricsList || [], { ...previous, nesting: next });
+  const result = runTrueShapeNesting(items, next);
   lastNesting = result;
   activeSheetIdx = 0;
   selectedNestingId = null;
-  mutate('Levha ebatı ve yerleşimi', st => {
-    st.nesting.sheetWidthMm = w;
-    st.nesting.sheetHeightMm = h;
-    st.nesting.presetId = presetId;
-    st.nesting.sheets = result.sheets;
-    st.nesting.unplaced = result.unplaced;
+  mutate(label, st => {
+    st.nesting = { ...next, sheets: result.sheets, unplaced: result.unplaced };
   }, false);
-  // Update immediately, without re-creating the right-side settings control.
   updateCenterWorkspaces(store.get());
+}
+
+function applyNestingSheetSize(width, height, presetId = 'custom') {
+  const w = Number(width), h = Number(height);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w < 200 || h < 200 || w > 10000 || h > 10000) return;
+  repackNestingSettings('Levha ebatı ve yerleşimi', n => {
+    n.sheetWidthMm = w;
+    n.sheetHeightMm = h;
+    n.presetId = presetId;
+  });
 }
 
 function runAutoNesting() {
   const s = store.get();
-  const items = extractNestingItems(lastSceneResult.metricsList, s.objects, s.nesting.enforceGrainDirection);
+  // The extractor requires the *complete state*, not the objects array.
+  const items = extractNestingItems(lastSceneResult.metricsList || [], s);
   const res = runTrueShapeNesting(items, s.nesting);
   lastNesting = res;
+  activeSheetIdx = 0;
+  selectedNestingId = null;
   mutate('Otomatik Nesting', st => {
     st.nesting.sheets = res.sheets;
     st.nesting.unplaced = res.unplaced;
-  });
+  }, false);
+  updateCenterWorkspaces(store.get());
 }
 
 function bindNestingCenterEvents(root) {
@@ -2641,14 +2652,39 @@ function bindNestingCenterEvents(root) {
       const p = SHEET_PRESETS.find(x => x.id === e.target.value);
       if (p) applyNestingSheetSize(p.w, p.h, p.id);
     });
-  const bindNum = (id, fn) => root.querySelector('#' + id)?.addEventListener('change', e => mutate('Nesting ayarı', s => fn(s.nesting, Number(e.target.value))));
   root.querySelector('#cwsNestW')?.addEventListener('change', e => applyNestingSheetSize(e.target.value, store.get().nesting.sheetHeightMm));
   root.querySelector('#cwsNestH')?.addEventListener('change', e => applyNestingSheetSize(store.get().nesting.sheetWidthMm, e.target.value));
-  bindNum('cwsNestSp', (n, v) => { n.spacingMm = Math.max(0, v); });
-  bindNum('cwsNestMg', (n, v) => { n.marginLeftMm = n.marginRightMm = n.marginTopMm = n.marginBottomMm = Math.max(0, v); });
-  root.querySelector('#cwsNestHoles')?.addEventListener('change', e => mutate('Delik içi', s => { s.nesting.allowHoleNesting = e.target.checked; }));
-  root.querySelector('#cwsNestGrain')?.addEventListener('change', e => mutate('Fırça yönü', s => { s.nesting.enforceGrainDirection = e.target.checked; }));
-  root.querySelector('#cwsNestRot')?.addEventListener('change', e => mutate('Dönüş adımı', s => { s.nesting.rotationStepDeg = Number(e.target.value); }));
+  root.querySelector('#cwsNestSp')?.addEventListener('change', e => {
+    const v = Number(e.target.value);
+    if (Number.isFinite(v) && v >= 0) repackNestingSettings('Parça aralığı', n => { n.clearanceMm = v; });
+  });
+  root.querySelector('#cwsNestMg')?.addEventListener('change', e => {
+    const v = Number(e.target.value);
+    if (Number.isFinite(v) && v >= 0) repackNestingSettings('Levha kenar payı', n => {
+      n.marginMm = n.marginLeftMm = n.marginRightMm = n.marginTopMm = n.marginBottomMm = v;
+    });
+  });
+  root.querySelector('#cwsNestHoles')?.addEventListener('change', e =>
+    repackNestingSettings('Delik içi yerleşim', n => { n.allowHoleNesting = e.target.checked; }));
+  root.querySelector('#cwsNestGrain')?.addEventListener('change', e =>
+    repackNestingSettings('Fırça yönü kısıtı', n => { n.enforceGrainDirection = e.target.checked; }));
+  root.querySelector('#cwsNestRot')?.addEventListener('change', e =>
+    repackNestingSettings('Dönüş adımı', n => { n.rotationStepDeg = Number(e.target.value); }));
+  root.querySelector('#cwsNestStrategy')?.addEventListener('change', e =>
+    repackNestingSettings('Nesting yönü', n => { n.placementStrategy = e.target.value; }));
+  const setNestingPreviewColor = (field, value) => {
+    if (!/^#[a-f0-9]{6}$/i.test(value)) return;
+    mutate('Nesting önizleme rengi', s => {
+      s.nesting.previewColors ||= {};
+      s.nesting.previewColors[field] = value;
+    }, false);
+    updateCenterWorkspaces(store.get());
+  };
+  root.querySelector('#cwsNestBodyColor')?.addEventListener('input', e => setNestingPreviewColor('body', e.target.value));
+  root.querySelector('#cwsNestHoleColor')?.addEventListener('input', e => setNestingPreviewColor('holes', e.target.value));
+  root.querySelector('#cwsNestResetColors')?.addEventListener('click', () => mutate('Nesting renklerini sıfırla', s => {
+    s.nesting.previewColors = { body: '#246b83', holes: '#dca653' };
+  }, false));
   root.querySelector('#cwsExpSvg')?.addEventListener('click', () => {
     const sh = store.get().nesting.sheets[activeSheetIdx];
     if (sh) downloadBlob(`${store.get().projectName}_levha${activeSheetIdx + 1}.svg`, generateNestedSvg([sh]), 'image/svg+xml');

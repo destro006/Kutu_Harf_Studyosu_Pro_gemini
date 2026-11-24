@@ -229,6 +229,9 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
     kerfMm = 0.4,
     allowedAngles = [0, 90, 180, 270],
     fineAngleStep = 0,
+    rotationStepDeg,
+    placementStrategy = 'compact',
+    enforceGrainDirection = false,
     grainDirection = 'none',
     allowHoleNesting = true,
     groupByMaterial = true,
@@ -242,12 +245,17 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
   const usableW = sheetWidthMm - mL - mR;
   const usableH = sheetHeightMm - mB - mT;
 
+  // The UI rotation selector is authoritative. Older projects that lack it
+  // retain their explicit allowedAngles/fineAngleStep settings.
   let angles = allowedAngles.length ? allowedAngles : [0, 90, 180, 270];
-  if (fineAngleStep > 0) {
+  if (rotationStepDeg != null && [0, 45, 90, 180].includes(Number(rotationStepDeg))) {
+    angles = Number(rotationStepDeg) === 0 ? [0] :
+      Array.from({length:360 / Number(rotationStepDeg)}, (_, i) => i * Number(rotationStepDeg));
+  } else if (fineAngleStep > 0) {
     angles = [];
     for (let a = 0; a < 360; a += fineAngleStep) angles.push(a);
   }
-  if (grainDirection === 'horizontal' || grainDirection === 'vertical') {
+  if (enforceGrainDirection || grainDirection === 'horizontal' || grainDirection === 'vertical') {
     angles = angles.filter(a => a % 180 === 0);
     if (!angles.length) angles = [0, 180];
   }
@@ -346,7 +354,7 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
 
       let placedOk = false;
       for (const sheet of batchSheets) {
-        const best = findBestPlacementOnSheet(sheet, variants, mL, mB, sheetWidthMm - mR, sheetHeightMm - mT, allowHoleNesting, fitsOnSheet);
+        const best = findBestPlacementOnSheet(sheet, variants, mL, mB, sheetWidthMm - mR, sheetHeightMm - mT, allowHoleNesting, fitsOnSheet, minSep, placementStrategy);
         if (best) {
           sheet.placements.push(makePlacement(item, best));
           sheet.usedAreaMm2 += item.areaMm2;
@@ -369,7 +377,7 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
           placements: [],
           usedAreaMm2: 0,
         };
-        const best = findBestPlacementOnSheet(newSheet, variants, mL, mB, sheetWidthMm - mR, sheetHeightMm - mT, allowHoleNesting, fitsOnSheet);
+        const best = findBestPlacementOnSheet(newSheet, variants, mL, mB, sheetWidthMm - mR, sheetHeightMm - mT, allowHoleNesting, fitsOnSheet, minSep, placementStrategy);
         if (best) {
           newSheet.placements.push(makePlacement(item, best));
           newSheet.usedAreaMm2 += item.areaMm2;
@@ -439,87 +447,80 @@ function makePlacement(item, best) {
   };
 }
 
-function findBestPlacementOnSheet(sheet, variants, minX, minY, maxX, maxY, allowHoleNesting, fitsOnSheet) {
-  let best = null;
-  let bestScore = Infinity;
+function findBestPlacementOnSheet(sheet, variants, minX, minY, maxX, maxY, allowHoleNesting, fitsOnSheet, minSep = 5, strategy = 'compact') {
+  let best = null, bestScore = Infinity;
+  const occupiedX = Math.max(minX, ...sheet.placements.map(p => p.bounds.maxX));
+  const occupiedY = Math.max(minY, ...sheet.placements.map(p => p.bounds.maxY));
+  const usableW = Math.max(1, maxX - minX), usableH = Math.max(1, maxY - minY);
+  const sheetArea = usableW * usableH;
+  const snap = value => Math.round(value * 10) / 10;
 
-  const snap = (v) => Math.max(minX, Math.round(v / 10) * 10);
-  const candX = new Set([minX]);
-  const candY = new Set([minY]);
-  const stepX = Math.max(40, Math.round((maxX - minX) / 14));
-  const stepY = Math.max(40, Math.round((maxY - minY) / 10));
-
-  for (let x = minX; x <= maxX; x += stepX) candX.add(snap(x));
-  for (let y = minY; y <= maxY; y += stepY) candY.add(snap(y));
-
-  for (const p of sheet.placements) {
-    candX.add(snap(p.bounds.minX));
-    candX.add(snap(p.bounds.maxX + 6));
-    candY.add(snap(p.bounds.minY));
-    candY.add(snap(p.bounds.maxY + 6));
-    if (allowHoleNesting && p.holes?.length) {
-      for (const h of p.holes) {
-        const hb = polygonBounds(h);
-        candX.add(Math.round(hb.minX + 6));
-        candY.add(Math.round(hb.minY + 6));
-      }
-    }
-    for (let k = 0; k < p.outer.length; k += Math.max(1, Math.floor(p.outer.length / 3))) {
-      candX.add(snap(p.outer[k].x));
-      candY.add(snap(p.outer[k].y));
-    }
-  }
-
-  const xs = [...candX].sort((a, b) => a - b);
-  const ys = [...candY].sort((a, b) => a - b);
+  const scoreAt = (x, y, v) => {
+    if (strategy === 'bottomLeft') return (x - minX) + (y - minY) * 1.3;
+    if (strategy === 'vertical') return (x - minX) * 3 + (y - minY) * 0.2;
+    // Minimize the envelope occupied by parts, not the distance from the
+    // bottom-left corner. This considers stacking parts above one another
+    // when it avoids extending a long row across the sheet.
+    const width = Math.max(occupiedX, x + v.bounds.width) - minX;
+    const height = Math.max(occupiedY, y + v.bounds.height) - minY;
+    return width * height +
+      sheetArea * 0.012 * (width / usableW + height / usableH) +
+      (x - minX + y - minY) * 0.001;
+  };
 
   for (const v of variants) {
+    const candX = new Set([minX]);
+    const candY = new Set([minY]);
+    const stepX = Math.max(35, usableW / 14);
+    const stepY = Math.max(35, usableH / 12);
+    for (let x = minX; x + v.bounds.width <= maxX + 1e-5; x += stepX) candX.add(snap(x));
+    for (let y = minY; y + v.bounds.height <= maxY + 1e-5; y += stepY) candY.add(snap(y));
+    for (const placed of sheet.placements) {
+      const b = placed.bounds;
+      // Exact edge-contact candidates improve on a coarse fixed grid.
+      for (const x of [b.minX, b.maxX + minSep, b.minX - v.bounds.width - minSep, b.maxX - v.bounds.width]) {
+        if (x >= minX - 1e-5 && x + v.bounds.width <= maxX + 1e-5) candX.add(snap(x));
+      }
+      for (const y of [b.minY, b.maxY + minSep, b.minY - v.bounds.height - minSep, b.maxY - v.bounds.height]) {
+        if (y >= minY - 1e-5 && y + v.bounds.height <= maxY + 1e-5) candY.add(snap(y));
+      }
+      if (allowHoleNesting) for (const hole of placed.holes || []) {
+        const hb = polygonBounds(hole);
+        candX.add(snap(hb.minX + minSep));
+        candY.add(snap(hb.minY + minSep));
+      }
+    }
+    const xs = [...candX].filter(x => x >= minX && x + v.bounds.width <= maxX + 1e-5).sort((a,b)=>a-b);
+    const ys = [...candY].filter(y => y >= minY && y + v.bounds.height <= maxY + 1e-5).sort((a,b)=>a-b);
     for (const x of xs) {
-      if (x + v.bounds.width > maxX) continue;
-      if (x >= bestScore) break;
       for (const y of ys) {
-        if (y + v.bounds.height > maxY) continue;
-        const scoreApprox = x + y * 1.3;
-        if (scoreApprox >= bestScore) break;
-
-        const candPoly = translatePolygon(v.outer, x, y);
-        const candBounds = { minX: x, minY: y, maxX: x + v.bounds.width, maxY: y + v.bounds.height };
-        if (fitsOnSheet(sheet, candPoly, candBounds)) {
-          let cx = x, cy = y;
-          for (const delta of [16, 4, 1]) {
-            while (cx - delta >= minX) {
-              const tp = translatePolygon(v.outer, cx - delta, cy);
-              const tb = { minX: cx - delta, minY: cy, maxX: cx - delta + v.bounds.width, maxY: cy + v.bounds.height };
-              if (fitsOnSheet(sheet, tp, tb)) cx -= delta;
-              else break;
-            }
-            while (cy - delta >= minY) {
-              const tp = translatePolygon(v.outer, cx, cy - delta);
-              const tb = { minX: cx, minY: cy - delta, maxX: cx + v.bounds.width, maxY: cy - delta + v.bounds.height };
-              if (fitsOnSheet(sheet, tp, tb)) cy -= delta;
-              else break;
-            }
+        const box = {minX:x,minY:y,maxX:x+v.bounds.width,maxY:y+v.bounds.height};
+        const outline = translatePolygon(v.outer,x,y);
+        if (!fitsOnSheet(sheet,outline,box)) continue;
+        let cx=x,cy=y;
+        // Snap tightly against neighboring shapes while preserving all cut
+        // clearances and avoiding collision with actual polygon contours.
+        for (const delta of [12,3,1]) {
+          while (cx-delta >= minX) {
+            const px=cx-delta, poly=translatePolygon(v.outer,px,cy);
+            if (!fitsOnSheet(sheet,poly,{minX:px,maxX:px+v.bounds.width,minY:cy,maxY:cy+v.bounds.height})) break;
+            cx=px;
           }
-          const finalScore = cx + cy * 1.3;
-          if (finalScore < bestScore) {
-            bestScore = finalScore;
-            best = {
-              angleDeg: v.ang,
-              xMm: cx,
-              yMm: cy,
-              outer: translatePolygon(v.outer, cx, cy),
-              holes: v.holes.map(h => translatePolygon(h, cx, cy)),
-              bounds: {
-                minX: cx,
-                minY: cy,
-                maxX: cx + v.bounds.width,
-                maxY: cy + v.bounds.height,
-                width: v.bounds.width,
-                height: v.bounds.height,
-              },
-            };
+          while (cy-delta >= minY) {
+            const py=cy-delta,poly=translatePolygon(v.outer,cx,py);
+            if (!fitsOnSheet(sheet,poly,{minX:cx,maxX:cx+v.bounds.width,minY:py,maxY:py+v.bounds.height})) break;
+            cy=py;
           }
-          break;
+        }
+        const score = scoreAt(cx,cy,v);
+        if (score + 1e-5 < bestScore) {
+          bestScore=score;
+          best={
+            angleDeg:v.ang,xMm:cx,yMm:cy,
+            outer:translatePolygon(v.outer,cx,cy),
+            holes:v.holes.map(h=>translatePolygon(h,cx,cy)),
+            bounds:{minX:cx,minY:cy,maxX:cx+v.bounds.width,maxY:cy+v.bounds.height,width:v.bounds.width,height:v.bounds.height}
+          };
         }
       }
     }

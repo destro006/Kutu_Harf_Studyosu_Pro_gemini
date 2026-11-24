@@ -1385,3 +1385,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .cst-inline-rate input{width:105px;max-width:100%;padding:7px 8px;border:1px solid #3d4858;border-radius:7px;background:#101722;color:#f6f6f8;text-align:right;font-variant-numeric:tabular-nums}
 .cst-inline-rate input:focus{border-color:var(--accent);outline:2px solid rgba(255,181,71,.16)}
 .cst-inline-rate small{font-size:10px;color:var(--muted);font-weight:600}
+
+/* Nesting preview palette: a consistent body color and a distinct counter/hole tint. */
+.nesting-preview-palette {display:flex;flex-direction:column;gap:9px;padding:10px 8px;border:1px solid var(--line);border-radius:9px;background:rgba(255,255,255,.025)}
+.nesting-palette-option {display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:var(--text)}
+.nesting-palette-option input[type=color] {width:48px;min-width:48px;height:29px;cursor:pointer;padding:2px;background:transparent;border:1px solid var(--line);border-radius:6px}
+.nesting-preview-palette small {font-size:10px;line-height:1.5;color:var(--muted)}

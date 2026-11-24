@@ -69,7 +69,7 @@ export function renderNestingCenter(state, ctx) {
           </div>
         </div>
         <div id="cwsNestSvgBox" class="nesting-sheet-fit">
-          ${renderNestingSvg(displayedSheet, ctx.selectedPlacementId)}
+          ${renderNestingSvg(displayedSheet, ctx.selectedPlacementId, n.previewColors)}
           <span class="nesting-sheet-dimensions">${displayedSheet.widthMm} × ${displayedSheet.heightMm} mm</span>
           ${!activeSheet ? '<span class="nesting-sheet-empty-note">Parçaları yerleştirmek için Otomatik Yerleştir seçin</span>' : ''}
         </div>
@@ -96,9 +96,24 @@ export function renderNestingCenter(state, ctx) {
           <select id="cwsNestRot">
             <option value="0" ${n.rotationStepDeg === 0 ? 'selected' : ''}>Sabit (0°)</option>
             <option value="180" ${n.rotationStepDeg === 180 ? 'selected' : ''}>0° / 180°</option>
-            <option value="90" ${n.rotationStepDeg === 90 ? 'selected' : ''}>90° Adımlı</option>
+            <option value="90" ${(n.rotationStepDeg ?? 90) === 90 ? 'selected' : ''}>90° Adımlı</option>
             <option value="45" ${n.rotationStepDeg === 45 ? 'selected' : ''}>45° Adımlı</option>
           </select>
+        </div>
+        <h3 class="sec-title" style="margin-top:14px">Yerleşim Tercihi</h3>
+        <div class="field-row"><label>Optimizasyon yönü</label>
+          <select id="cwsNestStrategy">
+            <option value="compact" ${(n.placementStrategy || 'compact') === 'compact' ? 'selected' : ''}>Kompakt · daha az fire</option>
+            <option value="vertical" ${n.placementStrategy === 'vertical' ? 'selected' : ''}>Dikey · üst alanı kullan</option>
+            <option value="bottomLeft" ${n.placementStrategy === 'bottomLeft' ? 'selected' : ''}>Alt-sol · klasik</option>
+          </select>
+        </div>
+        <h3 class="sec-title" style="margin-top:14px">Önizleme Renkleri</h3>
+        <div class="nesting-preview-palette">
+          <label class="nesting-palette-option"><span>Tüm harf gövdeleri</span><input id="cwsNestBodyColor" type="color" value="${/^#[a-f0-9]{6}$/i.test(n.previewColors?.body || '') ? n.previewColors.body : '#246b83'}" title="Tüm harfler için tek renk"></label>
+          <label class="nesting-palette-option"><span>A / O / R iç boşlukları</span><input id="cwsNestHoleColor" type="color" value="${/^#[a-f0-9]{6}$/i.test(n.previewColors?.holes || '') ? n.previewColors.holes : '#dca653'}" title="Bütün iç boşluklar için tek renk"></label>
+          <button type="button" id="cwsNestResetColors" class="sec-btn">Renkleri Sıfırla</button>
+          <small>Bu renkler yalnızca nesting önizlemesidir; CNC, DXF ve SVG kesim konturları değişmez.</small>
         </div>
         <h3 class="sec-title" style="margin-top:12px">Nesting Dışa Aktar</h3>
         <div style="display:flex;flex-direction:column;gap:6px">
