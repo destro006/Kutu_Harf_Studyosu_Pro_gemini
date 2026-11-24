@@ -16,6 +16,7 @@ export function attachMenuBar(actions) {
       { label: 'JSON Farklı Kaydet...', fn: () => actions.saveJsonFile() },
       { sep: true },
       { label: 'Dışa Aktar...', kbd: 'Ctrl+E', fn: () => actions.openExport() },
+      { label: 'İçe Aktar...', kbd: 'Ctrl+I', fn: () => actions.openImport() },
     ],
     edit: [
       { label: 'Geri Al', kbd: 'Ctrl+Z', fn: () => actions.undo() },
