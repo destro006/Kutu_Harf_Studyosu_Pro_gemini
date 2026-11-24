@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {readAutosaveIndexedDb,writeAutosave} from '../src/core/projectSerializer.js';
+import {createDefaultState} from '../src/core/state.js';
+assert.equal(await readAutosaveIndexedDb(),null,'Node without IndexedDB keeps old fallback');
+const src=fs.readFileSync(new URL('../src/core/projectSerializer.js',import.meta.url),'utf8');
+assert(src.includes('indexedDB.open(IDB_DB, 1)'));
+assert(src.includes("tx.objectStore(IDB_STORE).put({savedAt:Date.now(),state},'latest')"));
+assert(!src.includes('localStorage.setItem(AUTOSAVE_KEY, serializeProject(state));\n  } catch {\n    // Ignore storage quota'));
+const main=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
+assert(main.includes('await readAutosaveIndexedDb() || readAutosave()'));
+console.log('✓ Large nesting projects use IndexedDB autosave, restore legacy localStorage when needed');

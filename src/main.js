@@ -14,7 +14,7 @@ import {
   deserializeProject,
   deleteSavedProject,
   listSavedProjects,
-  readAutosave,
+  readAutosave, readAutosaveIndexedDb,
   saveProjectToBrowser,
   serializeProject,
   writeAutosave,
@@ -94,7 +94,8 @@ const CONSTRUCTION_TYPES = [
 ];
 
 const docManager = new DocumentManager();
-const autosaved = readAutosave();
+// IndexedDB keeps large imported nesting jobs local, beyond localStorage quotas.
+const autosaved = await readAutosaveIndexedDb() || readAutosave();
 if (autosaved) {
   docManager.getActiveStore().set(autosaved);
   docManager.getActiveDoc().title = autosaved.projectName || 'Yeni Tabela Projesi';

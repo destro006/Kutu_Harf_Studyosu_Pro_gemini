@@ -100,12 +100,72 @@ export function deleteSavedProject(id) {
   return projects;
 }
 
-export function writeAutosave(state) {
-  try {
-    localStorage.setItem(AUTOSAVE_KEY, serializeProject(state));
-  } catch {
-    // Ignore storage quota
+const IDB_DB = 'khs_native_workspace_v3';
+const IDB_STORE = 'autosave';
+let autosaveTimer = null, pendingAutosave = null, dbPromise = null;
+function openAutosaveDb() {
+  if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+  if (!dbPromise) {
+    dbPromise = new Promise((resolve, reject) => {
+      const request = indexedDB.open(IDB_DB, 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains(IDB_STORE)) {
+          request.result.createObjectStore(IDB_STORE);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('IndexedDB açılamadı.'));
+    }).catch(error => {
+      console.warn('Nesting yerel depolama kullanılamıyor:', error);
+      dbPromise = null;
+      return null;
+    });
   }
+  return dbPromise;
+}
+/** Read locally stored large CAD jobs without localStorage's small quota. */
+export async function readAutosaveIndexedDb() {
+  try {
+    const db = await openAutosaveDb();
+    if (!db) return null;
+    const data = await new Promise((resolve,reject) => {
+      const tx = db.transaction(IDB_STORE,'readonly');
+      const req = tx.objectStore(IDB_STORE).get('latest');
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+    return data?.state ? deserializeProject(data.state) : null;
+  } catch(error) {
+    console.warn('Yerel otomatik kayıt okunamadı:', error);
+    return null;
+  }
+}
+async function persistAutosave(state) {
+  const db = await openAutosaveDb();
+  if (!db) {
+    // Compatibility fallback when IndexedDB is unavailable (e.g. file://).
+    try {localStorage.setItem(AUTOSAVE_KEY, serializeProject(state));}
+    catch(error) {console.warn('Otomatik kayıt yapılamadı; proje JSON dosyasını dışa aktarın.',error);}
+    return;
+  }
+  await new Promise((resolve,reject) => {
+    const tx = db.transaction(IDB_STORE,'readwrite');
+    tx.objectStore(IDB_STORE).put({savedAt:Date.now(),state},'latest');
+    tx.oncomplete=()=>resolve();
+    tx.onerror=()=>reject(tx.error || new Error('IndexedDB otomatik kayıt hatası.'));
+    tx.onabort=()=>reject(tx.error || new Error('IndexedDB otomatik kayıt iptal edildi.'));
+  });
+}
+export function writeAutosave(state) {
+  pendingAutosave=state;
+  clearTimeout(autosaveTimer);
+  // Do not JSON stringify megabytes of vector geometry on each scene render.
+  autosaveTimer=setTimeout(() => {
+    const snapshot=pendingAutosave;pendingAutosave=null;
+    if(snapshot)persistAutosave(snapshot).catch(error => {
+      console.warn('Nesting otomatik kayıt hatası; projeyi dosya olarak da kaydedin.',error);
+    });
+  },500);
 }
 
 export function readAutosave() {
