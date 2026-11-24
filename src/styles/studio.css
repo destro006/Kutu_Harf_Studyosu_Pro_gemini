@@ -1227,13 +1227,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 
 .three-pick-marquee { position:absolute; z-index:9; pointer-events:none; background:rgba(233,185,119,.13); border:1px dashed #edc78f; box-shadow:inset 0 0 0 1px rgba(20,20,20,.3); }
 
-.inspector-quick-colors { flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:7px 9px; background:#101720; border-bottom:1px solid var(--line); min-width:0; }
-.quick-palette-label { font-size:11px; font-weight:700; color:#efcb98; flex:0 0 auto; }
-.quick-palette-swatches { display:flex; overflow-x:auto; min-width:0; gap:4px; flex:1 1 auto; scrollbar-width:thin; padding:3px; }
-.quick-palette-swatch { flex:0 0 20px; width:20px; height:20px; border-radius:5px; border:2px solid #5b6570; background:var(--color); padding:0; cursor:pointer; }
-.quick-palette-swatch.on { border-color:#fff; box-shadow:0 0 0 2px #d4a66f; }
-.quick-palette-more { flex:0 0 auto; background:rgba(233,185,119,.13); color:#f0cd9f; border:1px solid rgba(233,185,119,.38); border-radius:6px; padding:5px 6px; font-size:11px; cursor:pointer; white-space:nowrap; }
-@media(max-width:960px) {.inspector-quick-colors { gap:5px; } .quick-palette-swatch { flex-basis:24px; width:24px; height:24px; }}
 
 /* Inspector v3: three primary panels, one clear selector for everything else. */
 .inspector-col { position:relative; isolation:isolate; }
@@ -1516,7 +1509,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .ribbon-categories{display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding:5px 8px}
 .ribbon-categories button{border:1px solid #344153;border-radius:6px;background:#1b2531;color:#e8e9ec;padding:5px 9px;font-size:12px;white-space:nowrap}
 .ribbon-categories button.on{color:#f2ce92;border-color:#a47c45;background:#362d23}
-.studio-ribbon .inspector-quick-colors{flex:1;min-width:200px;max-width:100%;border:none;padding:4px 8px}
 .ribbon-panel{position:absolute;top:100%;left:8px;width:min(680px,calc(100% - 16px));max-height:min(62vh,540px);display:flex;flex-direction:column;border:1px solid #566479;border-radius:0 0 10px 10px;background:#171e28;box-shadow:0 12px 36px #0009;overflow:hidden;z-index:80}
 .ribbon-panel-head{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-bottom:1px solid #35404c;color:#efcd96}
 .ribbon-panel-content{overflow:auto;overscroll-behavior:contain;min-height:0;padding:8px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-content:start}
@@ -1542,9 +1534,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 #studioRibbon{flex-wrap:nowrap;min-height:35px}
 #studioRibbon .ribbon-categories{flex:0 1 auto;min-width:0;flex-wrap:nowrap;white-space:nowrap;overflow-x:auto;scrollbar-width:thin;padding:4px 7px}
 #studioRibbon .ribbon-categories button{flex-shrink:0;padding:4px 7px;font-size:11px}
-#studioRibbon .inspector-quick-colors{flex:1 1 245px;min-width:120px;max-width:360px;flex-wrap:nowrap;white-space:nowrap;padding:3px 6px}
-#studioRibbon .quick-palette-swatches{min-width:0;flex:1 1 auto}
-@media(max-width:720px){#studioRibbon .inspector-quick-colors{flex-basis:105px;min-width:90px}#studioRibbon .quick-palette-label{display:none}}
 
 /* Independent stacks: short cards never stretch to match a tall neighbour. */
 .ribbon-panel-content{align-items:start}
@@ -1555,24 +1544,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .material-ribbon-column .mat-grid{gap:5px}
 .material-ribbon-column .mat-btn{padding:5px;min-height:50px}
 .material-ribbon-column .ral-grid{max-height:230px;overflow-y:auto;overscroll-behavior:contain}
-#studioRibbon .quick-palette-swatches{scrollbar-width:thin;scrollbar-color:#566479 transparent;overscroll-behavior-x:contain}
-#studioRibbon .quick-palette-swatch{flex:0 0 20px;width:20px;height:20px}
-#studioRibbon .quick-palette-swatch:focus-visible{outline:2px solid #eac48a;outline-offset:1px}
 @media(max-width:650px){.ribbon-panel-content.material-ribbon-content{grid-template-columns:1fr}}
 
 .align-rail-icon{display:inline-flex;font-style:normal;align-items:center;justify-content:center}.alignment-flyout{position:fixed;z-index:1000;width:154px;padding:8px;border:1px solid #576273;border-radius:8px;background:#19212c;box-shadow:0 8px 30px #0009;color:#e8e9ee}.alignment-flyout.hidden{display:none!important}.align-flyout-title{font-size:10px;color:#eac48a;font-weight:650;margin:4px 2px 6px}.align-icon-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}.align-icon-grid button{display:flex;align-items:center;justify-content:center;padding:3px;height:32px;min-width:0;background:#202b38;border:1px solid #384657;border-radius:4px;color:#dce3ed;cursor:pointer}.align-icon-grid button:hover:not(:disabled),.align-icon-grid button:focus-visible{border-color:#d4a664;background:#3b3023;color:#f3ce92}.align-icon-grid button:disabled{opacity:.35;cursor:not-allowed}.align-icon-grid+.align-flyout-title{border-top:1px solid #384657;padding-top:8px;margin-top:8px}
 
-/* The inspector-side palette occupies its own reserved strip inside the viewport.
-   This keeps the resizable inspector grid and the two top tool strips intact. */
-.viewport-col.has-vertical-palette{position:relative;padding-right:36px;box-sizing:border-box}
-#inspectorQuickColors.vertical-palette{position:absolute;top:0;bottom:0;right:0;width:36px;max-width:36px;display:flex;flex-direction:column;align-items:center;gap:3px;min-height:0;min-width:0;padding:5px 2px;background:#101720;border-left:1px solid var(--line);border-bottom:0;z-index:12;box-sizing:border-box}
-#inspectorQuickColors.vertical-palette.hidden{display:none!important}
-#inspectorQuickColors .quick-palette-label{font-size:9px;writing-mode:vertical-rl;transform:rotate(180deg);padding:3px 0;color:var(--muted);flex:none}
-#inspectorQuickColors .quick-palette-swatches{display:flex;flex-direction:column;align-items:center;flex:1 1 auto;width:100%;min-height:0;overflow-x:hidden;overflow-y:auto;gap:4px;padding:4px 1px;scrollbar-width:thin;overscroll-behavior:contain;box-sizing:border-box}
-#inspectorQuickColors .quick-palette-swatch{flex:0 0 23px;width:23px;height:23px;border-radius:3px}
-#inspectorQuickColors .quick-palette-swatch:focus-visible{outline:2px solid #eac48a;outline-offset:1px}
-.nesting-isolated .viewport-col.has-vertical-palette{padding-right:0}
-.nesting-isolated #inspectorQuickColors{display:none!important}
 /* Intrinsic-height cards; prevent grid shrink and swatches spilling into following cards. */
 .ribbon-panel-content{flex:1 1 auto;grid-auto-rows:max-content;align-items:start;box-sizing:border-box}
 .ribbon-panel-content *,#workspaceContent *{box-sizing:border-box}
@@ -1588,4 +1563,3 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .lighting-column .field-row input[type=number]{flex:0 0 64px;max-width:100%}
 .lighting-selection-note{font-size:11px;color:var(--muted);margin:0;padding:0 6px 4px;line-height:1.4}
 #workspaceContent .lighting-column,#workspaceContent .material-ribbon-column{margin-bottom:8px}
-@media(max-width:960px){.viewport-col.has-vertical-palette{padding-right:32px}#inspectorQuickColors.vertical-palette{width:32px;max-width:32px}}

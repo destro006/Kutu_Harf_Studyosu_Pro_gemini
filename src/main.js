@@ -993,27 +993,6 @@ function renderFloatingWindows(state) {
   }
 }
 
-function renderQuickPalette(state) {
-  const host=document.getElementById('inspectorQuickColors');if(!host)return;
-  const selected=state.objects.find(o=>(state.selectedIds||[]).includes(o.id));
-  const fileli=(selected?.constructionType||state.constructionType)==='fileli';
-  const current=(fileli?(selected?.fileColor||state.fileli.fileColor):(selected?.faceColor||state.materials.faceColor)||'').toLowerCase();
-  const code=selected?.ralCode||state.materials.ralCode||'';
-  // Build the full strip once; selection changes never reset the scroll position.
-  if(!host.querySelector('.quick-palette-swatches')){
-    const basic=PAINT_PALETTE.slice(0,12).map(c=>({...c,code:''}));
-    const colors=[...basic,...RAL_COLORS.map(c=>({...c,label:c.code+' · '+c.name}))];
-    host.innerHTML='<span class="quick-palette-label">Renkler</span><div class="quick-palette-swatches" tabindex="0" aria-label="Renk paleti; kaydırarak diğer renklere ulaşın">'+colors.map(c=>`<button type="button" class="quick-palette-swatch" data-quick-hex="${c.hex}" data-quick-ral="${escapeAttr(c.code)}" aria-label="${escapeAttr(c.label)}" title="${escapeAttr(c.label)}" style="--color:${c.hex}"></button>`).join('')+'</div>';
-    const strip=host.querySelector('.quick-palette-swatches');
-    // Native vertical scrolling and keyboard navigation; no wheel interception.
-  }
-  const key=current+'|'+code;if(host.dataset.paletteSelection===key)return;host.dataset.paletteSelection=key;
-  for(const button of host.querySelectorAll('[data-quick-hex]')){
-    const on=code.startsWith('RAL ')?button.dataset.quickRal===code:!button.dataset.quickRal&&button.dataset.quickHex.toLowerCase()===current;
-    button.classList.toggle('on',on);button.setAttribute('aria-pressed',String(on));
-  }
-}
-
 const ribbonIds=new Set(['properties','materials','lighting','manufacturing','align','background']);
 const sideIds=new Set(['objects','layers','projects']);
 let sideWorkspace='layers';
@@ -1024,9 +1003,6 @@ function renderRibbon(state){
   if(!root||!panel||!host)return;
   const allowed=['model3d','materials','design2d'].includes(state.mainWorkspace||'model3d');
   host.classList.toggle('hidden',!allowed);
-  const palette=document.getElementById('inspectorQuickColors');
-  palette?.classList.toggle('hidden',!allowed);
-  palette?.parentElement?.classList.toggle('has-vertical-palette',allowed);
   const ws=state.activeWorkspace==='design'?'properties':state.activeWorkspace;
   const open=allowed&&ribbonIds.has(ws)&&ribbonSuppressed!==ws;
   panel.classList.toggle('hidden',!open);
@@ -1061,7 +1037,6 @@ function renderActiveWorkspace() {
   const state = store.get();
   renderRibbon(state);
   if(state.mainWorkspace==='nesting')return;
-  renderQuickPalette(state);
   const active=state.activeWorkspace==='design'?'properties':state.activeWorkspace;
   const ribbonOpen=ribbonIds.has(active)&&ribbonSuppressed!==active&&['model3d','materials','design2d'].includes(state.mainWorkspace||'model3d');
   if(sideIds.has(active))sideWorkspace=active;
@@ -3627,15 +3602,6 @@ function init() {
     }));
     const w = document.getElementById('stageWarning');
     if (w) { w.textContent = 'Renk, materyal ve aydınlatma ayarlarınız varsayılan olarak kaydedildi.'; w.classList.remove('hidden'); setTimeout(() => w.classList.add('hidden'), 2500); }
-  });
-  document.getElementById('inspectorQuickColors')?.addEventListener('click', e => {
-    const btn = e.target.closest('[data-quick-hex]');
-    if (!btn) return;
-    const color = btn.dataset.quickHex;
-    mutate('Hızlı renk paleti', s => {
-      applyRalCoating(s,color,'face',btn.dataset.quickRal||'Özel Renk');
-    });
-    renderQuickPalette(store.get());
   });
   document.getElementById('btnOpenBackgroundPanel')?.addEventListener('click', () => {
     ribbonSuppressed=null;
