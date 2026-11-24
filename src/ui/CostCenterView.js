@@ -3,7 +3,7 @@ import { formatMoney, listPriceCatalog, getPriceCard, toTargetCurrency, COST_ROL
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const money = (n,c) => formatMoney(Number(n)||0,c);
-const dec = n => Number(Number(n||0).toFixed(4));
+const dec = n => Number(Number(n||0).toFixed(2));
 const show = (v,fallback='') => esc(v == null?fallback:v);
 const roleOf = key => String(key||'').split(':')[0];
 const RATE_ROLES = [
@@ -53,12 +53,12 @@ function summary(state,metrics,cost){
  ${card('KDV Dahil Teklif',money(cost.grandTotal,cur),`KDV %${dec(cost.vatRate*100)}`,'accent')}</div>
  <div class="cst-two-col">
   <section class="cst-card"><div class="cst-heading"><div><small>GERÇEK GEOMETRİDEN</small><h3>Üretim metrajı</h3></div><span class="cst-chip">Canlı</span></div>
-   <div class="cst-metrics"><div><span>Toplam ebat</span><b>${formatDimensions(metrics.totalWidthMm,metrics.totalHeightMm,unit)}</b></div>
+   <div class="cst-metrics"><div><span>Toplam ebat</span><b>${formatDimensions(metrics.totalWidthMm,metrics.totalHeightMm,unit,2)}</b></div>
    <div><span>Harf / Parça</span><b>${dec(metrics.componentCount)} adet</b></div>
    <div><span>Metal ön yüz</span><b>${formatAreaM2(metrics.metalFaceAreaM2,unit)}</b></div>
    <div><span>Pleksi / File</span><b>${formatAreaM2(metrics.acrylicAreaM2,unit)} / ${formatAreaM2(metrics.fileAreaM2,unit)}</b></div>
    <div><span>Yanak alanı</span><b>${formatAreaM2(metrics.sidewallAreaM2,unit)}</b></div>
-   <div><span>Kesim / Büküm</span><b>${formatMmAsUnit(metrics.cuttingLengthM*1000,unit)} / ${formatMmAsUnit(metrics.perimeterM*1000,unit)} ${unit}</b></div>
+   <div><span>Kesim / Büküm</span><b>${formatMmAsUnit(metrics.cuttingLengthM*1000,unit,2)} / ${formatMmAsUnit(metrics.perimeterM*1000,unit,2)} ${unit}</b></div>
    <div><span>LED / Güç kaynağı</span><b>${dec(metrics.totalLedModules)} / ${dec(metrics.powerSupplies)} adet</b></div></div>
    <p class="cst-help">Metrajlar mevcut 3D/2D nesnelerinden hesaplanır; malzeme fire, tedarik ve montaj toleranslarını kendi tarifenize göre kontrol edin.</p>
   </section>
@@ -73,7 +73,7 @@ function summary(state,metrics,cost){
     ${cfg.pricingMode==='markup'?field('Toplam kâr payı %','markupPct',cfg.markupPct,'number','min="0" max="1000" step="1"'):''}
     ${cfg.pricingMode==='margin'?field('Hedef net kâr marjı %','marginPct',cfg.marginPct,'number','min="0" max="95" step="1"'):''}
     ${field('Satış fiyatı düzeltmesi','manualAdjustment',cfg.manualAdjustment,'number','step="0.01"')}
-    <label class="cst-field"><span>KDV oranı</span><select data-cost-config="vatRate">${option('0','%0',String(cfg.vatRate))}${option('0.01','%1',String(cfg.vatRate))}${option('0.10','%10',String(cfg.vatRate))}${option('0.20','%20',String(cfg.vatRate))}</select></label>
+    <label class="cst-field"><span>KDV oranı</span><select data-cost-config="vatRate">${option('0','%0',String(cfg.vatRate??0.2))}${option('0.01','%1',String(cfg.vatRate??0.2))}${option('0.1','%10',String(cfg.vatRate??0.2))}${option('0.2','%20',String(cfg.vatRate??0.2))}</select></label>
     <label class="cst-field"><span>Montaj</span><select data-cost-config="mountingId">${option('duvar','Duvara Montaj',cfg.mountingId)}${option('profil','Profil / Konstrüksiyonlu',cfg.mountingId)}${option('yok','Montajsız',cfg.mountingId)}</select></label>
    </div><p class="cst-help">Kalem bazlı modda her malzemenin alış ve satış fiyatı bağımsızdır. Diğer iki modda toplam maliyete genel kâr formülü uygulanır. Döviz kurlarını kendiniz güncelleyin; canlı kur bağlantısı yoktur.</p>
   </section>
