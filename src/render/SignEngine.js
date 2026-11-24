@@ -4,7 +4,7 @@ import { createSignMaterial } from './MaterialLibrary.js';
 import { resolveChannelMaterialBinding } from './ChannelMaterialBinding.js';
 import { EnvironmentManager, ENVIRONMENT_PRESETS } from './EnvironmentManager.js';
 import { buildSceneLights, createHaloTexture } from './LightingSystem.js';
-import { getWallTextures } from '../photomontage/BackgroundLibrary.js';
+import { loadWallPixels, createWallTextures, normalizeWallId } from '../photomontage/BackgroundLibrary.js';
 import { buildChannelComponent } from '../geometry/ChannelLetterGeometry.js';
 import { layoutTextMm } from '../geometry/FontManager.js';
 
@@ -831,29 +831,8 @@ export class SignEngine {
       }
     }
 
-    // Wall background mesh (hidden if transparent PNG export mode)
-    const wallW=Math.max(16,Math.ceil(sizeM.w*3.5)),wallH=Math.max(10,Math.ceil(sizeM.h*5));
-    const wallKey=transparentBg?'transparent':(state.scene?.wallId||'tugla')+'|'+wallW+'|'+wallH;
-    if(this._wallKey!==wallKey){
-    this._clearGroup(this.wallGroup);
-    if (!transparentBg) {
-      const wt = getWallTextures(state.scene?.wallId || 'tugla', wallW, wallH);
-      wt.map._disposeOnClear = true;
-      wt.bumpMap._disposeOnClear = true;
-      const wallMesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(wallW, wallH),
-        new THREE.MeshStandardMaterial({
-          map: wt.map,
-          bumpMap: wt.bumpMap,
-          bumpScale: wt.bumpScale,
-          roughness: wt.roughness,
-        })
-      );
-      wallMesh.receiveShadow = true;
-      this.wallGroup.add(wallMesh);
-    }
-    this._wallKey=wallKey;
-    }
+    // The wall is loaded independently; geometry and controls remain responsive.
+    this.requestWall(state.scene?.wallId,sizeM,transparentBg);
 
     // Scene lighting
     const lightsKey=[night,Math.round(sizeM.w*10),Math.round(sizeM.h*10),prof.shadowSize].join('|');
@@ -1064,10 +1043,39 @@ export class SignEngine {
     }
   }
 
+  cancelWallLoad(){
+    this._wallRequest?.controller.abort();
+    this._wallRequest=null;
+    this.callbacks?.onWallLoad?.({phase:'idle'});
+  }
+  requestWall(wallId,sizeM=this.lastSizeM,transparent=false){
+    if(this.isDisposed||this._paused)return;
+    const id=normalizeWallId(wallId),w=Math.max(16,Math.ceil(sizeM.w*3.5)),h=Math.max(10,Math.ceil(sizeM.h*5));
+    const key=transparent?'transparent':id+'|'+w+'|'+h;
+    if(transparent){this.cancelWallLoad();this._clearGroup(this.wallGroup);this._wallKey=key;this.invalidate(true);return;}
+    if(this._wallKey===key){if(this._wallRequest)this.cancelWallLoad();return;}
+    if(this._wallRequest?.id===id){Object.assign(this._wallRequest,{key,w,h});return;}
+    this.cancelWallLoad();
+    const request={id,key,w,h,controller:new AbortController()};this._wallRequest=request;
+    const valid=()=>this._wallRequest===request&&!this.isDisposed&&!this._paused&&!request.controller.signal.aborted;
+    const publish=(phase,percent=0,message='')=>{if(valid())this.callbacks?.onWallLoad?.({id,phase,percent,message});};
+    publish('loading',0);
+    loadWallPixels(id,{signal:request.controller.signal,onProgress:p=>publish('loading',Math.min(99,p))}).then(pixels=>{
+      if(!valid())return;
+      const wt=createWallTextures(id,request.w,request.h,pixels);
+      const wall=new THREE.Mesh(new THREE.PlaneGeometry(request.w,request.h),new THREE.MeshStandardMaterial({map:wt.map,bumpMap:wt.bumpMap,bumpScale:wt.bumpScale,roughness:wt.roughness}));
+      wall.receiveShadow=true;
+      this._clearGroup(this.wallGroup);this.wallGroup.add(wall);this._wallKey=request.key;this.invalidate(true);
+      publish('done',100);this._wallRequest=null;
+    }).catch(error=>{
+      if(!valid())return;
+      publish('error',0,String(error.message||error));this._wallRequest=null;
+    });
+  }
   setActive(active){
     if(this.isDisposed)return;
     if(active&&this._paused){this._paused=false;this._resize(true);this.invalidate();this._startLoop();}
-    else if(!active&&!this._paused){this._paused=true;cancelAnimationFrame(this._raf);this.activePointers.clear();this.orbit.dragging=false;this.orbit.panning=false;this.draggingObjId=null;}
+    else if(!active&&!this._paused){this._paused=true;this.cancelWallLoad();cancelAnimationFrame(this._raf);this.activePointers.clear();this.orbit.dragging=false;this.orbit.panning=false;this.draggingObjId=null;}
   }
   _startLoop() {
     const tick=()=>{
@@ -1095,6 +1103,7 @@ export class SignEngine {
     this.pickMarqueeEl?.remove();
     this.pickMarqueeEl = null;
     this.isDisposed = true;
+    this.cancelWallLoad();
     cancelAnimationFrame(this._raf);
     if(!this.renderer)return;
     const dom = this.renderer.domElement;

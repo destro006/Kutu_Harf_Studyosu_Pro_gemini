@@ -2069,7 +2069,7 @@ function bindWorkspaceEvents(ws, root) {
     root.querySelector('#btnDelLayer')?.addEventListener('click', () => mutate('Sil', s => deleteSelectedLayers(s)));
   } else if (ws === 'background') {
     root.querySelectorAll('[data-bg-wall]').forEach(b => b.onclick = () => {
-      mutate('Arka plan duvarı', s => { s.scene.wallId = b.dataset.bgWall; });
+      selectWall(b.dataset.bgWall);
     });
     root.querySelector('#pmPhotoUpload')?.addEventListener('change', e => {
       const f = e.target.files?.[0];
@@ -2583,6 +2583,26 @@ function renderPageTabs() {
   });
 }
 
+let wallProgressTimer;
+function renderWallLoading({id,phase,percent=0,message=''}){
+  clearTimeout(wallProgressTimer);
+  const root=document.getElementById('wallLoading');
+  if(!root)return;
+  if(phase==='idle'){root.classList.add('hidden');return;}
+  root.classList.remove('hidden');root.classList.toggle('wall-load-error',phase==='error');
+  const label=BACKGROUND_SCENES.find(b=>b.id===id)?.label||'Arka plan';
+  document.getElementById('wallLoadingLabel').textContent=phase==='error'?label+' · '+message:label+(phase==='done'?' · Hazır':' · Hazırlanıyor');
+  document.getElementById('wallLoadingPercent').textContent=phase==='error'?'':Math.round(percent)+'%';
+  document.getElementById('wallLoadingProgress').value=percent;
+  document.getElementById('wallLoadingRetry').classList.toggle('hidden',phase!=='error');
+  if(phase==='done')wallProgressTimer=setTimeout(()=>root.classList.add('hidden'),450);
+}
+function selectWall(id){
+  if(!BACKGROUND_SCENES.some(b=>b.id===id))return;
+  if(store.get().scene.wallId!==id)mutate('Arka plan seçimi',s=>{s.scene.wallId=id;},true,false);
+  const state=store.get();
+  if(is3DWorkspace(state)&&signEngine&&!signEngine.isDisposed)signEngine.requestWall(id,signEngine.lastSizeM,!!state.scene.transparentBg);
+}
 function setMainWorkspace(ws) {
   const previous=store.get().mainWorkspace;
   if(previous!==ws){nestingGesture?.cancel?.();nestingGesture=null;signEngine?.cancelActiveDrag?.();}
@@ -3512,6 +3532,7 @@ function init() {
   ensureSignEngine=()=>{
     if(signEngine)return signEngine;
     signEngine = new SignEngine(threeContainer, {
+    onWallLoad: renderWallLoading,
     onTransformStart: () => {
       dragBeforeState = structuredCloneSafe(store.get());
     },
@@ -3709,10 +3730,11 @@ function init() {
   document.getElementById('btnDay').onclick = () => mutate('Gündüz modu', s => { s.scene.night = false; });
   document.getElementById('btnNight').onclick = () => mutate('Gece modu', s => { s.scene.night = true; });
   document.getElementById('btnLightToggle').onclick = () => mutate('Işık aç/kapat', s => { s.lighting.enabled = !s.lighting.enabled; });
-  document.querySelectorAll('#quickWallSeg button').forEach(b => b.onclick = () => mutate('Duvar seçimi', s => { s.scene.wallId = b.dataset.wall; }));
+  document.querySelectorAll('#quickWallSeg button').forEach(b => b.onclick = () => selectWall(b.dataset.wall));
+  document.getElementById('wallLoadingRetry')?.addEventListener('click',()=>selectWall(store.get().scene.wallId));
 
   const quickWallSelect=document.getElementById('quickWallSelect');
-  if(quickWallSelect){quickWallSelect.innerHTML=BACKGROUND_SCENES.map(b=>`<option value="${b.id}">${escapeHtml(b.label)}</option>`).join('');quickWallSelect.value=store.get().scene.wallId;quickWallSelect.onchange=e=>{if(BACKGROUND_SCENES.some(b=>b.id===e.target.value))mutate('Arka plan seçimi',s=>{s.scene.wallId=e.target.value;});};}
+  if(quickWallSelect){quickWallSelect.innerHTML=BACKGROUND_SCENES.map(b=>`<option value="${b.id}">${escapeHtml(b.label)}</option>`).join('');quickWallSelect.value=store.get().scene.wallId;quickWallSelect.onchange=e=>selectWall(e.target.value);}
   // Project Name & Quality
   if (document.getElementById('projectNameInput')) document.getElementById('projectNameInput').onchange = (e) => store.update(s => { s.projectName = e.target.value; });
   document.getElementById('qualitySelect').onchange = (e) => {
