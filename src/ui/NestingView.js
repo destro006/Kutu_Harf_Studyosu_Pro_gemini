@@ -21,9 +21,10 @@ export function renderNestingSvg(sheet, selectedPlacementId = null, colors = {})
   // overlay; holes remain actual holes in the exported manufacturing geometry.
   const holePreview = holes=>holes.map(pts=>`<path data-nest-hole="true" d="${toD(pts)}" fill="${holeColor}" fill-opacity="0.7" pointer-events="none" />`).join('');
 
+  const selected=selectedPlacementId instanceof Set?selectedPlacementId:new Set(Array.isArray(selectedPlacementId)?selectedPlacementId:selectedPlacementId==null?[]:[selectedPlacementId]);
   const polysSvg = sheet.placements
     .map((p) => {
-      const isSel = p.id === selectedPlacementId;
+      const isSel = selected.has(p.id);
       const isCol = p.hasCollision;
       const stroke = isCol ? '#ef4444' : isSel ? '#ffffff' : bodyColor;
       const fill = isCol ? 'rgba(239, 68, 68, 0.45)' : bodyColor;
