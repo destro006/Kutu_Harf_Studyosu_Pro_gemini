@@ -1,4 +1,4 @@
-import { createDefaultState, structuredCloneSafe } from './state.js';
+import { createDefaultState, structuredCloneSafe, markImmutableGeometry } from './state.js';
 
 /**
  * Versioned Project Serialization, Migration, Autosave & Local Project Library
@@ -52,6 +52,7 @@ export function deserializeProject(jsonText) {
   // Deep merge defaults while preserving all existing & unknown fields from raw
   const merged = deepMergePreserveUnknown(defaults, raw);
   merged.schemaVersion = CURRENT_SCHEMA_VERSION;
+  for(const tab of merged.nesting?.importedTabs||[])if(Array.isArray(tab.items))markImmutableGeometry(tab.items);
   if (!Array.isArray(merged.objects)) merged.objects = defaults.objects;
   if (!Array.isArray(merged.selectedIds)) merged.selectedIds = [];
   return merged;

@@ -336,7 +336,8 @@ export function structuredCloneSafe(obj) {
     for(const key of Object.keys(v)){
       const child=v[key];
       if(typeof child==='function'||typeof child==='symbol'||child===undefined){if(Array.isArray(v))out[key]=null;continue;}
-      Object.defineProperty(out,key,{value:copy(child),writable:true,enumerable:true,configurable:true});
+      if(key==='__proto__')Object.defineProperty(out,key,{value:copy(child),writable:true,enumerable:true,configurable:true});
+      else out[key]=copy(child);
     }
     return out;
   };

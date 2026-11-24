@@ -182,9 +182,10 @@ export function validateSheetLayout(sheet, minSep = 5) {
   const mT = sheet.marginTopMm ?? sheet.marginMm ?? 15;
   const mB = sheet.marginBottomMm ?? sheet.marginMm ?? 15;
 
-  for (let i = 0; i < sheet.placements.length; i++) {
-    const a = sheet.placements[i];
-    a.hasCollision = false;
+  for(const placement of sheet.placements)placement.hasCollision=false;
+  const sorted=sheet.placements.slice().sort((a,b)=>a.bounds.minX-b.bounds.minX);
+  for (let i = 0; i < sorted.length; i++) {
+    const a = sorted[i];
     if (
       a.bounds.minX < mL - 0.1 ||
       a.bounds.minY < mB - 0.1 ||
@@ -195,9 +196,10 @@ export function validateSheetLayout(sheet, minSep = 5) {
       errors.push(`${a.label}: Plaka kesim sınırı dışında.`);
     }
 
-    for (let j = i + 1; j < sheet.placements.length; j++) {
-      const b = sheet.placements[j];
+    for (let j = i + 1; j < sorted.length; j++) {
+      const b = sorted[j];
       const ab=a.bounds,bb=b.bounds;
+      if(ab.maxX+minSep<=bb.minX+1e-5)break;
       if(ab.maxX+minSep<=bb.minX+1e-5||bb.maxX+minSep<=ab.minX+1e-5||ab.maxY+minSep<=bb.minY+1e-5||bb.maxY+minSep<=ab.minY+1e-5)continue;
       const insideAHole = a.holes?.some(h => fitsInsideHole(b.outer, h, minSep));
       const insideBHole = b.holes?.some(h => fitsInsideHole(a.outer, h, minSep));
@@ -430,6 +432,23 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
   };
 }
 
+export function editNestingPlacement(p,action,value){
+  if(!p||p.locked||!Number.isFinite(value))return false;
+  const b=p.bounds,x=b.minX,y=b.minY;
+  let outer=p.outer,holes=p.holes||[],angle=p.angleDeg||0;
+  if(action==='x'||action==='y'){
+    const dx=action==='x'?value-x:0,dy=action==='y'?value-y:0;
+    outer=translatePolygon(outer,dx,dy);holes=holes.map(h=>translatePolygon(h,dx,dy));
+  }else if(action==='rot'){
+    const d=(value-angle)*Math.PI/180,c=Math.cos(d),s=Math.sin(d);
+    const rotate=pt=>({x:(pt.x-x)*c-(pt.y-y)*s,y:(pt.x-x)*s+(pt.y-y)*c});
+    outer=outer.map(rotate);holes=holes.map(h=>h.map(rotate));
+    const bounds=polygonBounds(outer),dx=x-bounds.minX,dy=y-bounds.minY;
+    outer=translatePolygon(outer,dx,dy);holes=holes.map(h=>translatePolygon(h,dx,dy));angle=value;
+  }else return false;
+  p.outer=outer;p.holes=holes;p.bounds=polygonBounds(outer);p.xMm=p.bounds.minX;p.yMm=p.bounds.minY;p.angleDeg=angle;
+  return true;
+}
 function makePlacement(item, best) {
   return {
     id: item.id,
@@ -453,26 +472,34 @@ function makePlacement(item, best) {
 
 // Fast initial placement uses conservative non-overlapping bounding-box shelves.
  // Original paths are preserved; the explicit optimize action can run true-shape nesting later.
+const quickShelves=new WeakMap();
 function findQuickPlacement(sheet,variants,minX,minY,maxX,maxY,sep){
- let best=null,bestScore=Infinity;
- const xs=new Set([minX]),ys=new Set([minY]);
- for(const p of sheet.placements){xs.add(p.bounds.maxX+sep+.001);ys.add(p.bounds.maxY+sep+.001);}
- const placements=sheet.placements;
- for(const y of [...ys].sort((a,b)=>a-b)){
-   for(const x of [...xs].sort((a,b)=>a-b)){
-     for(const v of variants){
-       const w=v.bounds.width,h=v.bounds.height;
-       if(x+w>maxX+1e-6||y+h>maxY+1e-6)continue;
-       const score=(y-minY)*(maxX-minX+1)+(x-minX);
-       if(score>=bestScore)continue;
-       if(placements.some(p=>!(x+w+sep<=p.bounds.minX+1e-6||p.bounds.maxX+sep<=x+1e-6||y+h+sep<=p.bounds.minY+1e-6||p.bounds.maxY+sep<=y+1e-6)))continue;
-       bestScore=score;best={angleDeg:v.ang,xMm:x,yMm:y,outer:translatePolygon(v.outer,x,y),holes:v.holes.map(r=>translatePolygon(r,x,y)),bounds:{minX:x,minY:y,maxX:x+w,maxY:y+h,width:w,height:h}};
-     }
-     if(best&&best.yMm===y)return best;
-   }
- }
- return best;
+  const gap=sep+.001;
+  let layout=quickShelves.get(sheet);
+  if(!layout){
+    let startY=minY;
+    for(const p of sheet.placements)startY=Math.max(startY,p.bounds.maxY+gap);
+    layout={shelves:[],nextY:startY};quickShelves.set(sheet,layout);
+  }
+  let pick=null;
+  for(const shelf of layout.shelves)for(const v of variants){
+    const w=v.bounds.width,h=v.bounds.height;
+    if(h<=shelf.h+1e-6&&shelf.x+w<=maxX+1e-6){
+      const score=(shelf.h-h)*w+(maxX-shelf.x-w)*.01;
+      if(!pick||score<pick.score)pick={shelf,v,score};
+    }
+  }
+  if(!pick){
+    const options=variants.filter(v=>minX+v.bounds.width<=maxX+1e-6&&layout.nextY+v.bounds.height<=maxY+1e-6).sort((a,b)=>a.bounds.height-b.bounds.height||a.bounds.width-b.bounds.width);
+    if(!options.length)return null;
+    const v=options[0],shelf={x:minX,y:layout.nextY,h:v.bounds.height};
+    layout.shelves.push(shelf);layout.nextY+=shelf.h+gap;pick={shelf,v};
+  }
+  const {shelf,v}=pick,x=shelf.x,y=shelf.y,w=v.bounds.width,h=v.bounds.height;
+  shelf.x+=w+gap;
+  return {angleDeg:v.ang,xMm:x,yMm:y,outer:translatePolygon(v.outer,x,y),holes:v.holes.map(r=>translatePolygon(r,x,y)),bounds:{minX:x,minY:y,maxX:x+w,maxY:y+h,width:w,height:h}};
 }
+
 function findBestPlacementOnSheet(sheet, variants, minX, minY, maxX, maxY, allowHoleNesting, fitsOnSheet, minSep = 5, strategy = 'compact') {
   let best = null, bestScore = Infinity;
   const occupiedX = Math.max(minX, ...sheet.placements.map(p => p.bounds.maxX));

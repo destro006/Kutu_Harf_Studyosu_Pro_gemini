@@ -68,9 +68,9 @@ export function renderPropertyBar(state, ctx = {}) {
       bar.innerHTML = `
         ${unitSelect}
         <span class="chip on" style="cursor:default">Parça: ${escapeHtml(part.label)}</span>
-        <div class="prop-field"><label>X (${u})</label><input id="npPartX" type="number" step="any" value="${show(part.x || 0)}"></div>
-        <div class="prop-field"><label>Y (${u})</label><input id="npPartY" type="number" step="any" value="${show(part.y || 0)}"></div>
-        <div class="prop-field"><label>Açı</label><input id="npPartRot" type="number" step="15" value="${Math.round(part.rotationDeg || 0)}"></div>
+        <div class="prop-field"><label>X (${u})</label><input id="npPartX" type="number" step="any" value="${show(part.xMm ?? part.bounds?.minX ?? 0)}"></div>
+        <div class="prop-field"><label>Y (${u})</label><input id="npPartY" type="number" step="any" value="${show(part.yMm ?? part.bounds?.minY ?? 0)}"></div>
+        <div class="prop-field"><label>Açı</label><input id="npPartRot" type="number" step="15" value="${Math.round(part.angleDeg || 0)}"></div>
         <span class="chip" style="cursor:default">${escapeHtml(activeSheet?.materialLabel || '')} (${activeSheet?.thicknessMm || 1.2} mm)</span>
         <button type="button" id="npPartLock" class="tb-btn ${part.locked ? 'on' : ''}">${part.locked ? '🔒 Kilitli' : '🔓 Kilitle'}</button>
         ${sheets.length > 1 ? `

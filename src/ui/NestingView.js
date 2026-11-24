@@ -36,7 +36,7 @@ export function renderNestingSvg(sheet, selectedPlacementId = null, colors = {})
       return `
         <g data-pid="${p.id}" style="cursor:pointer">
           <path data-nest-body="true" d="${d}" fill="${fill}" fill-opacity="${isSel ? '0.83' : '0.55'}" stroke="${stroke}" stroke-width="${isSel || isCol ? 4 : 2}" fill-rule="evenodd" />
-          <text x="${cx}" y="${cy}" fill="#f8fafc" font-size="22" font-family="sans-serif" text-anchor="middle" dominant-baseline="middle" pointer-events="none">${escapeXml(label)}</text>
+          ${(sheet.placements.length<=120||isSel)?`<text x="${cx}" y="${cy}" fill="#f8fafc" font-size="22" font-family="sans-serif" text-anchor="middle" dominant-baseline="middle" pointer-events="none">${escapeXml(label)}</text>`:''}
         </g>`;
     })
     .join('\n');

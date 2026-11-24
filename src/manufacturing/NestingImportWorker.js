@@ -34,7 +34,7 @@ function processJob(job){
     imported=job.imported;
   } else throw Error('Bilinmeyen içe aktarma işlemi.');
   if(!imported.items?.length)throw Error('Dosyada üretilebilir kapalı vektör parçası yok.');
-  const result=runTrueShapeNesting(imported.items,{...(job.nesting||{}),quickImport:job.operation!=='nest'||Boolean(job.nesting?.quickImport)});
+  const result=runTrueShapeNesting(imported.items,{...(job.nesting||{}),quickImport:job.operation!=='nest'||Boolean(job.nesting?.quickImport)},job.lockedSheets||[]);
   for(const sheet of result.sheets){
     const test=validateSheetLayout(sheet,(job.nesting?.clearanceMm??5)+(job.nesting?.kerfMm??.4));
     if(!test.valid)throw Error('Nesting doğrulaması başarısız: kesim parçaları çakışıyor.');

@@ -63,7 +63,7 @@ import {
 import { SHORTCUT_LIST, SHORTCUT_GROUPS, attachShortcuts } from './cad/Shortcuts.js';
 import { captureObjectClipboard, pasteObjectClipboard } from './core/ObjectClipboard.js';
 import { calculateManufacturingMetrics } from './manufacturing/MetricsCalculator.js';
-import { SHEET_PRESETS, extractNestingItems, runTrueShapeNesting, validateSheetLayout } from './manufacturing/NestingEngine.js';
+import { SHEET_PRESETS, extractNestingItems, runTrueShapeNesting, validateSheetLayout, editNestingPlacement } from './manufacturing/NestingEngine.js';
 import { importVectorText } from './manufacturing/VectorFileImport.js';
 import { importPdfFile } from './manufacturing/PdfVectorImport.js';
 import { runVectorImportJob } from './manufacturing/AsyncVectorImport.js';
@@ -487,17 +487,19 @@ function updateNumericBar(state) {
         const sPart = sSh?.placements?.find(p => p.id === selectedNestingId);
         if (!sPart) return;
         if (action === 'toggleLock') sPart.locked = !sPart.locked;
-        else if (action === 'x') sPart.x = val;
-        else if (action === 'y') sPart.y = val;
-        else if (action === 'rot') sPart.rotationDeg = val;
-        else if (action === 'moveSheet') {
-          const targetSh = s.nesting.sheets[val];
-          if (targetSh) {
-            sSh.placements = sSh.placements.filter(p => p.id !== selectedNestingId);
-            targetSh.placements.push(sPart);
-            activeSheetIdx = val;
+        else if(!sPart.locked&&['x','y','rot'].includes(action))editNestingPlacement(sPart,action,val);
+        else if(action==='moveSheet'&&!sPart.locked){
+          const targetSh=s.nesting.sheets[val];
+          if(targetSh&&targetSh!==sSh&&(!targetSh.materialGroup||targetSh.materialGroup===sPart.materialGroup)){
+            const copy=structuredCloneSafe(sPart);
+            if(validateSheetLayout({...targetSh,placements:[...targetSh.placements,copy]},(s.nesting.clearanceMm??5)+(s.nesting.kerfMm??.4)).valid){
+              sSh.placements=sSh.placements.filter(p=>p.id!==sPart.id);targetSh.placements.push(copy);activeSheetIdx=val;
+              sSh.usedAreaMm2=sSh.placements.reduce((a,p)=>a+p.areaMm2,0);
+              targetSh.usedAreaMm2=targetSh.placements.reduce((a,p)=>a+p.areaMm2,0);
+            }
           }
         }
+        for(const sh of s.nesting.sheets){validateSheetLayout(sh,(s.nesting.clearanceMm??5)+(s.nesting.kerfMm??.4));if(sh.usableAreaMm2)sh.utilizationPct=(sh.usedAreaMm2||0)/sh.usableAreaMm2*100;}
       });
     },
   });
@@ -2508,6 +2510,7 @@ function renderDocumentTabs() {
   list.querySelectorAll('[data-doc-id]').forEach(el => {
     el.onclick = (e) => {
       if (e.target.closest('[data-doc-close]')) return;
+      nestingRepackController?.abort();currentNestingImportController?.abort();
       docManager.switchDocument(el.dataset.docId);
       setMainWorkspace(store.get().mainWorkspace || 'model3d');
       scheduleRebuild(true);
@@ -2550,6 +2553,7 @@ function renderPageTabs() {
 
   list.querySelectorAll('[data-page-id]').forEach(btn => {
     btn.onclick = () => {
+      nestingRepackController?.abort();currentNestingImportController?.abort();
       if (docManager.switchPage(btn.dataset.pageId)) {
         scheduleRebuild(true);
         renderActiveWorkspace();
@@ -2618,11 +2622,13 @@ function updateCenterWorkspaces(state) {
   if (ws === 'nesting') {
     const el = document.getElementById('nestingCenterWrap');
     if (el) {
-      const html = renderNestingCenter(state, { activeSheetIdx, selectedPlacementId: selectedNestingId });
       const grid = el.querySelector('.center-ws-grid');
       const currentTabId = el.querySelector('.nesting-workspace[data-nesting-tab]')?.getAttribute('data-nesting-tab');
       const targetTabId = state.nesting.activeTabId || 'design';
       if(currentNestingImportController&&targetTabId==='import'&&currentTabId==='import')return;
+      const html=renderNestingCenter(state,{activeSheetIdx,selectedPlacementId:selectedNestingId});
+      if(el._lastHtml===html)return;
+      el._lastHtml=html;
       if (grid && currentTabId === targetTabId && grid.querySelector('.cws-side-r')) {
         // Replace only changing parts; preserve the exact right-panel DOM node.
         const template = document.createElement('template');
@@ -2664,15 +2670,15 @@ let nestingRepackController=null;
 async function repackNestingSettings(label,updateNesting,quickImport=true){
   nestingRepackController?.abort();
   const controller=new AbortController();nestingRepackController=controller;
-  const previous=store.get(),tab=previous.nesting.activeTabId||'design';
+  const previous=store.get(),tab=previous.nesting.activeTabId||'design',docId=docManager.activeDocId,pageId=previous.activePageId;
   const next=structuredCloneSafe(previous.nesting);updateNesting(next);
   const items=getActiveNestingImportedItems(next)??extractNestingItems(lastSceneResult.metricsList||[],{...previous,nesting:next});
   const button=document.getElementById('cwsRunNesting');
   if(button)button.textContent='İşleniyor… (tekrar tıkla: iptal)';
   try{
     let result={sheets:[],unplaced:[]};
-    if(items.length){const out=await runVectorImportJob({jobId:Date.now(),operation:'nest',imported:{items},nesting:{...Object.fromEntries(Object.entries(next).filter(([key])=>!['sheets','unplaced','importedTabs','designTabSnapshot'].includes(key))),quickImport}},{signal:controller.signal});result=out.nesting;}
-    if(controller.signal.aborted||(store.get().nesting.activeTabId||'design')!==tab)return;
+    if(items.length){const out=await runVectorImportJob({jobId:Date.now(),operation:'nest',imported:{items},nesting:{...Object.fromEntries(Object.entries(next).filter(([key])=>!['sheets','unplaced','importedTabs','designTabSnapshot'].includes(key))),quickImport},lockedSheets:next.sheets?.filter(sh=>sh.placements.some(p=>p.locked))||[]},{signal:controller.signal});result=out.nesting;}
+    if(controller.signal.aborted||docManager.activeDocId!==docId||store.get().activePageId!==pageId||(store.get().nesting.activeTabId||'design')!==tab)return;
     lastNesting=result;activeSheetIdx=0;selectedNestingId=null;
     mutateData(label,st=>{const {importedTabs,designTabSnapshot,activeTabId,...settings}=next;st.nesting={...st.nesting,...settings,sheets:result.sheets,unplaced:result.unplaced};},false);
     updateCenterWorkspaces(store.get());
@@ -2719,6 +2725,7 @@ async function importNestingVectorFiles(fileList, root) {
   if (!(scale > 0 && scale <= 1000) || !(tolerance > 0)) {say('Ölçek veya hassasiyet geçersiz.');return;}
   const controller = new AbortController();
   currentNestingImportController=controller;
+  const importDocId=docManager.activeDocId,importPageId=store.get().activePageId;
   if(cancel)cancel.hidden=false;
   if(picker)picker.disabled=true;
   zone?.classList.add('nesting-drop-busy');
@@ -2758,7 +2765,7 @@ async function importNestingVectorFiles(fileList, root) {
     }
     // Preserve the entire import picker and native controls until all CPU-heavy
     // worker calculations have completed; commit tabs in one state transaction.
-    if(ready.length){
+    if(ready.length&&!controller.signal.aborted&&docManager.activeDocId===importDocId&&store.get().activePageId===importPageId){
       mutateData('Nesting vektör içe aktarımı ('+ready.length+' dosya)',state=>{
         for(const job of ready){
           switchNestingTab(state.nesting,'import');
@@ -2900,8 +2907,8 @@ function bindNestingCenterEvents(root) {
     }, false);
     updateCenterWorkspaces(store.get());
   };
-  root.querySelector('#cwsNestBodyColor')?.addEventListener('input', e => setNestingPreviewColor('body', e.target.value));
-  root.querySelector('#cwsNestHoleColor')?.addEventListener('input', e => setNestingPreviewColor('holes', e.target.value));
+  root.querySelector('#cwsNestBodyColor')?.addEventListener('change', e => setNestingPreviewColor('body', e.target.value));
+  root.querySelector('#cwsNestHoleColor')?.addEventListener('change', e => setNestingPreviewColor('holes', e.target.value));
   root.querySelector('#cwsNestResetColors')?.addEventListener('click', () => mutateData('Nesting renklerini sıfırla', s => {
     s.nesting.previewColors = { body: '#c89343', holes: '#c89343' };
   }, false));
@@ -3173,7 +3180,7 @@ function showObjectContextMenu(e, objId) {
 function showNestingPartContextMenu(e, pid) {
   if (!contextMenu) return;
   contextMenu.show(e.clientX, e.clientY, [
-    { label: '90° Döndür', action: () => mutateData('Parça döndür', s => { const p = s.nesting.sheets[activeSheetIdx]?.placements?.find(x => x.id === pid); if (p) p.rotationDeg = ((p.rotationDeg || 0) + 90) % 360; }) },
+    { label: '90° Döndür', action: () => mutateData('Parça döndür', s => { const p = s.nesting.sheets[activeSheetIdx]?.placements?.find(x => x.id === pid); if(p){editNestingPlacement(p,'rot',((p.angleDeg||0)+90)%360);validateSheetLayout(s.nesting.sheets[activeSheetIdx],(s.nesting.clearanceMm??5)+(s.nesting.kerfMm??.4));} }) },
     { label: 'Kilitle / Kilidi Aç', action: () => mutateData('Parça kilidi', s => { const p = s.nesting.sheets[activeSheetIdx]?.placements?.find(x => x.id === pid); if (p) p.locked = !p.locked; }) },
     { label: 'Kilitsizleri Yeniden Optimize Et', action: () => runAutoNesting() },
   ]);
