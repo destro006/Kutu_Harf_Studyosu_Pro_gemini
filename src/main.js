@@ -10,7 +10,7 @@ import { ContextMenu } from './ui/ContextMenu.js';
 import { renderPropertyBar } from './ui/PropertyBar.js';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm } from './core/units.js';
-import { attachMenuBar } from './ui/MenuBar.js';
+import { attachMenuBar } from './ui/MenuBar.js?v=toolbar5';
 import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=pro3-multi4';
 import {nextNestingSelection,deleteNestingParts} from './manufacturing/NestingSelection.js';
 import { generateNestedGcode, generateNestedHpgl } from './export/CncGcodeExporter.js';
@@ -65,7 +65,7 @@ import {
   reversePolygonPath,
   combineSelectedToCompound,
 } from './cad/CadTools.js';
-import { SHORTCUT_LIST, SHORTCUT_GROUPS, attachShortcuts } from './cad/Shortcuts.js';
+import { SHORTCUT_LIST, SHORTCUT_GROUPS, attachShortcuts } from './cad/Shortcuts.js?v=toolbar5';
 import { captureObjectClipboard, pasteObjectClipboard } from './core/ObjectClipboard.js';
 import { calculateManufacturingMetrics } from './manufacturing/MetricsCalculator.js';
 import { SHEET_PRESETS, extractNestingItems, runTrueShapeNesting, validateSheetLayout, editNestingPlacement, refreshNestingSheet } from './manufacturing/NestingEngine.js';
@@ -417,13 +417,6 @@ function updateStageChrome(state) {
 
   const qualitySelect = document.getElementById('qualitySelect');
   if (qualitySelect) qualitySelect.value = state.quality || 'high';
-  const qStatus = document.getElementById('qualityStatus');
-  if (qStatus) {
-    const qualityLabels = {performance:'Performans',balanced:'Dengeli',high:'Yüksek',ultra:'Ultra'};
-    const info = signEngine?.getQualityInfo?.();
-    qStatus.textContent = '3D: ' + (qualityLabels[state.quality] || 'Yüksek') + (info ? ' · ' + info.pixelRatio.toFixed(2) + '×' : '');
-    qStatus.title = info ? 'Gerçek render ölçeği: ' + info.pixelRatio.toFixed(2) + '×; gölge dokusu: ' + info.shadowSize + ' px' : '3D render kullanılamıyor';
-  }
 
   // Day/Night & Light buttons
   document.getElementById('btnDay').classList.toggle('on', !state.scene.night);
@@ -3489,9 +3482,16 @@ async function studioExport(format, selectedOnly = false, resolution = '2400x150
   });
 }
 
+function openImportDialog(){
+  if(store.get().mainWorkspace==='nesting')return openNestingVectorImport(true);
+  if(['cnc','cost'].includes(store.get().mainWorkspace))setMainWorkspace('design2d');
+  activateTool('logo');
+}
 function openExportDialog() {
   const modal=document.getElementById('exportDialog');
   if (!modal) return;
+  const source=document.getElementById('exportSource');
+  if(source)source.value=['nesting','cnc'].includes(store.get().mainWorkspace)?'nestingActive':'design';
   const count=(store.get().objects||[]).filter(o => (store.get().selectedIds||[]).includes(o.id) && o.visible!==false).length;
   const selection=document.getElementById('exportSelectionCount');
   if (selection) selection.textContent='Seçili nesne: '+count;
@@ -3560,6 +3560,7 @@ function bindExportDialog() {
   const sourceEl=document.getElementById('exportSource');
   if(sourceEl)sourceEl.value='design';
   document.getElementById('btnOpenExport')?.addEventListener('click',openExportDialog);
+  document.getElementById('btnOpenImport')?.addEventListener('click',openImportDialog);
   document.getElementById('btnCloseExport')?.addEventListener('click',closeExportDialog);
   document.getElementById('btnCancelExport')?.addEventListener('click',closeExportDialog);
   modal.addEventListener('click',e=>{if(e.target===modal)closeExportDialog();});
@@ -3973,7 +3974,8 @@ function init() {
     onBreakApart: () => runCadAction('breakApart'),
     onCombine: () => runCadAction('combine'),
     onNewDoc: () => document.getElementById('btnNewDocTab')?.click(),
-    onExport: () => store.get().mainWorkspace === 'nesting' ? openNestingVectorImport(true) : openExportDialog(),
+    onExport: openExportDialog,
+    onImport: openImportDialog,
     onAlignment:runAlignment,
     onCenterOnPage:()=>runAlignment('page'),
     onDuplicate: () => runCadAction('duplicate'),
@@ -4096,8 +4098,6 @@ function init() {
     showObjectContextMenu(e, store.get().selectedIds?.[0] || null);
   });
 
-  document.getElementById('btnCopyBetweenTabs')?.addEventListener('click', () => copySelectionToClipboard());
-  document.getElementById('btnPasteBetweenTabs')?.addEventListener('click', pasteSelectionFromClipboard);
   document.getElementById('btnNewDocTab')?.addEventListener('click', () => {
     docManager.newDocument();
     applySavedMaterialDefaults(docManager.getActiveStore());
@@ -4152,7 +4152,8 @@ function init() {
     openJson: () => { setMainWorkspace('model3d'); store.update(s => { s.activeWorkspace = 'projects'; }); renderActiveWorkspace(); },
     saveDoc: () => document.getElementById('btnQuickSaveDoc')?.click(),
     saveJsonFile: () => document.getElementById('btnSaveJson')?.click(),
-    openExport: () => store.get().mainWorkspace === 'nesting' ? openNestingVectorImport(true) : openExportDialog(),
+    openExport: openExportDialog,
+    openImport: openImportDialog,
     exportPng: () => document.getElementById('btnExportPng')?.click(),
     exportSvg: () => document.getElementById('btnExportSvg')?.click(),
     exportDxf: () => document.getElementById('btnExportDxf')?.click(),
