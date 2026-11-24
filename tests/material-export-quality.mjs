@@ -58,7 +58,7 @@ assert(QUALITY_PROFILES.ultra.shadowSize>QUALITY_PROFILES.balanced.shadowSize);
 const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 for(const id of ['btnOpenExport','exportDialog','exportFormat','exportOnlySelected','exportResolution','btnRunExport','qualityStatus']) assert(html.includes('id="'+id+'"'));
 const main=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
-assert(main.includes('onExport: openExportDialog'));
+assert(main.includes("onExport: () => store.get().mainWorkspace === 'nesting' ? openNestingVectorImport(true) : openExportDialog()"));
 assert(main.includes('await studioExport(format,'));
 assert(main.includes('runProfessionalExport({'));
 assert(main.includes('updateProfessionalExportDialogState()'));
