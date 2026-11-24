@@ -2469,12 +2469,48 @@ function setMainWorkspace(ws) {
   updateNumericBar(store.get());
 }
 
+// Keep the Nesting sheet-size editor mounted. Replacing the entire workspace DOM
+// on every mutation closes native <select> menus and discards input focus.
+function syncNestingSettingsControls(sidebar, nesting) {
+  if (!sidebar) return;
+  const values = {
+    cwsNestPreset: nesting.presetId,
+    cwsNestW: nesting.sheetWidthMm,
+    cwsNestH: nesting.sheetHeightMm,
+    cwsNestSp: nesting.spacingMm,
+    cwsNestMg: nesting.marginLeftMm,
+    cwsNestRot: nesting.rotationStepDeg,
+    cwsNestHoles: nesting.allowHoleNesting,
+    cwsNestGrain: nesting.enforceGrainDirection,
+  };
+  for (const [id, value] of Object.entries(values)) {
+    const input = sidebar.querySelector('#' + id);
+    if (!input || value == null || input === document.activeElement) continue;
+    if (input.type === 'checkbox') input.checked = Boolean(value);
+    else if (String(input.value) !== String(value)) input.value = String(value);
+  }
+}
+
 function updateCenterWorkspaces(state) {
   const ws = state.mainWorkspace || 'model3d';
   if (ws === 'nesting') {
     const el = document.getElementById('nestingCenterWrap');
     if (el) {
-      el.innerHTML = renderNestingCenter(state, { activeSheetIdx, selectedPlacementId: selectedNestingId });
+      const html = renderNestingCenter(state, { activeSheetIdx, selectedPlacementId: selectedNestingId });
+      const grid = el.querySelector('.center-ws-grid');
+      if (grid && grid.querySelector('.cws-side-r')) {
+        // Replace only changing parts; preserve the exact right-panel DOM node.
+        const template = document.createElement('template');
+        template.innerHTML = html;
+        for (const cls of ['cws-side', 'cws-main', 'cws-bottom']) {
+          const current = grid.querySelector(':scope > .' + cls);
+          const next = template.content.querySelector('.' + cls);
+          if (current && next) current.replaceWith(next);
+        }
+        syncNestingSettingsControls(grid.querySelector('.cws-side-r'), state.nesting);
+      } else {
+        el.innerHTML = html;
+      }
       bindNestingCenterEvents(el);
     }
   } else if (ws === 'cnc') {
@@ -2526,6 +2562,13 @@ function bindNestingCenterEvents(root) {
       showNestingPartContextMenu(e, selectedNestingId);
     };
   });
+  // Clicking empty sheet space clears only the part selection.
+  root.querySelector('#cwsNestSvgBox')?.addEventListener('click', e => {
+    if (e.target.closest('[data-pid]') || !selectedNestingId) return;
+    selectedNestingId = null;
+    updateCenterWorkspaces(store.get());
+    updateNumericBar(store.get());
+  });
   root.querySelector('#cwsAddSheet')?.addEventListener('click', () => {
     mutate('Yeni nesting levhası', s => {
       const idx = (s.nesting.sheets?.length || 0) + 1;
@@ -2549,10 +2592,14 @@ function bindNestingCenterEvents(root) {
   });
   root.querySelector('#cwsRunNesting')?.addEventListener('click', () => runAutoNesting());
   root.querySelector('#cwsReoptUnlocked')?.addEventListener('click', () => runAutoNesting());
-  root.querySelector('#cwsNestPreset')?.addEventListener('change', e => {
-    const p = SHEET_PRESETS.find(x => x.id === e.target.value);
-    if (p) mutate('Levha önayarı', s => { s.nesting.presetId = p.id; s.nesting.sheetWidthMm = p.w; s.nesting.sheetHeightMm = p.h; });
-  });
+  // Settings persist across redraws. Do not attach duplicate event handlers.
+  const nestingSettings = root.querySelector('.cws-side-r');
+  if (nestingSettings && nestingSettings.dataset.nestingEventsBound !== 'true') {
+    nestingSettings.dataset.nestingEventsBound = 'true';
+    root.querySelector('#cwsNestPreset')?.addEventListener('change', e => {
+      const p = SHEET_PRESETS.find(x => x.id === e.target.value);
+      if (p) mutate('Levha önayarı', s => { s.nesting.presetId = p.id; s.nesting.sheetWidthMm = p.w; s.nesting.sheetHeightMm = p.h; });
+    });
   const bindNum = (id, fn) => root.querySelector('#' + id)?.addEventListener('change', e => mutate('Nesting ayarı', s => fn(s.nesting, Number(e.target.value))));
   bindNum('cwsNestW', (n, v) => { n.sheetWidthMm = Math.max(200, v); });
   bindNum('cwsNestH', (n, v) => { n.sheetHeightMm = Math.max(200, v); });
@@ -2573,6 +2620,7 @@ function bindNestingCenterEvents(root) {
     const sheets = store.get().nesting.sheets || [];
     if (sheets.length) downloadBlob(`${store.get().projectName}_parcalar.csv`, generateNestedCsv(sheets), 'text/csv');
   });
+  }
 }
 
 function bindCncCenterEvents(root) {
