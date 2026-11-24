@@ -1,9 +1,10 @@
-import {refreshNestingSheet} from './NestingEngine.js';
+import {refreshNestingSheet,editNestingPlacement} from './NestingEngine.js';
 
 /** Selection is confined to the currently displayed nesting sheet. */
-export function nextNestingSelection(orderedIds,current,anchor,id,{toggle=false,range=false,addRange=false}={}){
+export function nextNestingSelection(orderedIds,current,anchor,id,{toggle=false,range=false,addRange=false,preserve=false}={}){
  const ids=new Set(orderedIds),selected=new Set([...current].filter(x=>ids.has(x)));
  if(id==null||!ids.has(id))return {ids:[],anchor:null,primary:null};
+ if(preserve&&selected.has(id)&&!toggle&&!range)return {ids:[...selected],anchor:anchor??id,primary:id};
  if(range&&ids.has(anchor)){
   const a=orderedIds.indexOf(anchor),b=orderedIds.indexOf(id);
   const span=orderedIds.slice(Math.min(a,b),Math.max(a,b)+1);
@@ -33,4 +34,18 @@ export function deleteNestingParts(n,sheetIndex,ids,minSep){
  n.optimizationInfo=null;
  refreshNestingSheet(sheet,minSep);
  return removed;
+}
+
+export function moveNestingParts(n,sheetIndex,ids,dx,dy,minSep){
+ const sheet=n.sheets?.[sheetIndex];
+ if(!sheet||!Number.isFinite(dx)||!Number.isFinite(dy)||(!dx&&!dy))return [];
+ const wanted=new Set(ids),moved=[];
+ for(const p of sheet.placements){
+  if(p.locked||!wanted.has(p.id))continue;
+  editNestingPlacement(p,'x',p.bounds.minX+dx);
+  editNestingPlacement(p,'y',p.bounds.minY+dy);
+  moved.push(p.id);
+ }
+ if(moved.length){n.optimizationInfo=null;refreshNestingSheet(sheet,minSep);}
+ return moved;
 }
