@@ -1585,3 +1585,87 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .import-open-btn kbd{font-size:9px;font-weight:500;opacity:.8;margin-left:5px;}
 @media(max-width:850px){.property-file-actions kbd{display:none}.property-file-actions .tb-select{max-width:98px}.property-file-actions{gap:3px;padding:3px 4px}.property-file-actions .tb-btn{padding:4px 5px}}
 @media(max-width:540px){.numeric-toolbar-row{flex-wrap:wrap}.numeric-toolbar-row>#numericPropBar{flex-basis:100%;max-width:100%}.property-file-actions{margin-left:auto;border-left:0;border-top:1px solid #35404c;max-width:100%;overflow-x:auto}}
+
+/* QA8: stable one-row grid, independent scroll regions, compact mobile drawers. */
+html,body{height:100%;overflow:hidden}
+.app-shell{height:100vh;height:100dvh;min-height:0;overflow:hidden}
+.studio-body{grid-template-columns:82px minmax(0,1fr) 5px 390px;grid-template-rows:minmax(0,1fr);min-height:0;overflow:hidden}
+.studio-body.rail-expanded{grid-template-columns:168px minmax(0,1fr) 5px 390px}
+.app-shell.stage-fullscreen .studio-body{grid-template-columns:82px minmax(0,1fr) 0 0}
+.app-shell.stage-fullscreen .docker-resizer,.nesting-isolated .docker-resizer{display:none}
+.cad-rail{min-height:0;flex-direction:column;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;align-items:stretch}
+.cad-rail .rail-group{flex-direction:column;width:100%;flex-shrink:0}
+.cad-rail .rail-sep{width:100%;height:1px;flex-shrink:0}
+.viewport-col,.stage-wrap,.inspector-col,.workspace-content{min-height:0;min-width:0}
+.inspector-col{overflow:hidden}
+.workspace-content{overflow-y:auto;overflow-x:hidden}
+#vector2DWrap{overflow:hidden}
+.numeric-toolbar-row{flex-wrap:wrap}
+.numeric-toolbar-row>#numericPropBar.compact-property-line{flex:1 1 0;flex-wrap:wrap;white-space:normal;overflow:visible}
+.property-file-actions{margin-left:auto}
+.cws-bottom{min-width:0;max-width:100%;justify-content:flex-start;gap:5px 14px;overflow-wrap:anywhere}
+.cws-bottom span{min-width:0;white-space:normal}
+.nesting-part-row{flex-wrap:wrap}
+.nesting-part-row .layer-name{min-width:0;flex:1 1 65px;white-space:normal;overflow-wrap:anywhere;line-height:1.25}
+.nesting-part-size{font-size:10px}
+.ribbon-panel{left:auto;right:8px;width:min(530px,calc(100% - 16px));max-height:min(42vh,400px)}
+#canvasTransformHud{max-width:calc(100% - 24px);min-width:0;transform:none}
+#canvasTransformHud .hud-row{flex-wrap:wrap}
+#canvasTransformHud .hud-field span{white-space:normal}
+#studioToast{position:fixed;bottom:22px;right:20px;z-index:2000;max-width:calc(100vw - 40px);background:#202b36;color:#f5f0e6;border:1px solid #b59a71;padding:12px 16px;border-radius:10px;box-shadow:0 8px 32px #0008;font-size:13px}
+#studioToast.toast-error{border-color:#f18b7e}
+#studioToast[hidden]{display:none!important}
+#quotePreviewModal{z-index:1500}
+.quote-preview-shell{background:#171f2a;border:1px solid #526174;border-radius:12px;width:min(1000px,95vw);height:min(850px,92dvh);display:flex;flex-direction:column;overflow:hidden}
+.quote-preview-shell header{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px}
+.quote-preview-shell header strong{margin-right:auto}
+.quote-preview-shell iframe{border:0;width:100%;flex:1;min-height:0;background:#fff}
+.mobile-compact{display:none}
+@media(max-width:960px){
+ .studio-body,.studio-body.rail-expanded{grid-template-columns:58px minmax(0,1fr)!important}
+ .inspector-col{position:fixed;top:0;bottom:0;right:0;width:min(92vw,390px);z-index:95;transform:translateX(100%);border-left:1px solid var(--line)}
+ .inspector-col.mobile-open{transform:translateX(0)}
+ #btnToggleMobileInspector{position:relative;z-index:100}
+ .ws-nav-tabs{min-width:0;flex:1;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin}
+ .ws-nav-tabs button{flex:none;white-space:nowrap}
+ .ws-nav-bar{flex-wrap:nowrap}
+ .ws-nav-actions{flex:none}
+ .center-ws-grid{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto auto;height:auto;min-height:0}
+ .cws-main{grid-row:1;min-height:280px}
+ .cws-side,.cws-side-r{max-height:320px}
+ .cws-bottom{grid-column:1}
+ .stage-dims{top:44px;right:8px;gap:3px;pointer-events:none}
+ .stage-dims span{font-size:10px;padding:3px 6px}
+ .stage-views{top:6px;left:8px;right:8px;max-width:calc(100% - 16px);overflow-x:auto}
+ .stage-views button{flex:none;font-size:10px;padding:4px 8px}
+ .stage-bottom-tools{flex-wrap:nowrap;overflow-x:auto;max-width:calc(100% - 16px);scrollbar-width:thin}
+ .stage-bottom-tools>*{flex:none}
+ .cst-nav{min-width:0;max-width:100%;overflow-x:auto}
+ .cst-nav button{flex:none}
+}
+@media(max-width:600px){
+ .mobile-compact{display:inline-flex}
+ .menubar{flex-wrap:nowrap;min-height:38px;gap:5px;padding:4px 6px}
+ .brand-mini{min-width:0;flex:1;font-size:11px}
+ .brand-mini strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .brand-mini .logo-mark{width:22px;height:22px}
+ .menu-right{gap:3px;flex-wrap:nowrap}
+ .menu-right #btnQuickSaveDoc,.menu-right #btnFullscreen,.menu-right #btnShortcutsHelp,.menu-right .price-badge{display:none}
+ .menu-items{display:none;position:fixed;top:38px;left:6px;right:6px;z-index:110;padding:8px;background:#17212b;border:1px solid #465267;border-radius:9px}
+ .mobile-menu-open .menu-items{display:flex}
+ .ws-nav-bar{padding:3px;gap:4px}
+ .ws-nav-tabs button{font-size:10px;padding:5px 7px}
+ .ws-nav-actions{gap:3px}
+ .ws-nav-actions .tb-btn{font-size:10px;padding:5px}
+ .doc-tabs-bar{min-height:31px;padding:2px 5px}
+ .studio-body,.studio-body.rail-expanded,.studio-body.nesting-isolated,.studio-body.nesting-isolated.rail-expanded{grid-template-columns:minmax(0,1fr)!important}
+ .cad-rail{display:none;position:fixed;left:0;top:86px;bottom:0;width:74px;background:#19222d;z-index:90}
+ .mobile-rail-open .cad-rail{display:flex}
+ .inspector-col{top:85px}
+ #btnToggleMobileInspector{z-index:120}
+ .numeric-toolbar-row>#numericPropBar.compact-property-line{flex:1 0 100%;max-height:80px;overflow-y:auto;overflow-x:hidden}
+ .property-file-actions{padding:3px}
+ .ribbon-categories{flex-wrap:nowrap;overflow-x:auto;max-width:100%}
+ .ribbon-categories button{flex:none}
+ #canvasTransformHud{max-width:calc(100% - 24px)}
+}
