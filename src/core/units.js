@@ -37,3 +37,18 @@ export function formatMmAsUnit(mm,unit='mm') {
   if(!Number.isFinite(v))return '';
   return String(Number(v.toFixed(6)));
 }
+
+/** Format physical dimensions without changing canonical millimeter geometry. */
+export function formatDimensions(w,h,unit='mm'){
+ const u=normalizeDisplayUnit(unit);return formatMmAsUnit(w,u)+' × '+formatMmAsUnit(h,u)+' '+u;
+}
+export function formatPresetLabel(p,unit='mm'){
+ if(p.id==='custom')return p.label;
+ const w=p.widthMm??p.w,h=p.heightMm??p.h;
+ if(!Number.isFinite(w)||!Number.isFinite(h))return p.label;
+ return p.label.replace(/\d+(?:\.\d+)?\s*×\s*\d+(?:\.\d+)?\s*mm\b/,formatDimensions(w,h,unit));
+}
+export function formatAreaM2(area,unit='mm'){
+ const u=normalizeDisplayUnit(unit),factor=FACTORS[u];
+ return String(Number((Number(area)*1e6/(factor*factor)).toFixed(6)))+' '+u+'²';
+}
