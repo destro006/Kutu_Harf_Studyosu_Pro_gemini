@@ -26,12 +26,16 @@ export function renderPropertyBar(state, ctx = {}) {
   // Replacing innerHTML on a scene update closes native menus, loses typed
   // numbers and can swallow the click that was about to commit a selection.
   const contextKey = [mainWs, ...selObjs.map(o => o.id), mainWs === 'nesting' ? (ctx.selectedPlacementId || '') : ''].join('|');
+  // The minimal DOM stubs used by unit tests omit focus APIs; the production
+  // HTMLElement always provides dataset, contains and addEventListener.
+  if (!bar.dataset) bar.dataset = {};
   bar._refreshAfterFocus = ctx.onRefreshBar;
-  if (!bar._focusPreservationBound) {
+  if (!bar._focusPreservationBound && typeof bar.addEventListener === 'function') {
     bar._focusPreservationBound = true;
     bar.addEventListener('focusout', () => {
       setTimeout(() => {
-        if (bar.dataset.pendingRefresh === '1' && !bar.contains(document.activeElement)) {
+        if (bar.dataset.pendingRefresh === '1' &&
+            (typeof bar.contains !== 'function' || !bar.contains(document.activeElement))) {
           bar.dataset.pendingRefresh = '0';
           bar._refreshAfterFocus?.();
         }
@@ -40,6 +44,7 @@ export function renderPropertyBar(state, ctx = {}) {
   }
   const activeControl = document.activeElement;
   if (bar.dataset.lastContextKey === contextKey &&
+      typeof bar.contains === 'function' &&
       bar.contains(activeControl) && /^(INPUT|SELECT|TEXTAREA)$/i.test(activeControl?.tagName || '')) {
     bar.dataset.pendingRefresh = '1';
     return;
