@@ -73,7 +73,7 @@ function summary(state,metrics,cost){
     ${cfg.pricingMode==='markup'?field('Toplam kâr payı %','markupPct',cfg.markupPct,'number','min="0" max="1000" step="1"'):''}
     ${cfg.pricingMode==='margin'?field('Hedef net kâr marjı %','marginPct',cfg.marginPct,'number','min="0" max="95" step="1"'):''}
     ${field('Satış fiyatı düzeltmesi','manualAdjustment',cfg.manualAdjustment,'number','step="0.01"')}
-    <label class="cst-field"><span>KDV oranı</span><select data-cost-config="vatRate">${option('0','%0',String(cfg.vatRate??0.2))}${option('0.01','%1',String(cfg.vatRate??0.2))}${option('0.1','%10',String(cfg.vatRate??0.2))}${option('0.2','%20',String(cfg.vatRate??0.2))}</select></label>
+    <label class="cst-field"><span>KDV oranı</span><select data-cost-config="vatRate">${option('0','%0',String(Number(cfg.vatRate??0.2)))}${option('0.01','%1',String(Number(cfg.vatRate??0.2)))}${option('0.1','%10',String(Number(cfg.vatRate??0.2)))}${option('0.2','%20',String(Number(cfg.vatRate??0.2)))}</select></label>
     <label class="cst-field"><span>Montaj</span><select data-cost-config="mountingId">${option('duvar','Duvara Montaj',cfg.mountingId)}${option('profil','Profil / Konstrüksiyonlu',cfg.mountingId)}${option('yok','Montajsız',cfg.mountingId)}</select></label>
    </div><p class="cst-help">Kalem bazlı modda her malzemenin alış ve satış fiyatı bağımsızdır. Diğer iki modda toplam maliyete genel kâr formülü uygulanır. Döviz kurlarını kendiniz güncelleyin; canlı kur bağlantısı yoktur.</p>
   </section>
