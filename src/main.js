@@ -11,9 +11,9 @@ import { renderPropertyBar } from './ui/PropertyBar.js?v=units6';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=toolbar5';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=units6';
-import {nextNestingSelection,deleteNestingParts} from './manufacturing/NestingSelection.js';
-import { generateNestedGcode, generateNestedHpgl } from './export/CncGcodeExporter.js';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=nest7';
+import {nextNestingSelection,deleteNestingParts,moveNestingParts} from './manufacturing/NestingSelection.js?v=nest7';
+import { generateNestedGcode, generateNestedHpgl,validateNestedProduction,MACHINE_PROFILES } from './export/CncGcodeExporter.js';
 import { HistoryManager } from './core/history.js';
 import {
   deserializeProject,
@@ -65,7 +65,7 @@ import {
   reversePolygonPath,
   combineSelectedToCompound,
 } from './cad/CadTools.js';
-import { SHORTCUT_LIST, SHORTCUT_GROUPS, attachShortcuts } from './cad/Shortcuts.js?v=toolbar5';
+import { SHORTCUT_LIST, SHORTCUT_GROUPS, attachShortcuts } from './cad/Shortcuts.js?v=nest7';
 import { captureObjectClipboard, pasteObjectClipboard } from './core/ObjectClipboard.js';
 import { calculateManufacturingMetrics } from './manufacturing/MetricsCalculator.js';
 import { SHEET_PRESETS, extractNestingItems, runTrueShapeNesting, validateSheetLayout, editNestingPlacement, refreshNestingSheet } from './manufacturing/NestingEngine.js';
@@ -2741,6 +2741,12 @@ function updateCenterWorkspaces(state) {
         const nextTabs = template.content.querySelector('.nesting-source-tabs');
         if (tabs && nextTabs) tabs.replaceWith(nextTabs);
         syncNestingSettingsControls(grid.querySelector('.cws-side-r'), state.nesting,state.pageLayout?.displayUnit);
+        const oldCnc=grid.querySelector('#nestCncPanel'),newCnc=template.content.querySelector('#nestCncPanel');
+        if(oldCnc&&newCnc){
+          for(const fresh of newCnc.querySelectorAll('input,select')){const el=oldCnc.querySelector('#'+fresh.id);if(!el||el===document.activeElement)continue;if(el.type==='checkbox')el.checked=fresh.checked;else el.value=fresh.value;}
+          const oldStatus=oldCnc.querySelector('#nestCncStatus'),newStatus=newCnc.querySelector('#nestCncStatus');if(oldStatus&&newStatus)oldStatus.replaceWith(newStatus);
+          const oldBtn=oldCnc.querySelector('#nestCncExport'),newBtn=newCnc.querySelector('#nestCncExport');if(oldBtn&&newBtn){oldBtn.disabled=newBtn.disabled;oldBtn.textContent=newBtn.textContent;}
+        }
       } else {
         el.innerHTML = html;
       }
@@ -2952,11 +2958,11 @@ function removeNestingSelection(singleId=null){
  if(removable.includes(nestingSelectionAnchor))nestingSelectionAnchor=null;
  mutateData(removable.length+' nesting parçası silindi',s=>deleteNestingParts(s.nesting,activeSheetIdx,removable,nestingSeparation(s.nesting)),false);
 }
-function selectNestingPart(id,{toggle=false,range=false,addRange=false}={}){
+function selectNestingPart(id,{toggle=false,range=false,addRange=false,preserve=false}={}){
  const state=store.get();syncNestingSelectionScope(state);
  const ordered=(state.nesting.sheets?.[activeSheetIdx]?.placements||[]).map(p=>p.id);
  const previous=selectedNestingIds;
- const next=nextNestingSelection(ordered,previous,nestingSelectionAnchor,id,{toggle,range,addRange});
+ const next=nextNestingSelection(ordered,previous,nestingSelectionAnchor,id,{toggle,range,addRange,preserve});
  selectedNestingIds=new Set(next.ids);selectedNestingId=next.primary;nestingSelectionAnchor=next.anchor;
  const root=document.getElementById('nestingCenterWrap');
  const paint=(pid,on)=>{
@@ -2975,12 +2981,20 @@ function selectNestingPart(id,{toggle=false,range=false,addRange=false}={}){
  updateNumericBar(state);
 }
 
+function moveNestingSelection(dx,dy,ids=[...selectedNestingIds]){
+ const state=store.get();syncNestingSelectionScope(state);
+ if(!Number.isFinite(dx)||!Number.isFinite(dy)||(!dx&&!dy))return;
+ const wanted=new Set(ids);
+ if(!(state.nesting.sheets?.[activeSheetIdx]?.placements||[]).some(p=>wanted.has(p.id)&&!p.locked))return;
+ nestingRepackController?.abort();
+ mutateData('Nesting seçili parçaları taşı',s=>moveNestingParts(s.nesting,activeSheetIdx,ids,dx,dy,nestingSeparation(s.nesting)),false);
+}
 function bindNestingGestures(root){
   const svg=root.querySelector('.nesting-sheet-svg');if(!svg||svg._gestureBound)return;
   svg._gestureBound=true;svg.style.touchAction='none';
   const point=e=>{const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;return pt.matrixTransform(svg.getScreenCTM().inverse());};
   let drag=null;
-  const cancel=()=>{if(!drag)return;drag.group?.removeAttribute('transform');drag=null;if(nestingGesture)nestingGesture.active=false;};
+  const cancel=()=>{if(!drag)return;for(const g of drag.groups||[drag.group])g?.removeAttribute('transform');drag=null;if(nestingGesture)nestingGesture.active=false;};
   nestingGesture={active:false,cancel};
   svg.addEventListener('pointerdown',e=>{
     if(e.button!==0||!['select','move','rotate','scale'].includes(nestingTool))return;
@@ -2991,15 +3005,20 @@ function bindNestingGestures(root){
     if(nestingTool==='select'&&(e.ctrlKey||e.metaKey||e.shiftKey)){selectNestingPart(part.id,{toggle:e.ctrlKey||e.metaKey,range:e.shiftKey,addRange:e.ctrlKey||e.metaKey});return;}
     const start=point(e),h=store.get().nesting.sheets[activeSheetIdx].heightMm;
     const center={x:(part.bounds.minX+part.bounds.maxX)/2,y:h-(part.bounds.minY+part.bounds.maxY)/2};
-    drag={part,group,start,center,h,tool:nestingTool==='select'?'move':nestingTool,pointer:e.pointerId,moved:false,dx:0,dy:0,factor:1,angle:0};
-    nestingGesture.active=true;selectNestingPart(part.id);svg.setPointerCapture?.(e.pointerId);
+    const tool=nestingTool==='select'?'move':nestingTool;
+    nestingGesture.active=true;
+    selectNestingPart(part.id,{preserve:tool==='move'});
+    const ids=tool==='move'?(store.get().nesting.sheets[activeSheetIdx].placements||[]).filter(p=>selectedNestingIds.has(p.id)&&!p.locked).map(p=>p.id):part.locked?[]:[part.id];
+    const groups=ids.map(id=>svg.querySelector('[data-pid="'+CSS.escape(id)+'"]')).filter(Boolean);
+    drag={part,group,groups,ids,start,center,h,tool,pointer:e.pointerId,moved:false,dx:0,dy:0,factor:1,angle:0};
+    svg.setPointerCapture?.(e.pointerId);
   });
   svg.addEventListener('pointermove',e=>{
-    if(!drag||drag.pointer!==e.pointerId||drag.part.locked)return;
+    if(!drag||drag.pointer!==e.pointerId||!drag.ids.length)return;
     const p=point(e),d=drag;d.dx=p.x-d.start.x;d.dy=p.y-d.start.y;
     if(Math.hypot(d.dx,d.dy)<.5&&!d.moved)return;
     d.moved=true;
-    if(d.tool==='move')d.group.setAttribute('transform','translate('+d.dx+' '+d.dy+')');
+    if(d.tool==='move')for(const g of d.groups)g.setAttribute('transform','translate('+d.dx+' '+d.dy+')');
     if(d.tool==='rotate'){
       let a=(Math.atan2(p.y-d.center.y,p.x-d.center.x)-Math.atan2(d.start.y-d.center.y,d.start.x-d.center.x))*180/Math.PI;
       if(e.shiftKey)a=Math.round(a/15)*15;
@@ -3016,17 +3035,18 @@ function bindNestingGestures(root){
   svg.addEventListener('pointerup',e=>{
     if(!drag||drag.pointer!==e.pointerId)return;
     const d=drag;cancel();
-    if(d.moved&&!d.part.locked){
-      if(d.tool==='move')editSelectedNesting('move',{x:d.part.xMm+d.dx,y:d.part.yMm-d.dy});
+    if(d.moved&&d.ids.length){
+      if(d.tool==='move')moveNestingSelection(d.dx,-d.dy,d.ids);
       else if(d.tool==='rotate')editSelectedNesting('rot',(d.part.angleDeg||0)-d.angle);
       else if(d.tool==='scale')editSelectedNesting('scale',d.factor);
-    }else selectNestingPart(d.part.id);
+    }else selectNestingPart(d.part.id,{preserve:d.tool==='move'});
   });
   svg.addEventListener('pointercancel',()=>{cancel();updateCenterWorkspaces(store.get());});
   svg.addEventListener('lostpointercapture',()=>{cancel();});
 }
 function bindNestingCenterEvents(root) {
   bindNestingGestures(root);
+  bindNestedCncPanel(root);
   root.querySelectorAll('[data-nest-tab]').forEach(b => b.onclick = () => {
     nestingRepackController?.abort();currentNestingImportController?.abort();
     mutateData('Nesting iş sekmesi', s => switchNestingTab(s.nesting,b.dataset.nestTab), false);
@@ -3161,6 +3181,31 @@ function bindNestingCenterEvents(root) {
   }
 }
 
+function bindNestedCncPanel(root){
+ const panel=root.querySelector('#nestCncPanel');if(!panel||panel.dataset.bound)return;
+ panel.dataset.bound='true';
+ const fields={Profile:'profile',Kerf:'kerfMm',ToolDia:'toolDiameterMm',Comp:'compensation',Seq:'sequence',LeadIn:'leadInMm',Tabs:'microTabs',Tol:'curveTolMm'};
+ for(const [suffix,key] of Object.entries(fields)){
+  const el=panel.querySelector('#nestCnc'+suffix);if(!el)continue;
+  el.addEventListener('change',()=>{
+    const state=store.get(),v=el.type==='checkbox'?el.checked:key.endsWith('Mm')?displayToMm(el.value,state.pageLayout?.displayUnit):el.value;
+    if(key.endsWith('Mm')&&(!Number.isFinite(v)||v<0)){el.value=formatMmAsUnit(state.cnc[key],state.pageLayout?.displayUnit);return;}
+    mutateData('CNC ayarı',s=>{s.cnc[key]=v;});
+  });
+ }
+ panel.querySelector('#nestCncExport')?.addEventListener('click',()=>{
+  const s=store.get(),sh=s.nesting.sheets?.[activeSheetIdx],profile=MACHINE_PROFILES.find(p=>p.id===s.cnc.profile);
+  if(!sh||!profile||!validateNestedProduction([sh],s.cnc).valid)return;
+  const base=s.projectName+'_levha'+(activeSheetIdx+1);
+  if(profile.kind==='dxf')downloadBlob(base+'.dxf',generateNestedDxf([sh]),'application/dxf');
+  else if(profile.kind==='svg')downloadBlob(base+'.svg',generateNestedSvg([sh]),'image/svg+xml');
+  else if(profile.kind==='plt')downloadBlob(base+'.plt',generateNestedHpgl([sh]),'text/plain');
+  else if(profile.kind==='gcode'){
+    if(!window.confirm('G-code taslağı: mevcut post-processor sabit hız, güç ve Z değerleri kullanır. Kerf/takım telafisi, giriş/çıkış ve mikro köprüler otomatik uygulanmaz. Makinenize uygun CAM doğrulaması olmadan çalıştırmayın. Taslağı indir?'))return;
+    downloadBlob(base+'_CAM_kontrol.nc',generateNestedGcode([sh],s.cnc),'text/plain');
+  }
+ });
+}
 function bindCncCenterEvents(root) {
   const upd = (id, fn, isChk = false) => root.querySelector('#' + id)?.addEventListener('change', e => {
     mutateData('CNC ayarı', s => fn(s.cnc, isChk ? e.target.checked : ['cncKerf','cncToolDia','cncLeadIn','cncTol'].includes(id)?displayToMm(e.target.value,s.pageLayout?.displayUnit):e.target.value));
@@ -3989,7 +4034,8 @@ function init() {
     onDuplicate: () => runCadAction('duplicate'),
     onUndo: () => document.getElementById('btnUndo').click(),
     onRedo: () => document.getElementById('btnRedo').click(),
-    onDelete: () => runCadAction('delete'),
+    isNesting:()=>store.get().mainWorkspace==='nesting',
+    onDelete: () => {if(store.get().mainWorkspace==='nesting'){nestingGesture?.cancel?.();removeNestingSelection();}else runCadAction('delete');},
     onCopy: () => copySelectionToClipboard(),
     onCut: cutSelectionToClipboard,
     onPaste: pasteSelectionFromClipboard,
@@ -4018,7 +4064,7 @@ function init() {
       renderCanvasTransformHud(store.get());
     },
     onNudge: (dx, dy) => {
-      if(store.get().mainWorkspace==='nesting'){const p=getNestingSelection();if(p)editSelectedNesting('move',{x:p.xMm+dx,y:p.yMm+dy});return;}
+      if(store.get().mainWorkspace==='nesting'){moveNestingSelection(dx,dy);return;}
       mutate('Taşı', s => {
         for (const o of s.objects) {
           if (s.selectedIds.includes(o.id) && !o.locked) {
