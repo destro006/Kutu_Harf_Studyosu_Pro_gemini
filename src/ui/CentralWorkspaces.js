@@ -114,6 +114,7 @@ export function renderNestingCenter(state, ctx) {
           </select>
         </div>
         <h3 class="sec-title" style="margin-top:14px">Yerleşim Tercihi</h3>
+        <div class="field-row" id="nestingEngineVersion"><label>Yerleşim motoru</label><strong style="font-size:12px;color:var(--text)">Nesting v3 Pro</strong></div>
         <div class="field-row"><label>Optimizasyon süresi</label><select id="cwsNestBudget"><option value="3000" ${n.optimizationBudgetMs===3000?'selected':''}>Hızlı</option><option value="7000" ${!n.optimizationBudgetMs||n.optimizationBudgetMs===7000?'selected':''}>Dengeli</option><option value="30000" ${n.optimizationBudgetMs===30000?'selected':''}>Detaylı · 30 sn</option><option value="60000" ${n.optimizationBudgetMs===60000?'selected':''}>Üretim · 60 sn</option><option value="120000" ${n.optimizationBudgetMs===120000?'selected':''}>Derin arama · 120 sn</option></select></div>
         <div class="field-row"><label>Optimizasyon yönü</label>
           <select id="cwsNestStrategy">
@@ -144,7 +145,7 @@ export function renderNestingCenter(state, ctx) {
         <span><b>Fire Oranı:</b> %${sheets.length ? (100 - avgUtil).toFixed(1) : '0.0'}</span>
         <span><b>Tahmini Kesim Yolu:</b> ${(totalCutLenMm / 1000).toFixed(2)} m</span>
         <span><b>Yerleşmeyen:</b> ${(n.unplaced || []).length}</span>
-        ${n.optimizationInfo?`<span>Optimizasyon: ${n.optimizationInfo.attempts} deneme · ${n.optimizationInfo.nfpAttempts??0} NFP · ${(n.optimizationInfo.elapsedMs/1000).toFixed(1)} sn</span>`:''}
+        ${n.optimizationInfo?.engineVersion==='3.0-pro'?`<span id="nestingLastEngine"><b>Son yerleşim:</b> ${n.optimizationInfo.selectedEngine==='v3-pro'?'v3 Pro':n.optimizationInfo.selectedEngine==='clipper-nfp'?'Clipper NFP (daha iyi doğrulanmış sonuç)':'Hızlı güvenli dizgi'}${n.optimizationInfo.proAttempts?` · Pro: ${n.optimizationInfo.proCompleted??0}/${n.optimizationInfo.proAttempts} tamamlanan deneme`:''} · ${n.optimizationInfo.attempts??0} deneme · ${((n.optimizationInfo.elapsedMs??0)/1000).toFixed(1)} sn</span>`:'<span id="nestingLastEngine">Son yerleşim: v3 Pro sürümünde henüz hesaplanmadı</span>'}
       </div>
     </div>
     </div>
