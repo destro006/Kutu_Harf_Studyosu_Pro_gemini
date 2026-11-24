@@ -1,6 +1,6 @@
 import {resolveObjectLighting} from '../core/ObjectLighting.js';
 import { nominalSize, roundMm, resizeObjectToMm } from '../core/ObjectDimensions.js';
-import { DISPLAY_UNITS, PAGE_SIZE_PRESETS, normalizeDisplayUnit, displayUnitLabel, mmToDisplay, displayToMm, formatMmAsUnit } from '../core/units.js';
+import { DISPLAY_UNITS, PAGE_SIZE_PRESETS, normalizeDisplayUnit, displayUnitLabel, mmToDisplay, displayToMm, formatMmAsUnit, formatPresetLabel } from '../core/units.js';
 const CONSTRUCTION_TYPES = [
   { id: 'fileli', label: 'Fileli Kutu Harf' },
   { id: 'pleksi', label: 'Pleksi Kutu Harf' },
@@ -76,7 +76,7 @@ export function renderPropertyBar(state, ctx = {}) {
         <div class="prop-field"><label>G (${u})</label><input id="npPartW" type="number" step="any" min="0.001" value="${show(part.bounds.width)}"></div>
         <div class="prop-field"><label>Y (${u})</label><input id="npPartH" type="number" step="any" min="0.001" value="${show(part.bounds.height)}"></div>
         <div class="prop-field"><label>Açı</label><input id="npPartRot" type="number" step="15" value="${Math.round(part.angleDeg || 0)}"></div>
-        <span class="chip" style="cursor:default">${escapeHtml(activeSheet?.materialLabel || '')} (${activeSheet?.thicknessMm || 1.2} mm)</span>
+        <span class="chip" style="cursor:default">${escapeHtml(activeSheet?.materialLabel || '')} (${show(activeSheet?.thicknessMm || 1.2)} ${u})</span>
         <button type="button" id="npPartLock" class="tb-btn ${part.locked ? 'on' : ''}">${part.locked ? '🔒 Kilitli' : '🔓 Kilitle'}</button>
         ${sheets.length > 1 ? `
           <select id="npMoveSheet" class="prop-select" title="Başka levhaya taşı">
@@ -127,7 +127,7 @@ export function renderPropertyBar(state, ctx = {}) {
     bar.innerHTML = `
       <span class="chip page-layout-title" style="cursor:default">Sayfa ve Yerleşim · ${escapeHtml(page?.name || 'Sayfa 1')}</span>
       ${unitSelect}
-      <div class="prop-field"><label for="pbPagePreset">Ebat</label><select id="pbPagePreset" class="prop-select" aria-label="Hazır sayfa boyutu">${PAGE_SIZE_PRESETS.map(p => `<option value="${p.id}" ${(state.pageLayout?.preset || 'custom') === p.id ? 'selected' : ''}>${p.label}</option>`).join('')}</select></div>
+      <div class="prop-field"><label for="pbPagePreset">Ebat</label><select id="pbPagePreset" class="prop-select" aria-label="Hazır sayfa boyutu">${PAGE_SIZE_PRESETS.map(p => `<option value="${p.id}" ${(state.pageLayout?.preset || 'custom') === p.id ? 'selected' : ''}>${formatPresetLabel(p,unit)}</option>`).join('')}</select></div>
       <div class="prop-field"><label for="pageW">Genişlik (${u})</label><input id="pageW" type="number" min="${show(1)}" step="any" value="${show(pw)}" aria-label="Sayfa genişliği"></div>
       <div class="prop-field"><label for="pageH">Yükseklik (${u})</label><input id="pageH" type="number" min="${show(1)}" step="any" value="${show(ph)}" aria-label="Sayfa yüksekliği"></div>
       <button type="button" id="pbPageOrient" class="tb-btn">${pw >= ph ? '▭ Yatay' : '▯ Dikey'}</button>
