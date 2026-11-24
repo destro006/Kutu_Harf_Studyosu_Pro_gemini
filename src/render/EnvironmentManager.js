@@ -151,6 +151,24 @@ export class EnvironmentManager {
     ctx.fillStyle = skyGrad;
     ctx.fillRect(0, 0, w, h);
 
+    if (presetId === 'luxuryGold') {
+      // Bright front softboxes prevent mirror-gold faces from reflecting a
+      // near-black horizon in the default hero view.
+      for (const x of [w * 0.25, w * 0.75]) {
+        ctx.save();
+        ctx.translate(x, h * 0.51);
+        ctx.scale(1, 0.85);
+        const card = ctx.createRadialGradient(0, 0, w * 0.035, 0, 0, w * 0.19);
+        card.addColorStop(0, 'rgba(255,250,226,0.98)');
+        card.addColorStop(0.36, 'rgba(255,232,185,0.90)');
+        card.addColorStop(0.72, 'rgba(228,181,110,0.55)');
+        card.addColorStop(1, 'rgba(228,181,110,0)');
+        ctx.fillStyle = card;
+        ctx.fillRect(-w * 0.2, -w * 0.2, w * 0.4, w * 0.4);
+        ctx.restore();
+      }
+    }
+
     // Sweeping horizontal diagonal softbox light ribbons for eye-catching metallic specular gradients
     const ribbons = [
       { x: w * 0.25, y: h * 0.28, rx: w * 0.22, ry: h * 0.14, c0: 'rgba(255,250,235,0.92)', c1: 'rgba(255,250,235,0)' },
