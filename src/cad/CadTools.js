@@ -223,3 +223,147 @@ export function offsetPolygonObject(obj, deltaMm) {
   obj.polygonsMm = updated;
   return { ok: true };
 }
+
+/**
+ * Splits a multi-glyph text or polygon object into independently editable letter objects (CorelDRAW Ctrl+K Break Apart).
+ * Each letter retains its exact world millimeter coordinates, materials, depth, file width, and lighting.
+ */
+export function breakApartObjectToLetters(obj, state, fontMap) {
+  if (!obj || obj.locked) return { ok: false, error: 'Kilitsiz bir nesne seçin.' };
+  const baseCurves = obj.kind === 'polygon' ? obj : convertObjectToCurves(obj, fontMap);
+  if (!baseCurves || !baseCurves.polygonsMm?.length) {
+    return { ok: false, error: 'Harflere ayrılacak vektör geometrisi bulunamadı.' };
+  }
+  if (baseCurves.polygonsMm.length <= 1) {
+    return { ok: false, error: 'Bu nesne zaten tek bir bağımsız parçadan oluşuyor.' };
+  }
+
+  const labelChars = obj.kind === 'text' ? [...(obj.text || '').replace(/\s+/g, '')] : [];
+  const sx = obj.scaleX ?? 1;
+  const sy = obj.scaleY ?? 1;
+  const ox = obj.xMm || 0;
+  const oy = obj.yMm || 0;
+  const groupId = obj.groupId || createObjectId('grp');
+
+  const letterObjs = baseCurves.polygonsMm.map((poly, idx) => {
+    const b = polygonBounds(poly.outer);
+    const lcx = (b.minX + b.maxX) * 0.5;
+    const lcy = (b.minY + b.maxY) * 0.5;
+    const ch = labelChars[idx] || `Parça ${idx + 1}`;
+    return {
+      ...createShapeObject('polygon', state, {
+        name: `Harf: ${ch}`,
+        xMm: Math.round(ox + lcx * sx),
+        yMm: Math.round(oy + lcy * sy),
+        widthMm: Math.round(b.width * Math.abs(sx)),
+        heightMm: Math.round(b.height * Math.abs(sy)),
+        depthMm: obj.depthMm ?? 80,
+        rotationDeg: obj.rotationDeg || 0,
+        rotXDeg: obj.rotXDeg || 0,
+        rotYDeg: obj.rotYDeg || 0,
+        scaleX: sx,
+        scaleY: sy,
+        constructionType: obj.constructionType || state.constructionType,
+        fileWidthMm: obj.fileWidthMm ?? state.fileli?.fileWidthMm ?? 5,
+        faceMaterial: obj.faceMaterial,
+        faceColor: obj.faceColor,
+        sideMaterial: obj.sideMaterial,
+        sideColor: obj.sideColor,
+        sideFollowsFace: obj.sideFollowsFace,
+        fileMaterial: obj.fileMaterial,
+        fileColor: obj.fileColor,
+        acrylicMaterial: obj.acrylicMaterial,
+        acrylicColor: obj.acrylicColor,
+        lightingMode: obj.lightingMode,
+        layerId: obj.layerId || 'layer_main',
+        parentTextGroup: groupId,
+        polygonsMm: [{
+          outer: poly.outer.map(p => ({ x: p.x - lcx, y: p.y - lcy })),
+          holes: (poly.holes || []).map(h => h.map(p => ({ x: p.x - lcx, y: p.y - lcy }))),
+        }],
+      }),
+    };
+  });
+
+  return { ok: true, letters: letterObjs };
+}
+
+/**
+ * Inserts a new vertex node on the nearest edge of a polygon object.
+ */
+export function addNodeToPolygon(obj, polyIdx = 0, edgeIdx = 0) {
+  if (!obj || obj.locked || obj.kind !== 'polygon' || !obj.polygonsMm?.[polyIdx]) return false;
+  const ring = obj.polygonsMm[polyIdx].outer;
+  if (!ring || ring.length < 3) return false;
+  const i0 = ((edgeIdx % ring.length) + ring.length) % ring.length;
+  const i1 = (i0 + 1) % ring.length;
+  const mid = { x: (ring[i0].x + ring[i1].x) * 0.5, y: (ring[i0].y + ring[i1].y) * 0.5, mode: 'cusp' };
+  ring.splice(i0 + 1, 0, mid);
+  return true;
+}
+
+/**
+ * Deletes a vertex node from a polygon object (preserving minimum 3 vertices).
+ */
+export function deleteNodeFromPolygon(obj, polyIdx = 0, nodeIdx = 0) {
+  if (!obj || obj.locked || obj.kind !== 'polygon' || !obj.polygonsMm?.[polyIdx]) return false;
+  const ring = obj.polygonsMm[polyIdx].outer;
+  if (!ring || ring.length <= 3) return false;
+  ring.splice(nodeIdx, 1);
+  return true;
+}
+
+/**
+ * Reverses the winding direction of a polygon object's outer & hole rings.
+ */
+export function reversePolygonPath(obj) {
+  if (!obj || obj.locked || obj.kind !== 'polygon' || !obj.polygonsMm?.length) return false;
+  for (const p of obj.polygonsMm) {
+    p.outer.reverse();
+    for (const h of (p.holes || [])) h.reverse();
+  }
+  return true;
+}
+
+/**
+ * Combines 2+ selected objects into a single compound polygon object (Ctrl+L Combine).
+ */
+export function combineSelectedToCompound(state, fontMap) {
+  const sel = state.objects.filter(o => state.selectedIds.includes(o.id) && !o.locked);
+  if (sel.length < 2) return { ok: false, error: 'Birleştirmek için en az 2 nesne seçin.' };
+  const curves = sel.map(o => convertObjectToCurves(o, fontMap)).filter(Boolean);
+  if (curves.length < 2) return { ok: false, error: 'Nesneler eğriye çevrilemedi.' };
+
+  const allPolys = [];
+  for (const c of curves) {
+    const sx = c.scaleX ?? 1;
+    const sy = c.scaleY ?? 1;
+    const ox = c.xMm || 0;
+    const oy = c.yMm || 0;
+    for (const p of c.polygonsMm) {
+      allPolys.push({
+        outer: p.outer.map(pt => ({ x: pt.x * sx + ox, y: pt.y * sy + oy })),
+        holes: (p.holes || []).map(h => h.map(pt => ({ x: pt.x * sx + ox, y: pt.y * sy + oy }))),
+      });
+    }
+  }
+  const b = polygonBounds(allPolys.flatMap(p => p.outer));
+  const cx = (b.minX + b.maxX) * 0.5;
+  const cy = (b.minY + b.maxY) * 0.5;
+  const combined = createShapeObject('polygon', state, {
+    name: 'Bileşik Yol',
+    xMm: Math.round(cx),
+    yMm: Math.round(cy),
+    widthMm: Math.round(b.width),
+    heightMm: Math.round(b.height),
+    polygonsMm: allPolys.map(p => ({
+      outer: p.outer.map(pt => ({ x: pt.x - cx, y: pt.y - cy })),
+      holes: p.holes.map(h => h.map(pt => ({ x: pt.x - cx, y: pt.y - cy }))),
+    })),
+  });
+  const rm = new Set(sel.map(s => s.id));
+  state.objects = state.objects.filter(o => !rm.has(o.id));
+  state.objects.push(combined);
+  state.selectedIds = [combined.id];
+  return { ok: true, object: combined };
+}

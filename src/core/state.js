@@ -11,7 +11,9 @@ export function createDefaultState() {
   return {
     schemaVersion: 2,
     projectName: 'Yeni Tabela Projesi',
-    activeWorkspace: 'design', // 'design' | 'materials' | 'lighting' | 'layers' | 'background' | 'nesting' | 'cost' | 'quote' | 'projects'
+    mainWorkspace: 'model3d', // 'design2d' | 'model3d' | 'materials' | 'nesting' | 'cnc' | 'cost'
+    activeDocker: 'properties', // 'objects' | 'properties' | 'layers' | 'materials' | 'manufacturing' | 'align'
+    activeWorkspace: 'design',
     activeTool: 'select', // 'select' | 'move' | 'scale' | 'rotate' | 'pan' | 'zoom' | 'rect' | 'ellipse' | 'text' | 'pen' | 'node' | 'measure'
     quality: 'high', // 'performance' | 'balanced' | 'high' | 'ultra'
     constructionType: 'fileli', // 'fileli' | 'pleksi' | 'metal' | 'halo' | 'isiksiz'
@@ -23,8 +25,9 @@ export function createDefaultState() {
     },
 
     fileli: {
-      fileWidthMm: 4,
+      fileWidthMm: 5,
       fileThicknessMm: 2,
+      metalThicknessMm: 1, // Paslanmaz/alüminyum yanak sac kalınlığı; file yüksekliğinden bağımsız.
       fileMaterial: 'aynaAltin',
       fileColor: '#f5c66a',
       borderBevelMm: 0.8,
@@ -53,11 +56,27 @@ export function createDefaultState() {
       acrylicTransmission: 0.18,
     },
 
+    ui: {
+      stackMode: 'tabs', // 'tabs' | 'stacked'
+      openSections: ['design', 'materials', 'lighting'],
+      railExpanded: false,
+      fullscreen: false,
+    },
+
+    pageLayout: {
+      visible: false,
+      preset: '2000x1000',
+      widthMm: 2000,
+      heightMm: 1000,
+    },
+
     render: {
       envPreset: 'luxuryGold',
       envRotationDeg: 0,
+      envPitchDeg: 0,
       envIntensity: 1.15,
       reflectionIntensity: 1.25,
+      customCardScale: 1.0,
       exposure: 1.05,
       useCustomEnv: false,
     },
@@ -96,17 +115,56 @@ export function createDefaultState() {
       ambientMatch: 0.15,
     },
 
+    grid: {
+      visible: true,
+      spacingMm: 50,
+      snapToGrid: false,
+      snapToObjects: true,
+      snapToNodes: true,
+      snapToCenters: true,
+    },
+    cnc: {
+      kerfMm: 0.2,
+      toolDiameterMm: 3.0,
+      compensation: 'outside',
+      sequence: 'hole_first',
+      leadInMm: 3,
+      leadOutMm: 2,
+      microTabs: false,
+      tabWidthMm: 2,
+      commonLine: false,
+      origin: 'bottom_left',
+      profile: 'dxf_r2000',
+      curveTolMm: 0.1,
+    },
+    activePageId: 'page_1',
+    pages: [
+      {
+        id: 'page_1',
+        name: 'Sayfa 1 — Ana Tabela',
+        widthMm: 2000,
+        heightMm: 1000,
+        orientation: 'landscape',
+        layers: [
+          { id: 'layer_main', name: 'Ana Yazı Katmanı', visible: true, locked: false, exportable: true },
+        ],
+        objects: null,
+      },
+    ],
     selectedIds: ['obj_main_text'],
     objects: [
       {
         id: 'obj_main_text',
+        layerId: 'layer_main',
         name: 'Ana Tabela Yazısı',
         kind: 'text',
         text: 'MARKANIZ',
-        fontId: 'cinzel',
+        fontId: 'montserrat',
         heightMm: 400,
         depthMm: 80,
         letterSpacingMm: 8,
+        lineSpacingMult: 1.25,
+        textAlign: 'center',
         xMm: 0,
         yMm: 0,
         rotationDeg: 0,
@@ -142,8 +200,14 @@ export function createDefaultState() {
       allowedAngles: [0, 90, 180, 270],
       fineAngleStep: 0, // 0 = use allowedAngles, >0 = e.g. 45 or 15 deg steps
       copies: 1,
-      grainDirection: 'none', // 'none' | 'horizontal' | 'vertical'
-      targetPart: 'all', // 'all' | 'acrylic' | 'file' | 'outer'
+      grainDirection: 'none',
+      targetPart: 'all',
+      allowHoleNesting: true,
+      groupByMaterial: true,
+      marginLeftMm: 15,
+      marginRightMm: 15,
+      marginTopMm: 15,
+      marginBottomMm: 15,
     },
 
     costConfig: {
@@ -212,6 +276,7 @@ export class StateStore {
 
   set(nextState, meta = {}) {
     this.state = nextState;
+    syncPageMirror(this.state);
     for (const fn of this.listeners) fn(this.state, meta);
   }
 
@@ -229,4 +294,28 @@ export class StateStore {
 
 export function structuredCloneSafe(obj) {
   return JSON.parse(JSON.stringify(obj));
+}
+
+export function syncPageMirror(state) {
+  if (!state) return;
+  if (!Array.isArray(state.pages) || !state.pages.length) {
+    state.pages = [{
+      id: 'page_1',
+      name: 'Sayfa 1 — Ana Tabela',
+      widthMm: state.pageLayout?.widthMm || 2000,
+      heightMm: state.pageLayout?.heightMm || 1000,
+      orientation: 'landscape',
+      layers: [{ id: 'layer_main', name: 'Ana Yazı Katmanı', visible: true, locked: false, exportable: true }],
+      objects: state.objects || [],
+    }];
+    state.activePageId = 'page_1';
+  }
+  const page = state.pages.find(p => p.id === state.activePageId) || state.pages[0];
+  if (page) {
+    state.activePageId = page.id;
+    page.objects = state.objects || [];
+    if (!page.layers?.length) {
+      page.layers = [{ id: 'layer_main', name: 'Ana Yazı Katmanı', visible: true, locked: false, exportable: true }];
+    }
+  }
 }

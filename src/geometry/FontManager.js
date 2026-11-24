@@ -314,46 +314,100 @@ function commandsToShapes(commands, scale, offsetX) {
  * Layouts text into independent per-glyph 2D shapes in MILLIMETERS.
  * Preserves spaces, Turkish characters (Ç, Ğ, İ, Ö, Ş, Ü, ı, ğ, ş), kerning, and letter spacing.
  */
-export function layoutTextMm(fontList, text, heightMm, letterSpacingMm = 0) {
+export function layoutTextMm(fontList, text, heightMm, letterSpacingMm = 0, lineSpacingMult = 1.25, textAlign = 'center') {
   if (!fontList || !fontList.length) return { glyphs: [], widthMm: 0, heightMm };
   const primary = fontList[0];
   const capHeight = (primary.tables?.os2?.sCapHeight) || primary.unitsPerEm * 0.7;
   const scale = heightMm / capHeight;
   const defaultTracking = heightMm * 0.02 + letterSpacingMm;
+  const lineStep = heightMm * Math.max(0.8, lineSpacingMult || 1.25);
+
+  const rawLines = String(text || '').split(/\r?\n/);
+  const lineLayouts = [];
+  let maxWidth = 0;
+
+  for (let li = 0; li < rawLines.length; li++) {
+    const lineText = rawLines[li];
+    const lineGlyphs = [];
+    let cursorX = 0;
+    let prev = null;
+    const yOffset = -li * lineStep;
+
+    for (const ch of [...lineText]) {
+      const font = fontList.find(f => f.charToGlyph(ch).index > 0) || primary;
+      const glyph = font.charToGlyph(ch);
+
+      if (prev && prev.font === font) {
+        cursorX += font.getKerningValue(prev.glyph, glyph) * scale;
+      }
+
+      if (!/\s/.test(ch)) {
+        const path = glyph.getPath(0, 0, font.unitsPerEm);
+        const localScale = scale * (primary.unitsPerEm / font.unitsPerEm);
+        const shapes = commandsToShapes(path.commands, localScale, cursorX);
+        if (shapes.length) {
+          if (yOffset !== 0) {
+            for (const sh of shapes) {
+              for (const c of sh.curves) {
+                if (c.v1) c.v1.y += yOffset;
+                if (c.v2) c.v2.y += yOffset;
+                if (c.v0) c.v0.y += yOffset;
+                if (c.v3) c.v3.y += yOffset;
+              }
+              for (const h of (sh.holes || [])) {
+                for (const c of h.curves) {
+                  if (c.v1) c.v1.y += yOffset;
+                  if (c.v2) c.v2.y += yOffset;
+                  if (c.v0) c.v0.y += yOffset;
+                  if (c.v3) c.v3.y += yOffset;
+                }
+              }
+            }
+          }
+          lineGlyphs.push({ char: ch, xMm: cursorX, shapes });
+        }
+      }
+
+      const advance = (glyph.advanceWidth ?? font.unitsPerEm * 0.32) * scale;
+      cursorX += advance + defaultTracking;
+      prev = { font, glyph };
+    }
+
+    const lineW = Math.max(0, cursorX - defaultTracking);
+    if (lineW > maxWidth) maxWidth = lineW;
+    lineLayouts.push({ lineW, lineGlyphs });
+  }
 
   const glyphs = [];
-  let cursorX = 0;
-  let prev = null;
-
-  for (const ch of [...(text || '')]) {
-    const font = fontList.find(f => f.charToGlyph(ch).index > 0) || primary;
-    const glyph = font.charToGlyph(ch);
-
-    if (prev && prev.font === font) {
-      cursorX += font.getKerningValue(prev.glyph, glyph) * scale;
-    }
-
-    if (!/\s/.test(ch)) {
-      const path = glyph.getPath(0, 0, font.unitsPerEm);
-      const localScale = scale * (primary.unitsPerEm / font.unitsPerEm);
-      const shapes = commandsToShapes(path.commands, localScale, cursorX);
-      if (shapes.length) {
-        glyphs.push({
-          char: ch,
-          xMm: cursorX,
-          shapes,
-        });
+  for (const ll of lineLayouts) {
+    const shiftX = textAlign === 'center' ? (maxWidth - ll.lineW) * 0.5 : textAlign === 'right' ? (maxWidth - ll.lineW) : 0;
+    if (Math.abs(shiftX) > 0.01) {
+      for (const g of ll.lineGlyphs) {
+        g.xMm += shiftX;
+        for (const sh of g.shapes) {
+          for (const c of sh.curves) {
+            if (c.v1) c.v1.x += shiftX;
+            if (c.v2) c.v2.x += shiftX;
+            if (c.v0) c.v0.x += shiftX;
+            if (c.v3) c.v3.x += shiftX;
+          }
+          for (const h of (sh.holes || [])) {
+            for (const c of h.curves) {
+              if (c.v1) c.v1.x += shiftX;
+              if (c.v2) c.v2.x += shiftX;
+              if (c.v0) c.v0.x += shiftX;
+              if (c.v3) c.v3.x += shiftX;
+            }
+          }
+        }
       }
     }
-
-    const advance = (glyph.advanceWidth ?? font.unitsPerEm * 0.32) * scale;
-    cursorX += advance + defaultTracking;
-    prev = { font, glyph };
+    glyphs.push(...ll.lineGlyphs);
   }
 
   return {
     glyphs,
-    widthMm: Math.max(0, cursorX - defaultTracking),
-    heightMm,
+    widthMm: maxWidth,
+    heightMm: heightMm + Math.max(0, rawLines.length - 1) * lineStep,
   };
 }

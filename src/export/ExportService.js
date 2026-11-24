@@ -172,3 +172,107 @@ function dxfLayer(name, colorIndex) {
 function escapeXml(s) {
   return String(s ?? '').replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c]));
 }
+
+/**
+ * PART C — Dedicated Nested Sheet Exports ("Nesting Dışa Aktar")
+ * Exports the ACTUAL nested sheet layouts (preserving exact X/Y coordinates, rotations, holes, and material groups).
+ */
+
+export function generateNestedSvg(sheets) {
+  if (!sheets || !sheets.length) return "";
+  const gap = 80;
+  let totalH = 0;
+  let maxW = 0;
+  for (const sh of sheets) {
+    maxW = Math.max(maxW, sh.widthMm);
+    totalH += sh.heightMm + gap;
+  }
+  totalH = Math.max(100, totalH - gap);
+
+  let yOff = 0;
+  const groups = [];
+  for (const sh of sheets) {
+    const paths = [];
+    for (const p of sh.placements) {
+      const toD = (r) => "M " + r.map(pt => `${pt.x.toFixed(3)},${(sh.heightMm - pt.y).toFixed(3)}`).join(" L ") + " Z";
+      paths.push(`<path class="cut-outer" data-part="${escapeXml(p.label)}" d="${toD(p.outer)}" />`);
+      for (const h of (p.holes || [])) {
+        paths.push(`<path class="cut-inner" data-part="${escapeXml(p.label)}" d="${toD(h)}" />`);
+      }
+    }
+    groups.push(`
+  <g id="SHEET_${sh.index}" data-material="${escapeXml(sh.materialGroup)}" transform="translate(0, ${yOff})">
+    <rect id="SHEET_BOUNDARY_${sh.index}" x="0" y="0" width="${sh.widthMm}" height="${sh.heightMm}" fill="none" stroke="#64748b" stroke-width="0.6" />
+    ${paths.join("\n    ")}
+  </g>`);
+    yOff += sh.heightMm + gap;
+  }
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${maxW}mm" height="${totalH}mm" viewBox="0 0 ${maxW} ${totalH}">
+  <style>.cut-outer{fill:none;stroke:#f59e0b;stroke-width:0.35}.cut-inner{fill:none;stroke:#38bdf8;stroke-width:0.35}</style>
+  ${groups.join("\n")}
+</svg>`;
+}
+
+export function generateNestedDxf(sheets) {
+  const lines = [
+    "0", "SECTION", "2", "HEADER",
+    "9", "$INSUNITS", "70", "4",
+    "0", "ENDSEC",
+    "0", "SECTION", "2", "TABLES",
+    "0", "TABLE", "2", "LAYER", "70", "4",
+    ...dxfLayer("CUT_OUTER", 2),
+    ...dxfLayer("CUT_INNER", 4),
+    ...dxfLayer("ENGRAVE", 3),
+    ...dxfLayer("SHEET_BOUNDARY", 7),
+    "0", "ENDTAB", "0", "ENDSEC",
+    "0", "SECTION", "2", "ENTITIES",
+  ];
+
+  const emitPoly = (ring, layer, xOff, yOff) => {
+    if (!ring || ring.length < 3) return;
+    lines.push("0", "LWPOLYLINE", "8", layer, "90", String(ring.length), "70", "1");
+    for (const p of ring) {
+      lines.push("10", (p.x + xOff).toFixed(4), "20", (p.y + yOff).toFixed(4));
+    }
+  };
+
+  let xOff = 0;
+  for (const sh of sheets) {
+    // Sheet boundary reference rectangle
+    emitPoly([
+      { x: 0, y: 0 }, { x: sh.widthMm, y: 0 },
+      { x: sh.widthMm, y: sh.heightMm }, { x: 0, y: sh.heightMm },
+    ], "SHEET_BOUNDARY", xOff, 0);
+
+    for (const p of sh.placements) {
+      emitPoly(p.outer, "CUT_OUTER", xOff, 0);
+      for (const h of (p.holes || [])) emitPoly(h, "CUT_INNER", xOff, 0);
+    }
+    xOff += sh.widthMm + 150;
+  }
+
+  lines.push("0", "ENDSEC", "0", "EOF");
+  return lines.join("\n");
+}
+
+export function generateNestedCsv(sheets) {
+  const rows = ["Plaka,Malzeme Grubu,Parca,Aci (deg),X (mm),Y (mm),Genislik (mm),Yukseklik (mm),Alan (cm2)"];
+  for (const sh of sheets) {
+    for (const p of sh.placements) {
+      rows.push([
+        sh.index,
+        `"${(sh.materialGroup || "").replace(/"/g, '""')}"`,
+        `"${(p.label || "").replace(/"/g, '""')}"`,
+        p.angleDeg,
+        Math.round(p.xMm),
+        Math.round(p.yMm),
+        Math.round(p.bounds.width),
+        Math.round(p.bounds.height),
+        (p.areaMm2 / 100).toFixed(2),
+      ].join(","));
+    }
+  }
+  return rows.join("\n");
+}

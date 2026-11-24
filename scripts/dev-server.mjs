@@ -44,11 +44,11 @@ const server = http.createServer((req, res) => {
   const ext = path.extname(filePath).toLowerCase();
   res.writeHead(200, {
     'Content-Type': MIME[ext] || 'application/octet-stream',
-    'Cache-Control': 'no-cache',
+    'Cache-Control': 'no-store, no-cache, must-revalidate',
   });
   fs.createReadStream(filePath).pipe(res);
 });
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Kutu Harf Stüdyosu geliştirme sunucusu: http://127.0.0.1:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Kutu Harf Stüdyosu geliştirme sunucusu: http://0.0.0.0:${PORT}`);
 });

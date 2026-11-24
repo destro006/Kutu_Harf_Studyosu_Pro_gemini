@@ -7,6 +7,6 @@
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
     "build": "node scripts/build.mjs",
-    "test": "node tests/run-all.mjs"
+    "test": "node tests/run-all.mjs && node tests/document-tabs.mjs && node tests/fileli-integration.mjs && node tests/fileli-metal-sync.mjs && node tests/ui-pick-panels.mjs"
   }
 }

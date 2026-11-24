@@ -1,30 +1,43 @@
 import {
   ensureWinding,
   minDistanceBetweenPolygons,
+  pointInPolygon,
   polygonArea,
   polygonBounds,
   polygonsIntersect,
+  segmentsIntersect,
 } from '../geometry/PolygonOffset.js';
 
 /**
- * True-Shape Irregular Polygon Sheet Nesting Engine
- * Inspired by SVGNest / DeepNest principles:
- *  - Uses actual polygon contours (NEVER rectangular-only bounding-box packing)
- *  - Simplifies dense Bezier-sampled contours (e.g. 200+ pts -> ~28 pts) for fast interactive nesting
- *  - Allows overlapping bounding boxes when actual material contours are separated by >= (clearance + kerf)
- *  - Exploits concave pockets (e.g., interlocking E-shapes) via candidate pocket points + local slide compaction
+ * Industrial True-Shape Irregular Polygon Sheet Nesting Engine
+ * - Material-aware batching (never mixes acrylic with stainless steel or different thicknesses)
+ * - True-shape hole nesting (places smaller compatible parts inside large holes like 'O' when enabled)
+ * - Grain-direction & rotation increment controls (0, 0/90, 0/90/180/270, 45, 30, 15, 5, 1 deg)
+ * - Multi-sheet allocation + locked-part preservation during re-optimization
+ * - Independent geometric validity & collision verification
  */
+
+export const SHEET_PRESETS = [
+  { id: '1000x2000', label: '1000 × 2000 mm', w: 1000, h: 2000 },
+  { id: '1220x2440', label: '1220 × 2440 mm', w: 1220, h: 2440 },
+  { id: '1250x2500', label: '1250 × 2500 mm', w: 1250, h: 2500 },
+  { id: '3000x1500', label: '3000 × 1500 mm (Yatay)', w: 3000, h: 1500 },
+  { id: '1500x3000', label: '1500 × 3000 mm (Dikey)', w: 1500, h: 3000 },
+  { id: '2000x3000', label: '2000 × 3000 mm', w: 2000, h: 3000 },
+  { id: '400x400', label: '400 × 400 mm (Test)', w: 400, h: 400 },
+];
 
 export function rotatePolygon(pts, angleDeg) {
   const rad = (angleDeg * Math.PI) / 180;
   const c = Math.cos(rad);
   const s = Math.sin(rad);
-  const rotated = pts.map(p => ({
-    x: p.x * c - p.y * s,
-    y: p.x * s + p.y * c,
-  }));
+  const rotated = pts.map(p => ({ x: p.x * c - p.y * s, y: p.x * s + p.y * c }));
   const b = polygonBounds(rotated);
-  return rotated.map(p => ({ x: p.x - b.minX, y: p.y - b.minY }));
+  return {
+    points: rotated.map(p => ({ x: p.x - b.minX, y: p.y - b.minY })),
+    dx: -b.minX,
+    dy: -b.minY,
+  };
 }
 
 export function translatePolygon(pts, dx, dy) {
@@ -33,8 +46,7 @@ export function translatePolygon(pts, dx, dy) {
 
 function simplifyClosedPolygon(pts, tol = 1.5) {
   if (!pts || pts.length <= 12) return pts;
-  let farIdx = 0;
-  let maxD2 = -1;
+  let farIdx = 0, maxD2 = -1;
   for (let i = 1; i < pts.length; i++) {
     const d2 = (pts[i].x - pts[0].x) ** 2 + (pts[i].y - pts[0].y) ** 2;
     if (d2 > maxD2) { maxD2 = d2; farIdx = i; }
@@ -54,10 +66,7 @@ function simplifyClosedPolygon(pts, tol = 1.5) {
         const d = Math.abs(dy * arr[i].x - dx * arr[i].y + b.x * a.y - b.y * a.x) / len;
         if (d > bestD) { bestD = d; bestIdx = i; }
       }
-      if (bestIdx > 0) {
-        keep[bestIdx] = 1;
-        stack.push([s, bestIdx], [bestIdx, e]);
-      }
+      if (bestIdx > 0) { keep[bestIdx] = 1; stack.push([s, bestIdx], [bestIdx, e]); }
     }
     return arr.filter((_, i) => keep[i]);
   };
@@ -68,8 +77,8 @@ function simplifyClosedPolygon(pts, tol = 1.5) {
 }
 
 /**
- * Extracts nestable polygon items from current scene metricsList,
- * grouped by material + thickness.
+ * Extracts nestable manufacturing components from current scene metricsList,
+ * preserving projectId, parentId, partId, material, thickness, finish, and exact contours.
  */
 export function extractNestingItems(metricsList, state) {
   const copies = Math.max(1, Number(state.nesting?.copies || 1));
@@ -80,39 +89,47 @@ export function extractNestingItems(metricsList, state) {
     for (const m of metricsList) {
       if (!m.polygonsMm?.length) continue;
 
-      const addRing = (outer, holes, partType, materialName, thicknessMm) => {
-        const normOuter = simplifyClosedPolygon(ensureWinding(outer, true), 1.8);
+      const addRing = (outer, holes, partType, materialName, thicknessMm, operation) => {
+        const rawOuter = ensureWinding(outer, true);
+        const normOuter = simplifyClosedPolygon(rawOuter, 1.5);
         if (normOuter.length < 3) return;
         const b = polygonBounds(normOuter);
         const shift = p => ({ x: p.x - b.minX, y: p.y - b.minY });
-        const areaMm2 = Math.max(
-          0,
-          polygonArea(normOuter) - (holes || []).reduce((acc, h) => acc + polygonArea(h), 0)
-        );
+        const normHoles = (holes || []).map(h => simplifyClosedPolygon(ensureWinding(h, false), 1.5).map(shift));
+        const holeArea = normHoles.reduce((acc, h) => acc + polygonArea(h), 0);
+        const areaMm2 = Math.max(0, polygonArea(normOuter) - holeArea);
+
         items.push({
           id: `${m.objectId}_${m.label}_${partType}_c${c}_${items.length}`,
+          projectId: state.projectId || 'proj_default',
+          projectName: state.projectName || 'Proje',
+          parentId: m.objectId,
           label: `${m.label} (${partType})`,
           partType,
+          operation,
+          material: materialName,
+          thicknessMm,
           materialGroup: `${materialName} · ${thicknessMm} mm`,
           outer: normOuter.map(shift),
-          holes: (holes || []).map(h => simplifyClosedPolygon(ensureWinding(h, false), 1.8).map(shift)),
+          holes: normHoles,
           areaMm2,
+          locked: false,
         });
       };
 
       if (targetPart === 'all' || targetPart === 'outer') {
         for (const poly of m.polygonsMm) {
-          addRing(poly.outer, poly.holes, 'Gövde', state.materials?.faceId || 'metal', m.depthMm || 80);
+          addRing(poly.outer, poly.holes, 'Gövde', state.materials?.faceId || 'metal', m.depthMm || 80, 'CUT_OUTER');
         }
       }
       if ((targetPart === 'all' || targetPart === 'acrylic') && m.exportContours?.acrylic?.length) {
         for (const poly of m.exportContours.acrylic) {
-          addRing(poly.outer, poly.holes, 'Pleksi', 'Pleksi', state.fileli?.acrylicThicknessMm || 3);
+          addRing(poly.outer, poly.holes, 'Pleksi', state.fileli?.acrylicMaterial || 'opalPleksi', state.fileli?.acrylicThicknessMm || 3, 'CUT_OUTER');
         }
       }
       if ((targetPart === 'all' || targetPart === 'file') && m.exportContours?.file?.length) {
         for (const poly of m.exportContours.file) {
-          addRing(poly.outer, poly.holes, 'File', state.fileli?.fileMaterial || 'metal', state.fileli?.fileThicknessMm || 2);
+          addRing(poly.outer, poly.holes, 'File', state.fileli?.fileMaterial || 'aynaAltin', state.fileli?.fileThicknessMm || 2, 'CUT_OUTER');
         }
       }
     }
@@ -121,24 +138,109 @@ export function extractNestingItems(metricsList, state) {
 }
 
 /**
- * Runs true-shape nesting on a set of polygon items.
- * Returns sheets with placed polygons, exact utilization %, scrap %, and interlock statistics.
+ * Checks whether `candPoly` can be placed inside `holePoly` of `placedPart`
+ * with at least `minSep` clearance on all edges.
  */
-export function runTrueShapeNesting(items, config = {}) {
+function fitsInsideHole(candPoly, holePoly, minSep) {
+  if (!holePoly || holePoly.length < 3) return false;
+  const cb = polygonBounds(candPoly);
+  const hb = polygonBounds(holePoly);
+  if (cb.minX < hb.minX + minSep || cb.maxX > hb.maxX - minSep || cb.minY < hb.minY + minSep || cb.maxY > hb.maxY - minSep) {
+    return false;
+  }
+  // Every vertex of candPoly must be inside holePoly
+  for (let i = 0; i < candPoly.length; i += Math.max(1, Math.floor(candPoly.length / 8))) {
+    if (!pointInPolygon(candPoly[i], holePoly)) return false;
+  }
+  // No edge crossing and minimum distance >= minSep
+  for (let i = 0; i < candPoly.length; i++) {
+    const a = candPoly[i], b = candPoly[(i + 1) % candPoly.length];
+    for (let j = 0; j < holePoly.length; j++) {
+      if (segmentsIntersect(a, b, holePoly[j], holePoly[(j + 1) % holePoly.length], false)) return false;
+    }
+  }
+  // Boundary-to-boundary distance (containment is desired here, not collision!)
+  let minD = Infinity;
+  for (const pt of candPoly) {
+    for (let j = 0; j < holePoly.length; j++) {
+      const a = holePoly[j], b = holePoly[(j + 1) % holePoly.length];
+      const vx = b.x - a.x, vy = b.y - a.y, l2 = vx * vx + vy * vy || 1;
+      const t = Math.max(0, Math.min(1, ((pt.x - a.x) * vx + (pt.y - a.y) * vy) / l2));
+      minD = Math.min(minD, Math.hypot(pt.x - (a.x + t * vx), pt.y - (a.y + t * vy)));
+    }
+  }
+  return minD >= minSep;
+}
+
+/**
+ * Validates every placement on a sheet for overlaps, out-of-bounds, and insufficient spacing.
+ */
+export function validateSheetLayout(sheet, minSep = 5) {
+  const errors = [];
+  const mL = sheet.marginLeftMm ?? sheet.marginMm ?? 15;
+  const mR = sheet.marginRightMm ?? sheet.marginMm ?? 15;
+  const mT = sheet.marginTopMm ?? sheet.marginMm ?? 15;
+  const mB = sheet.marginBottomMm ?? sheet.marginMm ?? 15;
+
+  for (let i = 0; i < sheet.placements.length; i++) {
+    const a = sheet.placements[i];
+    a.hasCollision = false;
+    if (
+      a.bounds.minX < mL - 0.1 ||
+      a.bounds.minY < mB - 0.1 ||
+      a.bounds.maxX > sheet.widthMm - mR + 0.1 ||
+      a.bounds.maxY > sheet.heightMm - mT + 0.1
+    ) {
+      a.hasCollision = true;
+      errors.push(`${a.label}: Plaka kesim sınırı dışında.`);
+    }
+
+    for (let j = i + 1; j < sheet.placements.length; j++) {
+      const b = sheet.placements[j];
+      const insideAHole = a.holes?.some(h => fitsInsideHole(b.outer, h, minSep));
+      const insideBHole = b.holes?.some(h => fitsInsideHole(a.outer, h, minSep));
+      if (insideAHole || insideBHole) continue;
+
+      const d = minDistanceBetweenPolygons(a.outer, b.outer);
+      if (d < minSep - 0.05 || polygonsIntersect(a.outer, b.outer)) {
+        a.hasCollision = true;
+        b.hasCollision = true;
+        errors.push(`${a.label} ↔ ${b.label}: Çarpışma veya yetersiz boşluk (${d.toFixed(1)} mm < ${minSep.toFixed(1)} mm).`);
+      }
+    }
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Runs material-aware true-shape irregular polygon nesting.
+ * Groups incompatible materials/thicknesses into separate batches automatically.
+ */
+export function runTrueShapeNesting(items, config = {}, existingLockedSheets = []) {
   const {
     sheetWidthMm = 3000,
     sheetHeightMm = 1500,
     marginMm = 15,
+    marginLeftMm,
+    marginRightMm,
+    marginTopMm,
+    marginBottomMm,
     clearanceMm = 5,
     kerfMm = 0.4,
     allowedAngles = [0, 90, 180, 270],
     fineAngleStep = 0,
     grainDirection = 'none',
+    allowHoleNesting = true,
+    groupByMaterial = true,
   } = config;
 
+  const mL = marginLeftMm ?? marginMm;
+  const mR = marginRightMm ?? marginMm;
+  const mT = marginTopMm ?? marginMm;
+  const mB = marginBottomMm ?? marginMm;
   const minSep = Math.max(0.5, clearanceMm + kerfMm);
-  const usableW = sheetWidthMm - marginMm * 2;
-  const usableH = sheetHeightMm - marginMm * 2;
+  const usableW = sheetWidthMm - mL - mR;
+  const usableH = sheetHeightMm - mB - mT;
 
   let angles = allowedAngles.length ? allowedAngles : [0, 90, 180, 270];
   if (fineAngleStep > 0) {
@@ -150,153 +252,218 @@ export function runTrueShapeNesting(items, config = {}) {
     if (!angles.length) angles = [0, 180];
   }
 
-  const sorted = items.slice().sort((a, b) => b.areaMm2 - a.areaMm2);
-  const sheets = [];
+  // Group items by materialGroup so acrylic and metal never share a sheet
+  const batches = new Map();
+  for (const item of items) {
+    const key = groupByMaterial ? (item.materialGroup || 'Genel') : 'Genel';
+    if (!batches.has(key)) batches.set(key, []);
+    batches.get(key).push(item);
+  }
+
+  const allSheets = [];
   const unplaced = [];
 
-  const createSheet = (index) => ({
-    index,
-    widthMm: sheetWidthMm,
-    heightMm: sheetHeightMm,
-    marginMm,
-    placements: [],
-    usedAreaMm2: 0,
-  });
+  for (const [materialGroup, batchItems] of batches.entries()) {
+    const sorted = batchItems.slice().sort((a, b) => b.areaMm2 - a.areaMm2);
+    const batchSheets = [];
 
-  const fitsOnSheet = (sheet, candPoly, candBounds) => {
-    if (
-      candBounds.minX < marginMm - 1e-4 ||
-      candBounds.minY < marginMm - 1e-4 ||
-      candBounds.maxX > sheetWidthMm - marginMm + 1e-4 ||
-      candBounds.maxY > sheetHeightMm - marginMm + 1e-4
-    ) {
-      return false;
+    // Preserve any locked placements for this materialGroup
+    for (const ex of existingLockedSheets) {
+      if (ex.materialGroup === materialGroup) {
+        const lockedPls = ex.placements.filter(p => p.locked);
+        if (lockedPls.length) {
+          batchSheets.push({
+            index: allSheets.length + batchSheets.length + 1,
+            materialGroup,
+            widthMm: sheetWidthMm,
+            heightMm: sheetHeightMm,
+            marginMm,
+            marginLeftMm: mL,
+            marginRightMm: mR,
+            marginTopMm: mT,
+            marginBottomMm: mB,
+            placements: lockedPls.map(p => ({ ...p })),
+            usedAreaMm2: lockedPls.reduce((s, p) => s + p.areaMm2, 0),
+          });
+        }
+      }
     }
-    for (const placed of sheet.placements) {
-      const pb = placed.bounds;
+
+    const lockedIds = new Set(batchSheets.flatMap(s => s.placements.map(p => p.id)));
+
+    const fitsOnSheet = (sheet, candPoly, candBounds) => {
       if (
-        candBounds.maxX + minSep <= pb.minX ||
-        pb.maxX + minSep <= candBounds.minX ||
-        candBounds.maxY + minSep <= pb.minY ||
-        pb.maxY + minSep <= candBounds.minY
+        candBounds.minX < mL - 1e-4 ||
+        candBounds.minY < mB - 1e-4 ||
+        candBounds.maxX > sheetWidthMm - mR + 1e-4 ||
+        candBounds.maxY > sheetHeightMm - mT + 1e-4
       ) {
+        return false;
+      }
+
+      for (const placed of sheet.placements) {
+        // Check if candPoly fits cleanly inside a hole of placed part (True-Shape Hole Nesting)
+        if (allowHoleNesting && placed.holes?.length) {
+          const inHole = placed.holes.some(h => fitsInsideHole(candPoly, h, minSep));
+          if (inHole) continue;
+        }
+
+        const pb = placed.bounds;
+        if (
+          candBounds.maxX + minSep <= pb.minX ||
+          pb.maxX + minSep <= candBounds.minX ||
+          candBounds.maxY + minSep <= pb.minY ||
+          pb.maxY + minSep <= candBounds.minY
+        ) {
+          continue;
+        }
+
+        const dist = minDistanceBetweenPolygons(candPoly, placed.outer);
+        if (dist < minSep) return false;
+        if (polygonsIntersect(candPoly, placed.outer)) return false;
+      }
+      return true;
+    };
+
+    for (const item of sorted) {
+      if (lockedIds.has(item.id)) continue;
+
+      const variants = angles.map(ang => {
+        const rO = rotatePolygon(item.outer, ang);
+        const rH = (item.holes || []).map(h => {
+          const rad = (ang * Math.PI) / 180;
+          const c = Math.cos(rad), s = Math.sin(rad);
+          return h.map(p => ({ x: p.x * c - p.y * s + rO.dx, y: p.x * s + p.y * c + rO.dy }));
+        });
+        const b = polygonBounds(rO.points);
+        return { ang, outer: rO.points, holes: rH, bounds: b };
+      }).filter(v => v.bounds.width <= usableW && v.bounds.height <= usableH);
+
+      if (!variants.length) {
+        unplaced.push({ item, reason: `Parça (${materialGroup}) plaka ölçüsünden (${usableW}×${usableH} mm) büyük.` });
         continue;
       }
-      const dist = minDistanceBetweenPolygons(candPoly, placed.outer);
-      if (dist < minSep) return false;
-      if (polygonsIntersect(candPoly, placed.outer)) return false;
-    }
-    return true;
-  };
 
-  for (const item of sorted) {
-    const simpleOuter = simplifyClosedPolygon(item.outer, 1.8);
-    const variants = angles.map(ang => {
-      const rOuter = rotatePolygon(simpleOuter, ang);
-      const rHoles = (item.holes || []).map(h => rotatePolygon(h, ang));
-      const b = polygonBounds(rOuter);
-      return { ang, outer: rOuter, holes: rHoles, bounds: b };
-    }).filter(v => v.bounds.width <= usableW && v.bounds.height <= usableH);
+      let placedOk = false;
+      for (const sheet of batchSheets) {
+        const best = findBestPlacementOnSheet(sheet, variants, mL, mB, sheetWidthMm - mR, sheetHeightMm - mT, allowHoleNesting, fitsOnSheet);
+        if (best) {
+          sheet.placements.push(makePlacement(item, best));
+          sheet.usedAreaMm2 += item.areaMm2;
+          placedOk = true;
+          break;
+        }
+      }
 
-    if (!variants.length) {
-      unplaced.push({ item, reason: 'Parça plaka ölçüsünden büyük.' });
-      continue;
-    }
-
-    let placedOk = false;
-    for (const sheet of sheets) {
-      const best = findBestPlacementOnSheet(sheet, variants, marginMm, sheetWidthMm, sheetHeightMm, fitsOnSheet);
-      if (best) {
-        sheet.placements.push({
-          id: item.id,
-          label: item.label,
-          partType: item.partType,
-          materialGroup: item.materialGroup,
-          angleDeg: best.angleDeg,
-          xMm: best.xMm,
-          yMm: best.yMm,
-          outer: best.outer,
-          holes: best.holes,
-          bounds: best.bounds,
-          areaMm2: item.areaMm2,
-        });
-        sheet.usedAreaMm2 += item.areaMm2;
-        placedOk = true;
-        break;
+      if (!placedOk) {
+        const newSheet = {
+          index: allSheets.length + batchSheets.length + 1,
+          materialGroup,
+          widthMm: sheetWidthMm,
+          heightMm: sheetHeightMm,
+          marginMm,
+          marginLeftMm: mL,
+          marginRightMm: mR,
+          marginTopMm: mT,
+          marginBottomMm: mB,
+          placements: [],
+          usedAreaMm2: 0,
+        };
+        const best = findBestPlacementOnSheet(newSheet, variants, mL, mB, sheetWidthMm - mR, sheetHeightMm - mT, allowHoleNesting, fitsOnSheet);
+        if (best) {
+          newSheet.placements.push(makePlacement(item, best));
+          newSheet.usedAreaMm2 += item.areaMm2;
+          batchSheets.push(newSheet);
+        } else {
+          unplaced.push({ item, reason: 'Plakaya sığmadı.' });
+        }
       }
     }
 
-    if (!placedOk) {
-      const newSheet = createSheet(sheets.length + 1);
-      const best = findBestPlacementOnSheet(newSheet, variants, marginMm, sheetWidthMm, sheetHeightMm, fitsOnSheet);
-      if (best) {
-        newSheet.placements.push({
-          id: item.id,
-          label: item.label,
-          partType: item.partType,
-          materialGroup: item.materialGroup,
-          angleDeg: best.angleDeg,
-          xMm: best.xMm,
-          yMm: best.yMm,
-          outer: best.outer,
-          holes: best.holes,
-          bounds: best.bounds,
-          areaMm2: item.areaMm2,
-        });
-        newSheet.usedAreaMm2 += item.areaMm2;
-        sheets.push(newSheet);
-      } else {
-        unplaced.push({ item, reason: 'Plakaya sığmadı.' });
-      }
+    for (const sh of batchSheets) {
+      sh.index = allSheets.length + 1;
+      allSheets.push(sh);
     }
   }
 
   let interlockedPairs = 0;
-  for (const sh of sheets) {
+  let totalCutLengthMm = 0;
+  for (const sh of allSheets) {
+    validateSheetLayout(sh, minSep);
     for (let i = 0; i < sh.placements.length; i++) {
       for (let j = i + 1; j < sh.placements.length; j++) {
         const a = sh.placements[i].bounds;
         const b = sh.placements[j].bounds;
-        const aabbOverlap = !(a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY);
-        if (aabbOverlap) interlockedPairs++;
+        if (!(a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY)) interlockedPairs++;
       }
     }
-    const sheetArea = sh.widthMm * sh.heightMm;
-    sh.utilizationPct = Math.min(100, (sh.usedAreaMm2 / sheetArea) * 100);
-    sh.scrapAreaM2 = Math.max(0, (sheetArea - sh.usedAreaMm2) / 1_000_000);
+    const usableArea = (sh.widthMm - sh.marginLeftMm - sh.marginRightMm) * (sh.heightMm - sh.marginTopMm - sh.marginBottomMm);
+    sh.usableAreaMm2 = usableArea;
+    sh.utilizationPct = Math.min(100, (sh.usedAreaMm2 / Math.max(1, usableArea)) * 100);
+    sh.scrapAreaM2 = Math.max(0, (sh.widthMm * sh.heightMm - sh.usedAreaMm2) / 1_000_000);
   }
 
-  const totalSheetArea = sheets.reduce((s, sh) => s + sh.widthMm * sh.heightMm, 0);
-  const totalUsedArea = sheets.reduce((s, sh) => s + sh.usedAreaMm2, 0);
+  const totalUsableArea = allSheets.reduce((s, sh) => s + sh.usableAreaMm2, 0);
+  const totalUsedArea = allSheets.reduce((s, sh) => s + sh.usedAreaMm2, 0);
 
   return {
-    sheets,
+    sheets: allSheets,
     unplaced,
-    sheetCount: sheets.length,
+    sheetCount: allSheets.length,
     interlockedPairs,
-    overallUtilizationPct: totalSheetArea > 0 ? (totalUsedArea / totalSheetArea) * 100 : 0,
-    totalScrapM2: Math.max(0, (totalSheetArea - totalUsedArea) / 1_000_000),
+    overallUtilizationPct: totalUsableArea > 0 ? (totalUsedArea / totalUsableArea) * 100 : 0,
+    totalScrapM2: allSheets.reduce((s, sh) => s + sh.scrapAreaM2, 0),
+    totalCutLengthM: totalCutLengthMm / 1000,
+    minSep,
   };
 }
 
-function findBestPlacementOnSheet(sheet, variants, marginMm, sheetW, sheetH, fitsOnSheet) {
+function makePlacement(item, best) {
+  return {
+    id: item.id,
+    projectId: item.projectId,
+    label: item.label,
+    partType: item.partType,
+    material: item.material,
+    thicknessMm: item.thicknessMm,
+    materialGroup: item.materialGroup,
+    locked: !!item.locked,
+    angleDeg: best.angleDeg,
+    xMm: best.xMm,
+    yMm: best.yMm,
+    outer: best.outer,
+    holes: best.holes,
+    bounds: best.bounds,
+    areaMm2: item.areaMm2,
+    hasCollision: false,
+  };
+}
+
+function findBestPlacementOnSheet(sheet, variants, minX, minY, maxX, maxY, allowHoleNesting, fitsOnSheet) {
   let best = null;
   let bestScore = Infinity;
 
-  const snap = (v) => Math.max(marginMm, Math.round(v / 10) * 10);
-  const candX = new Set([marginMm]);
-  const candY = new Set([marginMm]);
-  const stepX = Math.max(40, Math.round((sheetW - marginMm * 2) / 14));
-  const stepY = Math.max(40, Math.round((sheetH - marginMm * 2) / 10));
+  const snap = (v) => Math.max(minX, Math.round(v / 10) * 10);
+  const candX = new Set([minX]);
+  const candY = new Set([minY]);
+  const stepX = Math.max(40, Math.round((maxX - minX) / 14));
+  const stepY = Math.max(40, Math.round((maxY - minY) / 10));
 
-  for (let x = marginMm; x <= sheetW - marginMm; x += stepX) candX.add(snap(x));
-  for (let y = marginMm; y <= sheetH - marginMm; y += stepY) candY.add(snap(y));
+  for (let x = minX; x <= maxX; x += stepX) candX.add(snap(x));
+  for (let y = minY; y <= maxY; y += stepY) candY.add(snap(y));
 
   for (const p of sheet.placements) {
     candX.add(snap(p.bounds.minX));
     candX.add(snap(p.bounds.maxX + 6));
     candY.add(snap(p.bounds.minY));
     candY.add(snap(p.bounds.maxY + 6));
+    if (allowHoleNesting && p.holes?.length) {
+      for (const h of p.holes) {
+        const hb = polygonBounds(h);
+        candX.add(Math.round(hb.minX + 6));
+        candY.add(Math.round(hb.minY + 6));
+      }
+    }
     for (let k = 0; k < p.outer.length; k += Math.max(1, Math.floor(p.outer.length / 3))) {
       candX.add(snap(p.outer[k].x));
       candY.add(snap(p.outer[k].y));
@@ -308,30 +475,25 @@ function findBestPlacementOnSheet(sheet, variants, marginMm, sheetW, sheetH, fit
 
   for (const v of variants) {
     for (const x of xs) {
-      if (x + v.bounds.width > sheetW - marginMm) continue;
+      if (x + v.bounds.width > maxX) continue;
       if (x >= bestScore) break;
       for (const y of ys) {
-        if (y + v.bounds.height > sheetH - marginMm) continue;
+        if (y + v.bounds.height > maxY) continue;
         const scoreApprox = x + y * 1.3;
         if (scoreApprox >= bestScore) break;
 
         const candPoly = translatePolygon(v.outer, x, y);
-        const candBounds = {
-          minX: x,
-          minY: y,
-          maxX: x + v.bounds.width,
-          maxY: y + v.bounds.height,
-        };
+        const candBounds = { minX: x, minY: y, maxX: x + v.bounds.width, maxY: y + v.bounds.height };
         if (fitsOnSheet(sheet, candPoly, candBounds)) {
           let cx = x, cy = y;
           for (const delta of [16, 4, 1]) {
-            while (cx - delta >= marginMm) {
+            while (cx - delta >= minX) {
               const tp = translatePolygon(v.outer, cx - delta, cy);
               const tb = { minX: cx - delta, minY: cy, maxX: cx - delta + v.bounds.width, maxY: cy + v.bounds.height };
               if (fitsOnSheet(sheet, tp, tb)) cx -= delta;
               else break;
             }
-            while (cy - delta >= marginMm) {
+            while (cy - delta >= minY) {
               const tp = translatePolygon(v.outer, cx, cy - delta);
               const tb = { minX: cx, minY: cy - delta, maxX: cx + v.bounds.width, maxY: cy - delta + v.bounds.height };
               if (fitsOnSheet(sheet, tp, tb)) cy -= delta;

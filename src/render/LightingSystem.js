@@ -1,10 +1,10 @@
 import THREE from '../vendor/three.js';
 
 /**
- * Complete 4-Mode Illumination & Halo System
+ * Complete 4-Mode Illumination & Shape-Accurate Halo System
  * Modes:
- *  - 'front' : İçten / Önden Işıklı (yalnızca pleksi yüz parlar)
- *  - 'halo'  : Arkadan / Halo Işıklı (harf şekline göre duvara vuran gerçekçi halo)
+ *  - 'front' : Önden Işıklı (yalnızca pleksi yüz parlar, arkadan halo çizilmez)
+ *  - 'halo'  : Arkadan / Halo Işıklı (her harf ve logonun gerçek siluetini takip eden net arka duvar halosu)
  *  - 'both'  : Ön + Arka Çift Yönlü Işıklı
  *  - 'none'  : Işıksız
  */
@@ -31,8 +31,9 @@ export const LIGHTING_MODES = {
 };
 
 /**
- * Creates a shape-accurate soft blurred halo texture on a Canvas for wall projection.
- * Reflects wall distance, halo spread, and falloff so the glow is never a flat uniform outline.
+ * Creates a crisp, letter/logo-accurate wall halo texture.
+ * Preserves recognizable letter & logo contours (e.g. M, A, R, K) while reflecting
+ * wall distance, halo spread, and falloff.
  */
 export function createHaloTexture(shapesM, boundsM, options = {}) {
   const {
@@ -42,8 +43,8 @@ export function createHaloTexture(shapesM, boundsM, options = {}) {
     letterHeightM = 0.4,
   } = options;
 
-  const distFactor = Math.max(0.35, Math.min(2.5, wallDistanceMm / 35));
-  const padM = Math.max(0.08, letterHeightM * 0.55 * haloSpread * distFactor);
+  const distFactor = Math.max(0.35, Math.min(2.2, wallDistanceMm / 35));
+  const padM = Math.max(0.06, letterHeightM * 0.45 * haloSpread * distFactor);
 
   const wM = Math.max(0.05, boundsM.maxX - boundsM.minX + padM * 2);
   const hM = Math.max(0.05, boundsM.maxY - boundsM.minY + padM * 2);
@@ -79,14 +80,14 @@ export function createHaloTexture(shapesM, boundsM, options = {}) {
   outCanvas.height = ph;
   const oCtx = outCanvas.getContext('2d');
 
-  const blurPx = Math.max(2, letterHeightM * 0.085 * haloSpread * distFactor * scale);
-  // Two-pass natural falloff blur (outer soft spread + inner core glow)
-  oCtx.filter = `blur(${(blurPx * (1.8 + falloff * 0.8)).toFixed(1)}px)`;
-  oCtx.globalAlpha = 0.82;
+  // Keep inner blur tight so letter shapes (M, R, logo details) remain distinct on the wall
+  const baseBlur = Math.max(1.5, letterHeightM * 0.038 * haloSpread * distFactor * scale);
+  oCtx.filter = `blur(${(baseBlur * (1.2 + falloff * 0.45)).toFixed(1)}px)`;
+  oCtx.globalAlpha = 0.72;
   oCtx.drawImage(srcCanvas, 0, 0);
 
-  oCtx.filter = `blur(${(blurPx * 0.65).toFixed(1)}px)`;
-  oCtx.globalAlpha = 0.95;
+  oCtx.filter = `blur(${(baseBlur * 0.42).toFixed(1)}px)`;
+  oCtx.globalAlpha = 0.96;
   oCtx.drawImage(srcCanvas, 0, 0);
 
   const tex = new THREE.CanvasTexture(outCanvas);
@@ -102,9 +103,6 @@ export function createHaloTexture(shapesM, boundsM, options = {}) {
   };
 }
 
-/**
- * Creates Day / Night architectural studio lighting rig.
- */
 export function buildSceneLights(night, sizeM) {
   const group = new THREE.Group();
   const w = Math.max(1, sizeM.w || 2);

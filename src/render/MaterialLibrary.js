@@ -206,7 +206,7 @@ export const MATERIAL_PRESETS = {
     label: 'Beyaz Opal Pleksi',
     shortLabel: 'Opal pleksi',
     kind: 'acrylic',
-    color: '#f3f3ee',
+    color: '#f8f8f6',
     metalness: 0.0,
     roughness: 0.14,
     envMapIntensity: 1.0,
@@ -410,10 +410,11 @@ export function createSignMaterial(presetId, overrides = {}, lightContext = {}) 
   });
 
   if (lit) {
-    const emissiveHex = isOpal ? glowHex : mixHex(colorHex, glowHex, 0.25);
-    mat.color = new THREE.Color(isOpal ? mixHex('#ffffff', glowHex, 0.3) : colorHex);
+    const emissiveHex = isOpal ? glowHex : mixHex(colorHex, glowHex, 0.55);
+    // Tint diffuse face toward the LED color so colored light (red, blue, green, etc.) stays rich & saturated
+    mat.color = new THREE.Color(isOpal ? mixHex('#ffffff', glowHex, 0.75) : mixHex(colorHex, glowHex, 0.45));
     mat.emissive = new THREE.Color(emissiveHex);
-    const baseEmissive = isOpal ? (night ? 2.8 : 1.3) : (night ? 1.35 : 0.55);
+    const baseEmissive = isOpal ? (night ? 0.92 : 0.52) : (night ? 0.82 : 0.42);
     mat.emissiveIntensity = baseEmissive * Math.max(0.1, lightIntensity);
   }
 

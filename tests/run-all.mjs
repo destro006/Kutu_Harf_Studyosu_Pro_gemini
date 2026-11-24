@@ -210,4 +210,67 @@ test('Test H: 4 nokta projektif homografi matrisi doğruluğu', () => {
   }
 });
 
+
+import { generateNestedDxf, generateNestedSvg } from "../src/export/ExportService.js";
+import { validateSheetLayout } from "../src/manufacturing/NestingEngine.js";
+
+// 7. Part F Test A: 3 E-parts in 400x400 mm sheet with 5 mm gap
+test("Part F Test A: 3 E-harfi 400x400 mm plakaya 5 mm boslukla yerlesir", () => {
+  const ePoly = [
+    { x: 0, y: 0 }, { x: 120, y: 0 }, { x: 120, y: 30 }, { x: 30, y: 30 },
+    { x: 30, y: 75 }, { x: 100, y: 75 }, { x: 100, y: 105 }, { x: 30, y: 105 },
+    { x: 30, y: 150 }, { x: 120, y: 150 }, { x: 120, y: 180 }, { x: 0, y: 180 },
+  ];
+  const items = Array.from({ length: 3 }, (_, i) => ({
+    id: `E3_${i}`, label: `E-${i}`, materialGroup: "Paslanmaz 1mm", outer: ePoly, holes: [], areaMm2: polygonArea(ePoly),
+  }));
+  const res = runTrueShapeNesting(items, { sheetWidthMm: 400, sheetHeightMm: 400, marginMm: 10, clearanceMm: 5, kerfMm: 0 });
+  assert.strictEqual(res.sheetCount, 1);
+  assert.strictEqual(res.sheets[0].placements.length, 3);
+  assert.strictEqual(validateSheetLayout(res.sheets[0], 5).valid, true);
+});
+
+// 8. Part F Test C & D: Hole Nesting ON vs OFF inside an O-ring
+test("Part F Test C/D: Delik ici yerlestirme acikken O icine sigar, kapaliyken sigmaz", () => {
+  const bigO = [
+    { x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 300 }, { x: 0, y: 300 },
+  ];
+  const holeO = [
+    { x: 60, y: 60 }, { x: 60, y: 240 }, { x: 240, y: 240 }, { x: 240, y: 60 },
+  ];
+  const smallSq = [
+    { x: 0, y: 0 }, { x: 90, y: 0 }, { x: 90, y: 90 }, { x: 0, y: 90 },
+  ];
+  const items = [
+    { id: "O1", label: "O", materialGroup: "Pleksi 3mm", outer: bigO, holes: [holeO], areaMm2: polygonArea(bigO) - polygonArea(holeO) },
+    { id: "S1", label: "I-dot", materialGroup: "Pleksi 3mm", outer: smallSq, holes: [], areaMm2: polygonArea(smallSq) },
+  ];
+
+  // With hole nesting ON on a 320x320 sheet, both fit on 1 sheet!
+  const resOn = runTrueShapeNesting(items, { sheetWidthMm: 320, sheetHeightMm: 320, marginMm: 5, clearanceMm: 5, kerfMm: 0, allowHoleNesting: true });
+  assert.strictEqual(resOn.sheetCount, 1);
+  assert.strictEqual(resOn.sheets[0].placements.length, 2);
+
+  // With hole nesting OFF on a 320x320 sheet, smallSq cannot fit inside O, so it needs 2 sheets!
+  const resOff = runTrueShapeNesting(items, { sheetWidthMm: 320, sheetHeightMm: 320, marginMm: 5, clearanceMm: 5, kerfMm: 0, allowHoleNesting: false });
+  assert.strictEqual(resOff.sheetCount, 2);
+});
+
+// 9. Part F Test E & J: Grain direction restriction & Incompatible material separation
+test("Part F Test E/J: Firca yonu kisitlamasi ve uyumsuz malzemelerin ayri plakalara ayrilmasi", () => {
+  const rect = [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 0, y: 100 }];
+  const items = [
+    { id: "A1", label: "A-Pleksi", materialGroup: "opalPleksi · 3 mm", outer: rect, holes: [], areaMm2: 20000 },
+    { id: "A2", label: "A-File", materialGroup: "aynaAltin · 2 mm", outer: rect, holes: [], areaMm2: 20000 },
+  ];
+  const res = runTrueShapeNesting(items, { sheetWidthMm: 1000, sheetHeightMm: 1000, grainDirection: "horizontal", groupByMaterial: true });
+  assert.strictEqual(res.sheetCount, 2);
+  for (const sh of res.sheets) {
+    for (const p of sh.placements) assert(p.angleDeg === 0 || p.angleDeg === 180);
+  }
+  const nSvg = generateNestedSvg(res.sheets);
+  const nDxf = generateNestedDxf(res.sheets);
+  assert(nSvg.includes("SHEET_BOUNDARY_1") && nDxf.includes("CUT_OUTER") && nDxf.includes("SHEET_BOUNDARY"));
+});
+
 console.log(`\nToplam ${passed} test başarıyla geçti.`);

@@ -1,5 +1,6 @@
 import THREE from '../vendor/three.js';
 import { createSignMaterial } from './MaterialLibrary.js';
+import { resolveChannelMaterialBinding } from './ChannelMaterialBinding.js';
 import { EnvironmentManager, ENVIRONMENT_PRESETS } from './EnvironmentManager.js';
 import { buildSceneLights, createHaloTexture } from './LightingSystem.js';
 import { getWallTextures } from '../photomontage/BackgroundLibrary.js';
@@ -31,12 +32,18 @@ export class SignEngine {
     this.camera = new THREE.PerspectiveCamera(32, 16 / 10, 0.05, 100);
     this.camera.position.set(1.0, 0.05, 4.0);
 
-    this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      alpha: true,
-      preserveDrawingBuffer: true,
-      powerPreference: 'high-performance',
-    });
+    try {
+      this.renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        preserveDrawingBuffer: true,
+        powerPreference: 'high-performance',
+      });
+    } catch (err) {
+      this.isDisposed = true;
+      this.container.innerHTML = `<div style="display:grid;place-items:center;height:100%;padding:24px;text-align:center;color:#e5e7eb;background:#111318"><div><strong>3D WebGL Başlatılamadı</strong><p style="color:#a9b0bb;font-size:13px;max-width:360px;line-height:1.6;margin:10px auto 14px">Tarayıcıda WebGL açılamadı. 2D çizim, ölçülendirme ve nesting kullanılabilir; metal yansımaları için donanım hızlandırmasını etkinleştirin.</p><button type="button" id="khsSwitch2D" style="background:#ddb27c;border:1px solid #f5d9ae;color:#1d1713;padding:10px 16px;border-radius:9px;font-weight:700;cursor:pointer">2D Tasarıma Geç</button></div></div>`;
+      return;
+    }
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
@@ -58,7 +65,9 @@ export class SignEngine {
     this.wallGroup = new THREE.Group();
     this.lightsGroup = new THREE.Group();
     this.signGroup = new THREE.Group();
-    this.scene.add(this.wallGroup, this.lightsGroup, this.signGroup);
+    this.pageGroup = new THREE.Group();
+    this.selectionGroup = new THREE.Group();
+    this.scene.add(this.wallGroup, this.lightsGroup, this.pageGroup, this.signGroup, this.selectionGroup);
 
     // Camera spherical orbit state
     this.orbit = {
@@ -76,6 +85,11 @@ export class SignEngine {
       movedDist: 0,
     };
 
+    this.activeTool = 'select';
+    this.activePointers = new Map();
+    this.lastPinchDist = 0;
+    this.draggingObjId = null;
+    this.pickMarquee = null;
     this.disposables = [];
     this.selectableRoots = [];
     this.lastSizeM = { w: 2.0, h: 0.4 };
@@ -87,28 +101,188 @@ export class SignEngine {
     this._startLoop();
   }
 
+  _updatePickMarquee() {
+    this.pickMarqueeEl?.remove();
+    this.pickMarqueeEl = null;
+    if (!this.pickMarquee || !this.container) return;
+    const p = this.pickMarquee;
+    const bounds = this.container.getBoundingClientRect();
+    const r = document.createElement('div');
+    r.className = 'three-pick-marquee';
+    r.style.left = `${Math.min(p.startX, p.endX) - bounds.left}px`;
+    r.style.top = `${Math.min(p.startY, p.endY) - bounds.top}px`;
+    r.style.width = `${Math.abs(p.endX - p.startX)}px`;
+    r.style.height = `${Math.abs(p.endY - p.startY)}px`;
+    this.container.appendChild(r);
+    this.pickMarqueeEl = r;
+  }
+
+  _getIdsInMarquee(m) {
+    const dom = this.renderer.domElement;
+    const r = dom.getBoundingClientRect();
+    const left = Math.min(m.startX, m.endX), right = Math.max(m.startX, m.endX);
+    const top = Math.min(m.startY, m.endY), bottom = Math.max(m.startY, m.endY);
+    const crossing = m.crossing || m.endX < m.startX;
+    const ids = [];
+    for (const child of this.signGroup.children) {
+      const id = child.userData?.layerId;
+      if (!id || !child.visible) continue;
+      const b = new THREE.Box3().setFromObject(child);
+      if (b.isEmpty()) continue;
+      let lx = Infinity, ly = Infinity, rx = -Infinity, by = -Infinity;
+      for (const x of [b.min.x,b.max.x]) for (const y of [b.min.y,b.max.y]) for (const z of [b.min.z,b.max.z]) {
+        const v = new THREE.Vector3(x,y,z).project(this.camera);
+        const sx = r.left + (v.x + 1)*r.width/2;
+        const sy = r.top + (1 - v.y)*r.height/2;
+        lx = Math.min(lx,sx); rx = Math.max(rx,sx);
+        ly = Math.min(ly,sy); by = Math.max(by,sy);
+      }
+      const inside = crossing
+        ? lx <= right && rx >= left && ly <= bottom && by >= top
+        : lx >= left && rx <= right && ly >= top && by <= bottom;
+      if (inside) ids.push(id);
+    }
+    return [...new Set(ids)];
+  }
+
   _bindEvents() {
     const dom = this.renderer.domElement;
 
+    const getPinchDist = () => {
+      const pts = [...this.activePointers.values()];
+      if (pts.length < 2) return 0;
+      return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    };
+
     this._onPointerDown = (e) => {
-      if (e.button === 2 || e.shiftKey) {
+      this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.activePointers.size === 2) {
+        this.orbit.dragging = false;
+        this.orbit.panning = false;
+        this.lastPinchDist = getPinchDist();
+        return;
+      }
+
+      const isTransformTool = ['select', 'move', 'rotate', 'scale'].includes(this.activeTool);
+      let hitLayerId = null;
+      if (isTransformTool && e.button === 0) {
+        const rect = dom.getBoundingClientRect();
+        this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        this.pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        this.raycaster.setFromCamera(this.pointer, this.camera);
+        const hits = this.raycaster.intersectObjects(this.signGroup.children, true);
+        // A halo/lighting mesh may be hit first. Skip non-selectable meshes.
+        for (const hit of hits) {
+          let obj = hit.object;
+          while (obj && !obj.userData?.layerId && obj.parent) obj = obj.parent;
+          if (obj?.userData?.layerId) { hitLayerId = obj.userData.layerId; break; }
+        }
+      }
+      this.pointerDownSelectedId = hitLayerId;
+
+      if (hitLayerId && this.activeTool === 'select') {
+        this.callbacks.onSelectObject?.(hitLayerId, e.ctrlKey || e.metaKey || e.shiftKey);
+        if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+          this.activeTool = 'move';
+          this.draggingObjId = hitLayerId;
+          this.dragMode = 'move';
+          this.dragAccum = { dxMm: 0, dyMm: 0, dRotX: 0, dRotY: 0, dRotZ: 0, dScale: 1, moved: false };
+          this.callbacks.onAutoMoveTool?.(hitLayerId);
+          this.callbacks.onTransformStart?.(hitLayerId, 'move');
+        }
+      } else if (e.button === 0 && this.activeTool === 'select' && !hitLayerId) {
+        // Start 3D pick-marquee on empty canvas; camera orbit stays on middle mouse / Pan.
+        this.pickMarquee = { startX: e.clientX, startY: e.clientY, endX: e.clientX, endY: e.clientY, additive: e.ctrlKey || e.metaKey || e.shiftKey, crossing: e.altKey };
+        this._updatePickMarquee();
+      } else if (['move', 'rotate', 'scale'].includes(this.activeTool) && e.button === 0 && hitLayerId) {
+        this.callbacks.onSelectObject?.(hitLayerId, false);
+        this.draggingObjId = hitLayerId;
+        this.dragMode = this.activeTool;
+        this.dragAccum = { dxMm: 0, dyMm: 0, dRotX: 0, dRotY: 0, dRotZ: 0, dScale: 1, moved: false };
+        this.callbacks.onTransformStart?.(hitLayerId, this.activeTool);
+      }
+
+      if (e.button === 1) {
+        // Middle mouse wheel click + drag ALWAYS orbits 3D camera
+        e.preventDefault();
+        this.draggingObjId = null;
+        this.orbit.panning = false;
+        this.orbit.dragging = true;
+      } else if (this.activeTool === 'pan' || e.button === 2 || e.shiftKey) {
         this.orbit.panning = true;
-      } else {
+      } else if (!this.draggingObjId && !this.pickMarquee) {
         this.orbit.dragging = true;
       }
       this.orbit.lastX = e.clientX;
       this.orbit.lastY = e.clientY;
       this.orbit.movedDist = 0;
-      dom.setPointerCapture?.(e.pointerId);
+      try { dom.setPointerCapture?.(e.pointerId); } catch {}
     };
 
     this._onPointerMove = (e) => {
-      if (!this.orbit.dragging && !this.orbit.panning) return;
+      if (this.activePointers.has(e.pointerId)) {
+        this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+      if (this.pickMarquee) {
+        this.pickMarquee.endX = e.clientX;
+        this.pickMarquee.endY = e.clientY;
+        this._updatePickMarquee();
+        return;
+      }
+      if (this.activePointers.size === 2) {
+        const d = getPinchDist();
+        if (this.lastPinchDist > 0 && d > 0) this.zoomBy(this.lastPinchDist / d);
+        this.lastPinchDist = d;
+        return;
+      }
+
+      if (!this.orbit.dragging && !this.orbit.panning && !this.draggingObjId) return;
       const dx = e.clientX - this.orbit.lastX;
       const dy = e.clientY - this.orbit.lastY;
       this.orbit.lastX = e.clientX;
       this.orbit.lastY = e.clientY;
       this.orbit.movedDist += Math.hypot(dx, dy);
+
+      if (this.draggingObjId) {
+        const targetMesh = this.signGroup.children.find(c => c.userData?.layerId === this.draggingObjId);
+        if (this.dragMode === 'move') {
+          const mmPerPx = (this.orbit.radius * 0.56) * 1000 / Math.max(200, this.container.clientHeight);
+          const mx = dx * mmPerPx;
+          const my = -dy * mmPerPx;
+          this.dragAccum.dxMm += mx;
+          this.dragAccum.dyMm += my;
+          if (Math.abs(mx) > 0.01 || Math.abs(my) > 0.01) this.dragAccum.moved = true;
+          if (targetMesh) {
+            targetMesh.position.x += mx * 0.001;
+            targetMesh.position.y += my * 0.001;
+          }
+          this.callbacks.onTransformLive?.(this.draggingObjId, 'move', { dxMm: mx, dyMm: my }, false);
+        } else if (this.dragMode === 'rotate') {
+          const dRotX = e.shiftKey ? 0 : dy * 0.55;
+          const dRotY = e.shiftKey ? 0 : dx * 0.55;
+          const dRotZ = e.shiftKey ? -dx * 0.6 : 0;
+          this.dragAccum.dRotX += dRotX;
+          this.dragAccum.dRotY += dRotY;
+          this.dragAccum.dRotZ += dRotZ;
+          this.dragAccum.moved = true;
+          if (targetMesh) {
+            targetMesh.rotation.x += (dRotX * Math.PI) / 180;
+            targetMesh.rotation.y += (dRotY * Math.PI) / 180;
+            targetMesh.rotation.z += (dRotZ * Math.PI) / 180;
+          }
+          this.callbacks.onTransformLive?.(this.draggingObjId, 'rotate', { dRotX, dRotY, dRotZ }, false);
+        } else if (this.dragMode === 'scale') {
+          const factor = Math.max(0.9, Math.min(1.1, 1 + (dx - dy) * 0.004));
+          this.dragAccum.dScale *= factor;
+          this.dragAccum.moved = true;
+          if (targetMesh) {
+            targetMesh.scale.x *= factor;
+            targetMesh.scale.y *= factor;
+          }
+          this.callbacks.onTransformLive?.(this.draggingObjId, 'scale', { factor }, false);
+        }
+        return;
+      }
 
       if (this.orbit.panning) {
         const panSpeed = this.orbit.radius * 0.0012;
@@ -121,23 +295,65 @@ export class SignEngine {
     };
 
     this._onPointerUp = (e) => {
+      this.activePointers.delete(e.pointerId);
+      if (this.activePointers.size < 2) this.lastPinchDist = 0;
+
+      if (this.pickMarquee) {
+        const mark = this.pickMarquee;
+        mark.endX = e.clientX;
+        mark.endY = e.clientY;
+        this.pickMarquee = null;
+        this._updatePickMarquee();
+        this.orbit.dragging = false;
+        this.orbit.panning = false;
+        if (dom.hasPointerCapture?.(e.pointerId)) dom.releasePointerCapture(e.pointerId);
+        if (Math.hypot(mark.endX - mark.startX, mark.endY - mark.startY) < 5) {
+          if (!mark.additive) this.callbacks.onDeselectObject?.();
+        } else {
+          this.callbacks.onSelectObjects?.(this._getIdsInMarquee(mark), mark.additive);
+        }
+        return;
+      }
+
+      if (this.draggingObjId) {
+        const id = this.draggingObjId;
+        const mode = this.dragMode;
+        this.draggingObjId = null;
+        this.callbacks.onTransformLive?.(id, mode, this.dragAccum, true);
+        if (dom.hasPointerCapture?.(e.pointerId)) dom.releasePointerCapture(e.pointerId);
+        return;
+      }
+
       const wasClick = this.orbit.movedDist < 5 && !this.orbit.panning;
       this.orbit.dragging = false;
       this.orbit.panning = false;
-      dom.releasePointerCapture?.(e.pointerId);
+      if (dom.hasPointerCapture?.(e.pointerId)) dom.releasePointerCapture(e.pointerId);
 
-      if (wasClick && this.callbacks.onSelectObject) {
+      if (wasClick && e.button === 0) {
         const rect = dom.getBoundingClientRect();
         this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         this.pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
         this.raycaster.setFromCamera(this.pointer, this.camera);
         const hits = this.raycaster.intersectObjects(this.signGroup.children, true);
         if (hits.length) {
-          let obj = hits[0].object;
-          while (obj && !obj.userData?.layerId && obj.parent) obj = obj.parent;
-          if (obj?.userData?.layerId) {
-            this.callbacks.onSelectObject(obj.userData.layerId, e.ctrlKey || e.metaKey || e.shiftKey);
+          for (const hit of hits) {
+            let obj = hit.object;
+            while (obj && !obj.userData?.layerId && obj.parent) obj = obj.parent;
+            if (obj?.userData?.layerId) {
+              // Pointer-down already selected this object. Avoid double Ctrl/Shift toggle.
+              if (obj.userData.layerId !== this.pointerDownSelectedId) {
+                this.callbacks.onSelectObject?.(obj.userData.layerId, e.ctrlKey || e.metaKey || e.shiftKey);
+              }
+              break;
+            }
           }
+        } else if (['select', 'move', 'rotate', 'scale'].includes(this.activeTool)) {
+          // CorelDRAW-style Pick: clicking outside any object clears the selection.
+          // The orbit camera remains available using middle mouse or the Pan tool.
+          this.callbacks.onDeselectObject?.();
+          if (this.activeTool !== 'select') this.callbacks.onConfirmTool?.();
+        } else {
+          this.callbacks.onConfirmTool?.();
         }
       }
     };
@@ -145,16 +361,19 @@ export class SignEngine {
     this._onWheel = (e) => {
       e.preventDefault();
       const factor = e.deltaY > 0 ? 1.09 : 0.92;
-      const minR = Math.max(0.6, this.orbit.fitRadius * 0.32);
-      const maxR = Math.max(6, this.orbit.fitRadius * 2.2);
+      const minR = Math.max(0.6, (this.orbit.fitRadius || 2) * 0.32);
+      const maxR = Math.max(6, (this.orbit.fitRadius || 4) * 2.2);
       this.orbit.targetRadius = Math.max(minR, Math.min(maxR, this.orbit.targetRadius * factor));
     };
 
     this._onContextMenu = (e) => e.preventDefault();
+    this._onMouseDown = (e) => { if (e.button === 1) e.preventDefault(); };
 
+    dom.addEventListener('mousedown', this._onMouseDown);
     dom.addEventListener('pointerdown', this._onPointerDown);
     window.addEventListener('pointermove', this._onPointerMove);
     window.addEventListener('pointerup', this._onPointerUp);
+    window.addEventListener('pointercancel', this._onPointerUp);
     dom.addEventListener('wheel', this._onWheel, { passive: false });
     dom.addEventListener('contextmenu', this._onContextMenu);
 
@@ -179,6 +398,7 @@ export class SignEngine {
       right: { az: 0.75, pol: Math.PI / 2 - 0.08, mult: 0.95 },
       hero: { az: 0.42, pol: Math.PI / 2 - 0.08, mult: 1.0 },
       top: { az: 0, pol: 1.05, mult: 1.05 },
+      fit: { az: 0.42, pol: Math.PI / 2 - 0.08, mult: 1.05 },
     };
     const p = map[presetId] || map.hero;
     this.orbit.targetAzimuth = p.az;
@@ -187,6 +407,16 @@ export class SignEngine {
     if (this.orbit.fitRadius) {
       this.orbit.targetRadius = this.orbit.fitRadius * p.mult;
     }
+  }
+
+
+  cancelActiveDrag() {
+    if (!this.draggingObjId) return false;
+    this.draggingObjId = null;
+    this.orbit.dragging = false;
+    this.orbit.panning = false;
+    this.callbacks.onTransformCancel?.();
+    return true;
   }
 
   zoomBy(factor) {
@@ -229,7 +459,7 @@ export class SignEngine {
    * Rebuilds the 3D scene from the unified application state & loaded fonts.
    */
   updateScene(state, fontMap) {
-    if (this.isDisposed) return;
+    if (this.isDisposed) return { metricsList: [], warnings: ['WebGL kullanılamıyor.'], sizeM: { w: 1.6, h: 0.4 } };
 
     this.quality = state.quality || 'high';
     const prof = QUALITY_PROFILES[this.quality] || QUALITY_PROFILES.high;
@@ -246,7 +476,8 @@ export class SignEngine {
 
     this.scene.environment = envTarget.texture;
     const rotRad = ((state.render?.envRotationDeg || 0) * Math.PI) / 180;
-    this.scene.environmentRotation.set(0, rotRad, 0);
+    const pitchRad = ((state.render?.envPitchDeg || 0) * Math.PI) / 180;
+    this.scene.environmentRotation.set(pitchRad, rotRad, 0);
     this.scene.environmentIntensity = (state.render?.envIntensity ?? 1.0) * (night ? 0.72 : 1.05);
 
     const transparentBg = !!state.scene?.transparentBg;
@@ -301,14 +532,18 @@ export class SignEngine {
         { ...matOverrides, color: obj.faceColor || state.materials.faceColor },
         { lit: hasFront && obj.constructionType !== 'fileli', night, glowHex, lightIntensity: frontInt }
       );
-      const sideMat = createSignMaterial(
-        obj.sideFollowsFace ? (obj.faceMaterial || state.materials.faceId) : (obj.sideMaterial || state.materials.sideId),
-        { ...matOverrides, color: obj.sideFollowsFace ? (obj.faceColor || state.materials.faceColor) : (obj.sideColor || state.materials.sideColor) },
+      const metalBinding = resolveChannelMaterialBinding(obj, state);
+      const fileMat = createSignMaterial(
+        metalBinding.fileId,
+        { ...matOverrides, color: metalBinding.fileColor },
         { lit: false, night, isOpaqueMetal: true }
       );
-      const fileMat = createSignMaterial(
-        obj.fileMaterial || state.fileli?.fileMaterial || state.materials.faceId,
-        { ...matOverrides, color: obj.fileColor || state.fileli?.fileColor },
+      // Fileli sidewalls are the same metal as the FRONT FILE for their full
+      // physical depth. Sharing the actual PBR instance prevents accidental
+      // mismatches in color, brushing, roughness and reflection response.
+      const sideMat = metalBinding.shareMetalMaterial ? fileMat : createSignMaterial(
+        metalBinding.sideId,
+        { ...matOverrides, color: metalBinding.sideColor },
         { lit: false, night, isOpaqueMetal: true }
       );
       const acrylicMat = createSignMaterial(
@@ -322,7 +557,7 @@ export class SignEngine {
       if (obj.kind === 'text') {
         const fontList = fontMap.get(obj.fontId || 'cinzel');
         if (fontList) {
-          const layout = layoutTextMm(fontList, obj.text || '', obj.heightMm || 400, obj.letterSpacingMm || 0);
+          const layout = layoutTextMm(fontList, obj.text || '', obj.heightMm || 400, obj.letterSpacingMm || 0, obj.lineSpacingMult || 1.25, obj.textAlign || 'center');
           shapesMmGroups = layout.glyphs.map(g => ({ label: g.char, shapes: g.shapes }));
         }
       } else if (obj.kind === 'logo' && obj.logoData) {
@@ -385,7 +620,7 @@ export class SignEngine {
       const oxM = (obj.xMm || 0) * 0.001;
       const oyM = (obj.yMm || 0) * 0.001;
       objGroup.position.set(oxM, oyM, zOffsetM);
-      objGroup.rotation.z = ((obj.rotationDeg || 0) * Math.PI) / 180;
+      objGroup.rotation.set(((obj.rotXDeg || 0) * Math.PI) / 180, ((obj.rotYDeg || 0) * Math.PI) / 180, ((obj.rotationDeg || 0) * Math.PI) / 180);
       const sx = (obj.scaleX ?? 1) * (obj.mirrorX ? -1 : 1);
       const sy = (obj.scaleY ?? 1) * (obj.mirrorY ? -1 : 1);
       objGroup.scale.set(sx, sy, 1);
@@ -401,6 +636,7 @@ export class SignEngine {
         bevelMm: state.materialOverrides?.bevelMm ?? 1.8,
         fileWidthMm: obj.fileWidthMm ?? state.fileli?.fileWidthMm ?? 8,
         fileThicknessMm: state.fileli?.fileThicknessMm ?? 2,
+        metalThicknessMm: state.fileli?.metalThicknessMm ?? 1,
         borderBevelMm: state.fileli?.borderBevelMm ?? 0.8,
         acrylicInsetMm: state.fileli?.acrylicInsetMm ?? 2.5,
         acrylicThicknessMm: state.fileli?.acrylicThicknessMm ?? 3,
@@ -431,10 +667,12 @@ export class SignEngine {
           mesh.userData.layerId = obj.id;
           compMeshGroup.add(mesh);
         }
+        const expZ = state.render?.explodedView ? 0.045 : 0;
         for (const geo of built.fileGeos) {
           const mesh = new THREE.Mesh(geo, [fileMat, sideMat]);
           mesh.castShadow = true;
           mesh.receiveShadow = true;
+          mesh.position.z = expZ * 2;
           mesh.userData.layerId = obj.id;
           compMeshGroup.add(mesh);
         }
@@ -442,6 +680,7 @@ export class SignEngine {
           const mesh = new THREE.Mesh(geo, [acrylicMat, acrylicMat]);
           mesh.castShadow = true;
           mesh.receiveShadow = true;
+          mesh.position.z = expZ;
           mesh.userData.layerId = obj.id;
           compMeshGroup.add(mesh);
         }
@@ -496,36 +735,51 @@ export class SignEngine {
     const anyHalo = lightOn && state.objects.some(o => o.visible && ((o.lightingMode || state.lighting?.mode) === 'halo' || (o.lightingMode || state.lighting?.mode) === 'both'));
     const anyFront = lightOn && state.objects.some(o => o.visible && ((o.lightingMode || state.lighting?.mode) === 'front' || (o.lightingMode || state.lighting?.mode) === 'both'));
 
-    if ((anyHalo || anyFront) && allShapesMForHalo.length && !transparentBg) {
-      const boundsM = { minX: minXM, maxX: maxXM, minY: minYM, maxY: maxYM };
-      const halo = createHaloTexture(allShapesMForHalo, boundsM, {
-        wallDistanceMm: state.lighting?.wallDistanceMm ?? 35,
-        haloSpread: state.lighting?.haloSpread ?? 1.0,
-        falloff: state.lighting?.falloff ?? 1.0,
-        letterHeightM: sizeM.h,
-      });
-      halo.texture._disposeOnClear = true;
-      const glowHex = state.lighting?.colorHex || '#ffc982';
-      const backInt = state.lighting?.backIntensity ?? 1.0;
-      const frontInt = state.lighting?.frontIntensity ?? 1.0;
-      const scalar = anyHalo
-        ? (night ? 2.9 : 1.1) * backInt
-        : (night ? 0.65 : 0.2) * frontInt;
+    if (anyHalo && allShapesMForHalo.length && !transparentBg) {
+      const backInt = Math.max(0, state.lighting?.backIntensity ?? 1.0);
+      if (backInt > 0.01) {
+        const boundsM = { minX: minXM, maxX: maxXM, minY: minYM, maxY: maxYM };
+        const halo = createHaloTexture(allShapesMForHalo, boundsM, {
+          wallDistanceMm: state.lighting?.wallDistanceMm ?? 35,
+          haloSpread: state.lighting?.haloSpread ?? 1.0,
+          falloff: state.lighting?.falloff ?? 1.0,
+          letterHeightM: sizeM.h,
+        });
+        halo.texture._disposeOnClear = true;
+        const glowHex = state.lighting?.colorHex || '#ffc982';
+        // Preserve vivid hue without clipping RGB channels to white; scale intensity visibly across 0..3
+        const normInt = Math.max(0.05, Math.min(3.5, backInt));
+        const haloOpacity = Math.min(0.98, (night ? 0.34 : 0.22) * normInt + 0.08);
+        const colorGain = (night ? 0.55 : 0.42) + normInt * 0.45;
 
-      const haloMesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(halo.widthM, halo.heightM),
-        new THREE.MeshBasicMaterial({
-          map: halo.texture,
-          color: new THREE.Color(glowHex).multiplyScalar(scalar),
-          transparent: true,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-          toneMapped: false,
-        })
-      );
-      haloMesh.position.set(halo.cxM, halo.cyM, 0.0015);
-      haloMesh.renderOrder = 2;
-      this.signGroup.add(haloMesh);
+        const haloMesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(halo.widthM, halo.heightM),
+          new THREE.MeshBasicMaterial({
+            map: halo.texture,
+            color: new THREE.Color(glowHex).multiplyScalar(colorGain),
+            transparent: true,
+            opacity: haloOpacity,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            toneMapped: true,
+          })
+        );
+        haloMesh.position.set(halo.cxM, halo.cyM, 0.002);
+        haloMesh.renderOrder = 2;
+        this.signGroup.add(haloMesh);
+
+        // Real colored wall-wash PointLights behind the letters so backIntensity visibly illuminates the wall texture
+        const lightCount = Math.min(5, Math.max(1, Math.round(sizeM.w / 0.7)));
+        const spanW = Math.max(0.1, sizeM.w * 0.78);
+        const perLightInt = (night ? 0.55 : 0.25) * normInt * Math.max(0.6, sizeM.h * 2.2) / Math.sqrt(lightCount);
+        const lightDist = Math.max(0.6, sizeM.h * 2.4 * (state.lighting?.haloSpread ?? 1));
+        for (let li = 0; li < lightCount; li++) {
+          const t = lightCount === 1 ? 0 : (li / (lightCount - 1) - 0.5);
+          const pl = new THREE.PointLight(glowHex, perLightInt, lightDist, 1.8);
+          pl.position.set(halo.cxM + t * spanW, halo.cyM, 0.018);
+          this.signGroup.add(pl);
+        }
+      }
     }
 
     // Wall background mesh (hidden if transparent PNG export mode)
@@ -553,6 +807,28 @@ export class SignEngine {
     this._clearGroup(this.lightsGroup);
     this.lightsGroup.add(buildSceneLights(night, sizeM));
 
+    this.currentSelectedId = state.selectedIds?.[0] || null;
+
+    // Render Page Layout Frame (in millimeters)
+    this._clearGroup(this.pageGroup);
+    if (state.pageLayout?.visible && !transparentBg) {
+      const pw = (state.pageLayout.widthMm || 2000) * 0.001;
+      const ph = (state.pageLayout.heightMm || 1000) * 0.001;
+      const pts = [
+        new THREE.Vector3(-pw / 2, -ph / 2, 0.003),
+        new THREE.Vector3(pw / 2, -ph / 2, 0.003),
+        new THREE.Vector3(pw / 2, ph / 2, 0.003),
+        new THREE.Vector3(-pw / 2, ph / 2, 0.003),
+        new THREE.Vector3(-pw / 2, -ph / 2, 0.003),
+      ];
+      const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+      const lineMat = new THREE.LineBasicMaterial({ color: '#ffb547', transparent: true, opacity: 0.75 });
+      this.pageGroup.add(new THREE.Line(lineGeo, lineMat));
+    }
+
+    // Render 3D Selection Highlight Box
+    this.updateSelectionBox(state);
+
     this._fitCamera(sizeM);
 
     return {
@@ -562,9 +838,112 @@ export class SignEngine {
     };
   }
 
+
+  /**
+   * Returns 2D screen bounding box (in container pixels) for selected object(s).
+   */
+
+  /**
+   * Projects screen clientX/clientY onto the Z=0 sign wall plane in millimetres.
+   */
+  screenToWallMm(clientX, clientY) {
+    const dom = this.renderer?.domElement;
+    if (!dom) return { xMm: 0, yMm: 0 };
+    const rect = dom.getBoundingClientRect();
+    this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+    const hit = new THREE.Vector3();
+    if (this.raycaster.ray.intersectPlane(plane, hit)) {
+      return { xMm: Math.round(hit.x * 1000), yMm: Math.round(hit.y * 1000) };
+    }
+    return { xMm: 0, yMm: 0 };
+  }
+
+  getSelectedScreenBounds(selectedIds) {
+    if (!selectedIds?.length || !this.container || this.isDisposed || !this.signGroup) return null;
+    const box = new THREE.Box3();
+    let found = false;
+    for (const child of this.signGroup.children) {
+      if (selectedIds.includes(child.userData?.layerId)) {
+        box.expandByObject(child);
+        found = true;
+      }
+    }
+    if (!found || box.isEmpty()) return null;
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    if (!w || !h) return null;
+
+    const corners = [
+      new THREE.Vector3(box.min.x, box.min.y, box.min.z),
+      new THREE.Vector3(box.min.x, box.min.y, box.max.z),
+      new THREE.Vector3(box.min.x, box.max.y, box.min.z),
+      new THREE.Vector3(box.min.x, box.max.y, box.max.z),
+      new THREE.Vector3(box.max.x, box.min.y, box.min.z),
+      new THREE.Vector3(box.max.x, box.min.y, box.max.z),
+      new THREE.Vector3(box.max.x, box.max.y, box.min.z),
+      new THREE.Vector3(box.max.x, box.max.y, box.max.z),
+    ];
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    this.camera.updateMatrixWorld();
+    for (const c of corners) {
+      c.project(this.camera);
+      const px = (c.x * 0.5 + 0.5) * w;
+      const py = (-c.y * 0.5 + 0.5) * h;
+      if (px < minX) minX = px;
+      if (px > maxX) maxX = px;
+      if (py < minY) minY = py;
+      if (py > maxY) maxY = py;
+    }
+
+    const sizeM = new THREE.Vector3();
+    box.getSize(sizeM);
+    return {
+      left: minX,
+      right: maxX,
+      top: minY,
+      bottom: maxY,
+      centerX: (minX + maxX) * 0.5,
+      centerY: (minY + maxY) * 0.5,
+      widthMm: Math.round(sizeM.x * 1000),
+      heightMm: Math.round(sizeM.y * 1000),
+      depthMm: Math.round(sizeM.z * 1000),
+    };
+  }
+
   /**
    * Captures a high-resolution PNG (or transparent PNG with no wall).
    */
+
+  /**
+   * Immediately updates only the 3D selection highlight box without rebuilding letter meshes.
+   */
+  updateSelectionBox(state) {
+    this._clearGroup(this.selectionGroup);
+    if (!state?.scene?.transparentBg && state?.selectedIds?.length) {
+      for (const child of this.signGroup.children) {
+        if (state.selectedIds.includes(child.userData?.layerId)) {
+          const box = new THREE.Box3().setFromObject(child);
+          if (!box.isEmpty()) {
+            const bSize = new THREE.Vector3();
+            const bCenter = new THREE.Vector3();
+            box.getSize(bSize);
+            box.getCenter(bCenter);
+            const helperGeo = new THREE.BoxGeometry(bSize.x + 0.02, bSize.y + 0.02, bSize.z + 0.01);
+            const edges = new THREE.EdgesGeometry(helperGeo);
+            helperGeo.dispose();
+            const selLine = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: '#ffb547' }));
+            selLine.position.copy(bCenter);
+            this.selectionGroup.add(selLine);
+          }
+        }
+      }
+    }
+  }
+
   capturePng(width = 2400, height = 1500) {
     const prevW = this.container.clientWidth;
     const prevH = this.container.clientHeight;
@@ -601,13 +980,17 @@ export class SignEngine {
       this.camera.position.set(x, y, z);
       this.camera.lookAt(o.target);
       this.renderer.render(this.scene, this.camera);
+      this.callbacks.onFrame?.();
     };
     requestAnimationFrame(tick);
   }
 
   dispose() {
+    this.pickMarqueeEl?.remove();
+    this.pickMarqueeEl = null;
     this.isDisposed = true;
     const dom = this.renderer.domElement;
+    dom.removeEventListener('mousedown', this._onMouseDown);
     dom.removeEventListener('pointerdown', this._onPointerDown);
     window.removeEventListener('pointermove', this._onPointerMove);
     window.removeEventListener('pointerup', this._onPointerUp);
