@@ -1,3 +1,4 @@
+import {normalizeDisplayUnit,formatMmAsUnit,formatDimensions} from '../core/units.js';
 /**
  * Interactive SVG True-Shape Nesting Preview & Collision Visualizer
  * Shows exact sheet boundary, usable margin, internal holes, part labels,
@@ -5,8 +6,9 @@
  */
 
 const pathCache=new WeakMap();
-export function renderNestingSvg(sheet, selectedPlacementId = null, colors = {}) {
+export function renderNestingSvg(sheet, selectedPlacementId = null, colors = {}, displayUnit='mm') {
   if (!sheet) return '';
+  const unit=normalizeDisplayUnit(displayUnit),show=mm=>formatMmAsUnit(mm,unit);
   const w = sheet.widthMm;
   const h = sheet.heightMm;
   const mL = sheet.marginLeftMm ?? sheet.marginMm ?? 15;
@@ -38,12 +40,12 @@ export function renderNestingSvg(sheet, selectedPlacementId = null, colors = {})
           <title>${escapeXml(label)}</title>
           ${holePreview(p.holes||[])}
           <path data-nest-body="true" d="${d}" fill="${fill}" fill-opacity="${isSel ? '0.83' : '0.55'}" stroke="${stroke}" stroke-width="${isSel || isCol ? 4 : 2}" fill-rule="evenodd" />
-          ${isSel&&p.bounds.width>70&&p.bounds.height>35?`<text x="${cx}" y="${cy}" fill="#f8fafc" font-size="${Math.min(20,p.bounds.width/7,p.bounds.height/3)}" text-anchor="middle" dominant-baseline="middle" pointer-events="none">${Math.round(p.bounds.width)}×${Math.round(p.bounds.height)}</text>`:''}
+          ${isSel&&p.bounds.width>70&&p.bounds.height>35?`<text x="${cx}" y="${cy}" fill="#f8fafc" font-size="${Math.min(20,p.bounds.width/7,p.bounds.height/3)}" text-anchor="middle" dominant-baseline="middle" pointer-events="none">${show(p.bounds.width)}×${show(p.bounds.height)} ${unit}</text>`:''}
         </g>`;
     })
     .join('\n');
 
-  return `<svg class="nesting-sheet-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${w} × ${h} mm nesting levhası">
+  return `<svg class="nesting-sheet-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${formatDimensions(w,h,unit)} nesting levhası">
     <rect x="0" y="0" width="${w}" height="${h}" fill="#12151b" />
     <rect x="${mL}" y="${mT}" width="${Math.max(10, w - mL - mR)}" height="${Math.max(10, h - mT - mB)}" fill="none" stroke="#334155" stroke-dasharray="10 8" stroke-width="2" />
     ${polysSvg}
