@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {ALIGN_COMMANDS,alignmentCommand,alignmentPlan,applyAlignmentPlan,contourBounds,alignmentIcon} from '../src/cad/Alignment.js';
+import fs from 'node:fs';
+const s={objects:[{id:'a',xMm:0,yMm:0,w:10,h:10},{id:'b',xMm:30,yMm:12,w:20,h:15},{id:'c',xMm:100,yMm:40,w:30,h:25}],selectedIds:['a','b','c']};
+const bounds=o=>({minX:o.xMm-o.w/2,maxX:o.xMm+o.w/2,minY:o.yMm-o.h/2,maxY:o.yMm+o.h/2});
+const run=cmd=>applyAlignmentPlan(s,alignmentPlan(s,cmd,bounds));
+run('left');assert(s.objects.every(o=>bounds(o).minX===85));assert.equal(s.objects[2].xMm,100);
+s.objects[0].xMm=0;s.objects[1].xMm=30;s.objects[2].xMm=100;run('distGapX');let [a,b,c]=s.objects.map(bounds);assert.equal(b.minX-a.maxX,c.minX-b.maxX);
+const old=s.objects.map(o=>o.xMm);run('page');assert.equal(s.objects[1].xMm-s.objects[0].xMm,old[1]-old[0]);assert.equal((Math.min(...s.objects.map(o=>bounds(o).minX))+Math.max(...s.objects.map(o=>bounds(o).maxX)))/2,0);
+s.objects[0].locked=true;const x=s.objects[0].xMm;run('right');assert.equal(s.objects[0].xMm,x);
+assert.equal(alignmentCommand('r'),'right');assert.equal(alignmentCommand('c'),'centerX');assert.equal(alignmentCommand('e'),'centerY');assert.equal(alignmentCommand('p',true),'distGapX');assert.equal(alignmentCommand('a',true),'distGapY');
+for(const [cmd] of ALIGN_COMMANDS)assert(alignmentIcon(cmd).includes('<svg'));
+assert.deepEqual(contourBounds([{outer:[{x:-2,y:3},{x:4,y:-1}]}]),{minX:-2,minY:-1,maxX:4,maxY:3});
+const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');assert(/data-tool="rotate"[^\n]+\n\s*<button[^\n]+id="btnAlignmentRail"/.test(html));
+console.log('✓ Corel alignment shortcuts, real bounds, equal gaps, selection page centering, locked objects and rail placement');

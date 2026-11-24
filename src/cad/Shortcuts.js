@@ -3,14 +3,16 @@
  * Safely ignores text-typing inputs while keeping Ctrl+Z/Y/S/D and CAD tools responsive.
  */
 
+import {ALIGN_COMMANDS,alignmentCommand} from './Alignment.js';
 export const SHORTCUT_GROUPS = [
+  {title:'Hizalama ve Dağıtma (CorelDRAW)',items:ALIGN_COMMANDS.map(([,label,keys])=>({keys,label}))},
   {
     title: 'CAD Araçları (CorelDRAW)',
     items: [
       { keys: 'Boşluk / V', label: 'Seçim Aracı' },
       { keys: 'M', label: 'Taşıma Aracı' },
       { keys: 'S', label: 'Ölçek & Ebat Aracı' },
-      { keys: 'R', label: '3D Döndürme Aracı (X/Y/Z)' },
+      { keys: 'Alt + F8', label: '3D Döndürme Aracı (X/Y/Z)' },
       { keys: 'H', label: 'Sahneyi Kaydır (Pan)' },
       { keys: 'Z', label: 'Yakınlaştır' },
       { keys: 'F4', label: 'Ekrana Sığdır' },
@@ -29,7 +31,6 @@ export const SHORTCUT_GROUPS = [
       { keys: 'Ctrl + K', label: 'Harflere / Parçalara Ayır (Break Apart)' },
       { keys: 'Ctrl + L', label: 'Bileşik Yol Yap (Combine)' },
       { keys: 'Ctrl + I', label: 'Logo / SVG İçe Aktar' },
-      { keys: 'P', label: 'Seçili Nesneyi Sayfaya Ortala' },
     ],
   },
   {
@@ -99,6 +100,8 @@ export function attachShortcuts(handlers) {
       return;
     }
 
+    if(!ctrl&&e.altKey&&!e.shiftKey&&e.key==='F8'){e.preventDefault();handlers.onTool?.('rotate');return;}
+    if(!ctrl&&!e.altKey){const cmd=alignmentCommand(key,e.shiftKey);if(cmd){e.preventDefault();if(!e.repeat)handlers.onAlignment?.(cmd);return;}}
     // Function keys (CorelDRAW standard)
     if (e.key === 'F4') { e.preventDefault(); handlers.onFitCamera?.(); return; }
     if (e.key === 'F5') { e.preventDefault(); handlers.onTool?.('pen'); return; }
@@ -128,11 +131,9 @@ export function attachShortcuts(handlers) {
       if (key === 'v') { e.preventDefault(); handlers.onTool?.('select'); return; }
       if (key === 'm') { e.preventDefault(); handlers.onTool?.('move'); return; }
       if (key === 's') { e.preventDefault(); handlers.onTool?.('scale'); return; }
-      if (key === 'r') { e.preventDefault(); handlers.onTool?.('rotate'); return; }
       if (key === 'h') { e.preventDefault(); handlers.onTool?.('pan'); return; }
       if (key === 'z') { e.preventDefault(); handlers.onTool?.('zoom'); return; }
       if (key === 'd') { e.preventDefault(); handlers.onTool?.('measure'); return; }
-      if (key === 'p') { e.preventDefault(); handlers.onCenterOnPage?.(); return; }
     }
 
     if (e.key === 'Delete') {

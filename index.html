@@ -88,7 +88,8 @@
           <button class="tool-btn active" data-tool="select" title="Seçim Aracı (Boşluk / V)">↖<span>Seç</span><kbd class="rail-kbd">V</kbd></button>
           <button class="tool-btn" data-tool="move" title="Taşıma Aracı (M)">✥<span>Taşı</span><kbd class="rail-kbd">M</kbd></button>
           <button class="tool-btn" data-tool="scale" title="Ölçekle (S)">⤢<span>Ölçek</span><kbd class="rail-kbd">S</kbd></button>
-          <button class="tool-btn" data-tool="rotate" title="3D Döndür (R)">↻<span>Döndür</span><kbd class="rail-kbd">R</kbd></button>
+          <button class="tool-btn" data-tool="rotate" title="3D Döndür (Alt+F8)">↻<span>Döndür</span><kbd class="rail-kbd">A+F8</kbd></button>
+          <button type="button" class="tool-btn" id="btnAlignmentRail" title="Hizalama ve Dağıtma" aria-expanded="false" aria-controls="alignmentFlyout"><i class="align-rail-icon"></i><span>Hizala ▸</span></button>
           <button class="tool-btn" data-tool="node" title="Düğüm / Şekil Düzenleme (F10)">◈<span>Düğüm</span><kbd class="rail-kbd">F10</kbd></button>
         </div>
         <div class="rail-sep"></div>
@@ -130,7 +131,7 @@
             <button type="button" data-ribbon="materials">Malzeme &amp; Renk ⌄</button>
             <button type="button" data-ribbon="lighting">Aydınlatma ⌄</button>
             <button type="button" data-ribbon="manufacturing">İmalat ⌄</button>
-            <button type="button" data-ribbon="align">Hizalama ⌄</button>
+            <button type="button" data-ribbon="align">Vektör ⌄</button>
             <button type="button" data-ribbon="background">Arka Plan &amp; Cephe ⌄</button>
           </nav>
           <div id="inspectorQuickColors" class="inspector-quick-colors" aria-label="Hızlı renk paleti"></div>
@@ -254,6 +255,7 @@
       <div class="text-edit-actions"><button type="button" id="textEditCancel" class="sec-btn">İptal</button><button type="submit" class="cta-btn">Uygula</button></div>
     </form>
   </dialog>
+  <div id="alignmentFlyout" class="alignment-flyout hidden" role="group" aria-label="Hizalama ve dağıtma araçları"></div>
   <!-- Keyboard Shortcuts Help Modal -->
   <div id="shortcutsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle">
     <div class="modal-card">
@@ -312,6 +314,6 @@
 
   <div id="floatingWindowsLayer" class="floating-windows-layer"></div>
   <script defer src="./public/vendor/pdfjs/pdf.min.js"></script>
-  <script type="module" src="./src/main.js?v=20261124compactral4"></script>
+  <script type="module" src="./src/main.js?v=20261124alignment5"></script>
 </body>
 </html>

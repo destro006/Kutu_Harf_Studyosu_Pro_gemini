@@ -1,3 +1,4 @@
+import {ALIGN_COMMANDS,alignmentIcon,alignmentPlan,applyAlignmentPlan,contourBounds} from './cad/Alignment.js';
 import {resolveObjectLighting,selectedLightingObjects,setLightingValue} from './core/ObjectLighting.js';
 import {editableTextObject,applyTextEdit} from './cad/TextEditing.js';
 import THREE from './vendor/three.js';
@@ -448,7 +449,37 @@ function editLighting(key,value){
   if(is3DWorkspace(next)&&signEngine?.updateLightAppearance(next)){updateNumericBar(next);renderActiveWorkspace();writeAutosave(next);}
   else scheduleRebuild(true);
 }
+function runAlignment(command){
+ const s=store.get();if(!['model3d','materials','design2d'].includes(s.mainWorkspace||'model3d'))return;
+ const plan=alignmentPlan(s,command,o=>contourBounds(Vector2DCanvas.prototype._getObjectPolysWorld(o,fontMap)));
+ if(!plan.length)return;
+ mutate('Hizalama · '+(ALIGN_COMMANDS.find(c=>c[0]===command)?.[1]||command),draft=>applyAlignmentPlan(draft,plan));
+}
+function updateAlignmentRail(state){
+ const button=document.getElementById('btnAlignmentRail'),panel=document.getElementById('alignmentFlyout');
+ if(!button||!panel)return;
+ const enabled=['model3d','materials','design2d'].includes(state.mainWorkspace||'model3d');
+ const count=state.objects.filter(o=>(state.selectedIds||[]).includes(o.id)&&!o.locked&&o.visible!==false).length;
+ button.disabled=!enabled;if(!enabled){panel.classList.add('hidden');button.setAttribute('aria-expanded','false');}
+ for(const el of panel.querySelectorAll('[data-align-command]'))el.disabled=!enabled||count<(el.dataset.alignCommand==='page'?1:el.dataset.alignCommand.startsWith('dist')?3:2);
+}
+function bindAlignmentRail(){
+ const btn=document.getElementById('btnAlignmentRail'),panel=document.getElementById('alignmentFlyout');if(!btn||!panel)return;
+ btn.querySelector('.align-rail-icon').innerHTML=alignmentIcon('left');
+ panel.innerHTML='<div class="align-flyout-title">Hizalama</div><div class="align-icon-grid">'+ALIGN_COMMANDS.slice(0,7).map(iconButton).join('')+'</div><div class="align-flyout-title">Dağıtma</div><div class="align-icon-grid">'+ALIGN_COMMANDS.slice(7).map(iconButton).join('')+'</div>';
+ function iconButton([cmd,label,key]){return '<button type="button" data-align-command="'+cmd+'" title="'+label+' ('+key+')" aria-label="'+label+' ('+key+')">'+alignmentIcon(cmd)+'</button>';}
+ function close(){panel.classList.add('hidden');btn.setAttribute('aria-expanded','false');}
+ function place(){const box=btn.getBoundingClientRect();panel.style.left=Math.max(4,Math.min(box.right+6,window.innerWidth-panel.offsetWidth-8))+'px';panel.style.top=Math.max(8,Math.min(box.top,window.innerHeight-panel.offsetHeight-8))+'px';}
+ btn.onclick=()=>{if(!panel.classList.contains('hidden')){close();return;}updateAlignmentRail(store.get());panel.classList.remove('hidden');btn.setAttribute('aria-expanded','true');place();};
+ panel.addEventListener('click',e=>{const b=e.target.closest('[data-align-command]');if(b&&!b.disabled){runAlignment(b.dataset.alignCommand);updateAlignmentRail(store.get());}});
+ document.addEventListener('pointerdown',e=>{if(!panel.contains(e.target)&&!btn.contains(e.target))close();});
+ document.addEventListener('keydown',e=>{if(e.key==='Escape')close();});
+ window.addEventListener('resize',()=>{if(!panel.classList.contains('hidden'))place();});
+ document.getElementById('cadRail')?.addEventListener('scroll',close,{passive:true});
+ updateAlignmentRail(store.get());
+}
 function updateNumericBar(state) {
+  updateAlignmentRail(state);
   renderPropertyBar(state, {
     activeSheetIdx,
     selectedPlacementId: selectedNestingId,
@@ -461,8 +492,8 @@ function updateNumericBar(state) {
     }),
     onCadAction: (act) => runCadAction(act),
     onTool: (t) => activateTool(t),
-    onAlign: (m) => mutate('Hizalama', s => alignSelectedObjects(s, m)),
-    onDistribute: (ax) => mutate('Dağıtma', s => distributeSelectedObjects(s, ax)),
+    onAlign:runAlignment,
+    onDistribute:ax=>runAlignment(ax==='x'?'distGapX':'distGapY'),
     onRefreshBar: () => updateNumericBar(store.get()),
     onDisplayUnit: unit => {
       const safeUnit = normalizeDisplayUnit(unit);
@@ -666,7 +697,7 @@ const WS_META = [
   { id: 'materials', label: 'Malzeme & Renk', fn: renderMaterialsWs },
   { id: 'lighting', label: 'Aydınlatma', fn: renderLightingWs },
   { id: 'manufacturing', label: 'İmalat', fn: renderManufacturingDocker },
-  { id: 'align', label: 'Hizalama', fn: renderAlignDocker },
+  { id: 'align', label: 'Vektör & Gruplama', fn: renderAlignDocker },
   { id: 'background', label: 'Arka Plan / Cephe', fn: renderBackgroundWs },
   { id: 'projects', label: 'Projeler', fn: renderProjectsWs },
 ];
@@ -733,18 +764,7 @@ function renderManufacturingDocker(state) {
 function renderAlignDocker() {
   return `
     <section class="sec">
-      <h3 class="sec-title">Hizalama &amp; Dağıtma</h3>
-      <div class="grid-2" style="gap:6px">
-        <button type="button" class="sec-btn" data-dalign="left">◧ Sola Hizala</button>
-        <button type="button" class="sec-btn" data-dalign="centerX">◫ Yatay Ortala</button>
-        <button type="button" class="sec-btn" data-dalign="right">◨ Sağa Hizala</button>
-        <button type="button" class="sec-btn" data-dalign="top">⊤ Üste Hizala</button>
-        <button type="button" class="sec-btn" data-dalign="centerY">⊟ Dikey Ortala</button>
-        <button type="button" class="sec-btn" data-dalign="bottom">⊥ Alta Hizala</button>
-        <button type="button" class="sec-btn" data-ddist="x">⋯ Yatay Dağıt</button>
-        <button type="button" class="sec-btn" data-ddist="y">⋮ Dikey Dağıt</button>
-      </div>
-      <h3 class="sec-title" style="margin-top:12px">Vektör &amp; Gruplama</h3>
+      <h3 class="sec-title">Vektör &amp; Gruplama</h3>
       <div class="grid-2" style="gap:6px">
         <button type="button" class="sec-btn" data-dact="toCurves">∿ Eğriye Çevir</button>
         <button type="button" class="sec-btn" data-dact="breakApart">✂ Harflere Ayır</button>
@@ -2912,6 +2932,7 @@ function editSelectedNesting(action,value){
   },false);
 }
 function syncWorkspaceRail(ws){
+  updateAlignmentRail(store.get());
   const isNest=ws==='nesting',supported=new Set(['select','move','scale','rotate','logo']);
   for(const b of document.querySelectorAll('.cad-rail [data-tool]')){
     b.disabled=isNest&&!supported.has(b.dataset.tool);
@@ -3852,6 +3873,7 @@ function init() {
   if (railSc) railSc.onclick = openShortcuts;
   document.getElementById('btnCloseShortcuts').onclick = () => modal.classList.add('hidden');
 
+  bindAlignmentRail();
   // Left CAD Rail Tools & Actions
   document.querySelectorAll('.cad-rail [data-tool]').forEach(b => b.onclick = () => activateTool(b.dataset.tool));
   document.querySelectorAll('.cad-rail [data-action]').forEach(b => b.onclick = () => runCadAction(b.dataset.action));
@@ -3930,10 +3952,8 @@ function init() {
     onCombine: () => runCadAction('combine'),
     onNewDoc: () => document.getElementById('btnNewDocTab')?.click(),
     onExport: () => store.get().mainWorkspace === 'nesting' ? openNestingVectorImport(true) : openExportDialog(),
-    onCenterOnPage: () => {if(store.get().mainWorkspace==='nesting')return;mutate('Sayfaya ortala', s => {
-      const o = getSelectedOrFirst(s);
-      if (o && !o.locked) { o.xMm = 0; o.yMm = 0; }
-    });},
+    onAlignment:runAlignment,
+    onCenterOnPage:()=>runAlignment('page'),
     onDuplicate: () => runCadAction('duplicate'),
     onUndo: () => document.getElementById('btnUndo').click(),
     onRedo: () => document.getElementById('btnRedo').click(),
@@ -4128,7 +4148,7 @@ function init() {
     togglePageFrame: () => { store.update(s => { s.pageLayout.visible = !s.pageLayout.visible; }); scheduleRebuild(true); },
     toggleFullscreen: () => document.getElementById('btnFullscreen')?.click(),
     cadAction: (act) => runCadAction(act),
-    centerOnPage: () => {if(store.get().mainWorkspace==='nesting')return;mutate('Sayfaya ortala', s => { const o = getSelectedOrFirst(s); if (o && !o.locked) { o.xMm = 0; o.yMm = 0; } });},
+    centerOnPage:()=>runAlignment('page'),
     toggleLockSelected: () => {if(store.get().mainWorkspace==='nesting')editSelectedNesting('toggleLock');else mutate('Kilit', s => { const o = getSelectedOrFirst(s); if (o) toggleLayerLock(s, o.id); });},
     addPage: () => document.getElementById('btnAddPage')?.click(),
     dupPage: () => document.getElementById('btnDupPage')?.click(),
