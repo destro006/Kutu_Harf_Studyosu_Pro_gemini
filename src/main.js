@@ -5,13 +5,13 @@ import THREE from './vendor/three.js';
 import { buildChannelComponent } from './geometry/ChannelLetterGeometry.js';
 import { StateStore, createDefaultState, createObjectId, structuredCloneSafe } from './core/state.js';
 import { DocumentManager } from './core/DocumentManager.js';
-import { Vector2DCanvas } from './cad/Vector2DCanvas.js';
+import { Vector2DCanvas } from './cad/Vector2DCanvas.js?v=qa8';
 import { ContextMenu } from './ui/ContextMenu.js';
 import { renderPropertyBar } from './ui/PropertyBar.js?v=units6';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
-import { attachMenuBar } from './ui/MenuBar.js?v=toolbar5';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=nest7';
+import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=qa8';
 import {nextNestingSelection,deleteNestingParts,moveNestingParts} from './manufacturing/NestingSelection.js?v=nest7';
 import { generateNestedGcode, generateNestedHpgl,validateNestedProduction,MACHINE_PROFILES } from './export/CncGcodeExporter.js';
 import { HistoryManager } from './core/history.js';
@@ -24,9 +24,9 @@ import {
   serializeProject,
   writeAutosave,
 } from './core/projectSerializer.js';
-import { FontManager } from './geometry/FontManager.js';
+import { FontManager } from './geometry/FontManager.js?v=qa8';
 import { generateCutoutPreview, parseSvgLogo, traceRasterLogo } from './geometry/LogoTracer.js';
-import { SignEngine, QUALITY_PROFILES } from './render/SignEngine.js';
+import { SignEngine, QUALITY_PROFILES } from './render/SignEngine.js?v=qa8';
 import { ACRYLIC_PALETTE, MATERIAL_PRESETS, PAINT_PALETTE } from './render/MaterialLibrary.js';
 import { RAL_COLORS, RAL_GROUPS } from './render/RalColors.js';
 import { ENVIRONMENT_PRESETS } from './render/EnvironmentManager.js';
@@ -851,7 +851,9 @@ function detachWorkspaceToFloat(wsId, x = 320, y = 110) {
     });
   }
   saveWsLayout();
-  renderActiveWorkspace();
+  document.activeElement?.blur?.();
+  const root=document.getElementById('workspaceContent');if(root)root.dataset.layoutKey='';
+  renderActiveWorkspace();renderFloatingWindows(store.get());
 }
 
 function dockWorkspaceUnder(childId, hostId) {
@@ -1058,7 +1060,7 @@ function renderActiveWorkspace() {
   if (panelSelect) panelSelect.value = ws;
   const stackBtn = document.getElementById('btnToggleStackMode');
   if (tabsEl) tabsEl.classList.toggle('hidden', stackMode);
-  if (stackBtn) {stackBtn.textContent = stackMode ? '⊟ Sekme Modu' : '⊞ Alt Alta Aç';stackBtn.disabled=!sideIds.has(ws);}
+  if (stackBtn) {stackBtn.textContent = stackMode ? '⊟ Sekme Modu' : '⊞ Alt Alta Aç';stackBtn.disabled=!sideIds.has(ws);stackBtn.title=stackMode?'Panelleri sekme moduna al':'Panelleri alt alta aç';}
   const floatBtn=document.getElementById('btnFloatActiveDocker');if(floatBtn)floatBtn.disabled=!sideIds.has(ws);
 
   const floatIds = new Set(wsLayout.floating.filter(f=>sideIds.has(f.id)).map(f => f.id));
@@ -1137,7 +1139,7 @@ function renderActiveWorkspace() {
     const openSet = new Set((state.ui?.openSections||[]).filter(id=>sideIds.has(id)));
     if(!openSet.size)openSet.add(ws);
     root.innerHTML = WS_META.filter(m=>sideIds.has(m.id)).map(m => {
-      const isOpen = openSet.has(m.id);
+      const isOpen = openSet.has(m.id)&&!floatIds.has(m.id);
       return `<div class="acc-item" data-acc="${m.id}">
         <button type="button" class="acc-head ${isOpen ? 'on' : ''}" data-acc-toggle="${m.id}">
           <span>${m.label}</span><span>${isOpen ? '▾' : '▸'}</span>
@@ -1156,7 +1158,7 @@ function renderActiveWorkspace() {
     });
 
     for (const m of WS_META.filter(m=>sideIds.has(m.id))) {
-      if (openSet.has(m.id)) {
+      if (openSet.has(m.id)&&!floatIds.has(m.id)) {
         const body = root.querySelector(`[data-acc-body="${m.id}"]`);
         if (body) bindWorkspaceEvents(m.id, body);
       }
@@ -1283,7 +1285,7 @@ function renderDesignWs(state) {
     ` : ''}
 
     <section class="sec">
-      <h3 class="sec-title">5. Logo İçe Aktarma &amp; Vektörizasyon</h3>
+      <h3 class="sec-title">${cType==='fileli'?'5':'4'}. Logo İçe Aktarma &amp; Vektörizasyon</h3>
       <label class="sec-btn" style="display:block;text-align:center;cursor:pointer;margin-bottom:8px">
         SVG, PNG, JPG veya WEBP Logo Yükle
         <input id="logoFileInput" type="file" accept=".svg,image/svg+xml,image/png,image/jpeg,image/webp" class="hidden">
@@ -1626,7 +1628,7 @@ function renderBackgroundWs(state) {
   return `
     <section class="sec">
       <h3 class="sec-title">Hazır Mimari Sahneler</h3>
-      <p class="dock-helper">ZIP'teki tüm hazır duvar ve cephe seçenekleri. Bir sahne seçtiğinizde 3D arka plan güncellenir.</p>
+      <p class="dock-helper">Bir duvar veya cephe seçerek 3D arka planı güncelleyin.</p>
       <div class="background-preset-grid">
         ${BACKGROUND_SCENES.map(b => `
           <button type="button" class="background-preset ${state.scene.wallId === b.id ? 'on' : ''}" data-bg-wall="${b.id}" title="${b.label}">
@@ -2320,6 +2322,7 @@ async function handleLogoUpload(file) {
   }
 
   if (!parsed) {
+    studioToast('Logoda biçim algılanamadı. Toleransı ayarlayın.',true);
     if (statusEl) statusEl.textContent = 'Logoda biçim algılanamadı. Toleransı ayarlayın.';
     return;
   }
@@ -2334,24 +2337,15 @@ async function handleLogoUpload(file) {
     s.objects.push(logoObj);
     s.selectedIds = [logoObj.id];
   });
+  studioToast('Logo içe aktarıldı.');
   if (statusEl) statusEl.textContent = `${parsed.parts.length} bağımsız logo parçası 3D olarak eklendi.`;
 }
 
 
 /* ---------------- On-Canvas Floating CAD Transform HUD ---------------- */
-function positionCanvasTransformHud(state) {
-  const hud = document.getElementById('canvasTransformHud');
-  if (!hud || hud.classList.contains('hidden') || !signEngine) return;
-  const sel = state.objects.find(o => state.selectedIds.includes(o.id));
-  if (!sel) { hud.classList.add('hidden'); return; }
-  const bounds = signEngine.getSelectedScreenBounds([sel.id]);
-  const wrap = document.getElementById('stageWrap');
-  if (!bounds || !wrap) return;
-  const w = wrap.clientWidth, h = wrap.clientHeight;
-  const cx = Math.max(150, Math.min(w - 150, bounds.centerX));
-  const cy = Math.max(92, Math.min(h - 70, bounds.top - 12));
-  hud.style.left = `${cx}px`;
-  hud.style.top = `${cy}px`;
+function positionCanvasTransformHud(state){
+ const hud=document.getElementById('canvasTransformHud');if(!hud||hud.classList.contains('hidden'))return;
+ hud.style.left='12px';hud.style.top='auto';hud.style.bottom='72px';hud.style.transform='none';
 }
 
 function renderCanvasTransformHud(state) {
@@ -2426,8 +2420,8 @@ function renderCanvasTransformHud(state) {
         </button>
       </div>
       <div class="hud-row">
-        <label class="hud-field"><span>G (${unit})</span><input id="hudScaleW" type="number" min="0" step="any" value="${curW}"></label>
-        <label class="hud-field"><span>Y (${unit})</span><input id="hudScaleH" type="number" min="0" step="any" value="${curH}"></label>
+        <label class="hud-field"><span>Genişlik (${unit})</span><input id="hudScaleW" type="number" min="0" step="any" value="${curW}"></label>
+        <label class="hud-field"><span>Yükseklik (${unit})</span><input id="hudScaleH" type="number" min="0" step="any" value="${curH}"></label>
       </div>
       <div class="hud-chips">
         <button type="button" class="hud-chip" data-hud-sf="0.5">%50</button>
@@ -2503,13 +2497,13 @@ function renderCanvasTransformHud(state) {
         </button>
       </div>
       <div class="hud-row">
-        <label class="hud-field"><span>G (${unit})</span><input id="hudScaleW" type="number" min="0" step="any" value="${curW}"></label>
-        <label class="hud-field"><span>Y (${unit})</span><input id="hudScaleH" type="number" min="0" step="any" value="${curH}"></label>
+        <label class="hud-field"><span>Genişlik (${unit})</span><input id="hudScaleW" type="number" min="0" step="any" value="${curW}"></label>
+        <label class="hud-field"><span>Yükseklik (${unit})</span><input id="hudScaleH" type="number" min="0" step="any" value="${curH}"></label>
         <label class="hud-field"><span>Çıta (${unit})</span><input id="hudDepthMm" type="number" min="0" step="any" value="${show(sel.depthMm || 80)}"></label>
       </div>
       <div class="hud-row">
-        <label class="hud-field"><span>X (${unit})</span><input id="hudMoveX" type="number" step="any" value="${show(sel.xMm || 0)}"></label>
-        <label class="hud-field"><span>Y (${unit})</span><input id="hudMoveY" type="number" step="any" value="${show(sel.yMm || 0)}"></label>
+        <label class="hud-field"><span>X Konumu (${unit})</span><input id="hudMoveX" type="number" step="any" value="${show(sel.xMm || 0)}"></label>
+        <label class="hud-field"><span>Y Konumu (${unit})</span><input id="hudMoveY" type="number" step="any" value="${show(sel.yMm || 0)}"></label>
         <button type="button" id="hudMoveCenter" class="hud-chip">⌖ Ortala</button>
       </div>
     `;
@@ -2641,14 +2635,14 @@ function renderWallLoading({id,phase,percent=0,message=''}){
   clearTimeout(wallProgressTimer);
   const root=document.getElementById('wallLoading');
   if(!root)return;
-  if(phase==='idle'){root.classList.add('hidden');return;}
+  if(phase==='idle'||phase==='done'||(phase!=='error'&&percent>=100)){root.classList.add('hidden');return;}
   root.classList.remove('hidden');root.classList.toggle('wall-load-error',phase==='error');
   const label=BACKGROUND_SCENES.find(b=>b.id===id)?.label||'Arka plan';
   document.getElementById('wallLoadingLabel').textContent=phase==='error'?label+' · '+message:label+(phase==='done'?' · Hazır':' · Hazırlanıyor');
   document.getElementById('wallLoadingPercent').textContent=phase==='error'?'':Math.round(percent)+'%';
   document.getElementById('wallLoadingProgress').value=percent;
   document.getElementById('wallLoadingRetry').classList.toggle('hidden',phase!=='error');
-  if(phase==='done')wallProgressTimer=setTimeout(()=>root.classList.add('hidden'),450);
+
 }
 function selectWall(id){
   if(!BACKGROUND_SCENES.some(b=>b.id===id))return;
@@ -2658,7 +2652,7 @@ function selectWall(id){
 }
 function setMainWorkspace(ws) {
   const previous=store.get().mainWorkspace;
-  if(previous!==ws){nestingGesture?.cancel?.();nestingGesture=null;signEngine?.cancelActiveDrag?.();}
+  if(previous!==ws){nestingGesture?.cancel?.();nestingGesture=null;signEngine?.cancelActiveDrag?.();cancelShapePlacement?.();ribbonSuppressed=store.get().activeWorkspace;store.updateScoped([],s=>{s.activeWorkspace=sideWorkspace;});window.dispatchEvent(new Event('studio-close-menus'));}
   document.getElementById('studioBody')?.classList.toggle('nesting-isolated',ws==='nesting');
   store.updateScoped([],s => { s.mainWorkspace = ws; });
   document.querySelectorAll('#mainWorkspaceTabs button').forEach(b => b.classList.toggle('on', b.dataset.mainWs === ws));
@@ -2682,6 +2676,7 @@ function setMainWorkspace(ws) {
   }
   if (ws === 'design2d' && vector2D) {
     vector2D.render(store.get(), fontMap);
+    if(previous!==ws)requestAnimationFrame(()=>{if(store.get().mainWorkspace==='design2d')vector2D.fitAll(store.get());});
   }
   updateCenterWorkspaces(store.get());
   updateNumericBar(store.get());
@@ -2742,6 +2737,7 @@ function updateCenterWorkspaces(state) {
         if (tabs && nextTabs) tabs.replaceWith(nextTabs);
         syncNestingSettingsControls(grid.querySelector('.cws-side-r'), state.nesting,state.pageLayout?.displayUnit);
         const oldCnc=grid.querySelector('#nestCncPanel'),newCnc=template.content.querySelector('#nestCncPanel');
+        for(const id of ['cwsExpSvg','cwsExpDxf','cwsExpCsv']){const old=grid.querySelector('#'+id),fresh=template.content.querySelector('#'+id);if(old&&fresh)old.disabled=fresh.disabled;}
         if(oldCnc&&newCnc){
           for(const fresh of newCnc.querySelectorAll('input,select')){const el=oldCnc.querySelector('#'+fresh.id);if(!el||el===document.activeElement)continue;if(el.type==='checkbox')el.checked=fresh.checked;else el.value=fresh.value;}
           const oldStatus=oldCnc.querySelector('#nestCncStatus'),newStatus=newCnc.querySelector('#nestCncStatus');if(oldStatus&&newStatus)oldStatus.replaceWith(newStatus);
@@ -3254,17 +3250,32 @@ function applyDefaultPriceTemplate() {
   } catch (err) { console.warn('Fiyat şablonu okunamadı', err); }
 }
 
+let toastTimer;
+function studioToast(message,error=false){
+ const el=document.getElementById('studioToast');if(!el)return;
+ clearTimeout(toastTimer);el.textContent=message;el.hidden=false;el.classList.toggle('toast-error',error);
+ toastTimer=setTimeout(()=>{el.hidden=true;},3500);
+}
+async function copyStudioText(text){
+ try{
+  if(navigator.clipboard?.writeText){try{await navigator.clipboard.writeText(text);studioToast('WhatsApp özeti panoya kopyalandı');return;}catch{}}
+  const input=document.createElement('textarea');input.value=text;input.style.cssText='position:fixed;left:-9999px;top:0';document.body.append(input);
+  try{input.select();if(!document.execCommand('copy'))throw Error('copy');}finally{input.remove();}
+  studioToast('WhatsApp özeti panoya kopyalandı');
+ }catch{studioToast('Panoya kopyalanamadı. Tarayıcı izinlerini kontrol edin.',true);}
+}
 function openCustomerQuote(print = false) {
   const state = store.get();
   const preview = is3DWorkspace(state)&&signEngine&&!signEngine.isDisposed ? signEngine.capturePng(1200, 750) : null;
   const html = buildQuoteHtml(state, lastMetrics, lastCosts, preview);
-  const w = window.open('', '_blank', 'width=1050,height=850');
-  if (!w) {
-    downloadBlob(`${state.projectName || 'teklif'}_teklif.html`, html, 'text/html');
-    return;
-  }
-  w.document.open(); w.document.write(html); w.document.close();
-  if (print) { w.focus(); setTimeout(() => w.print(), 450); }
+  const modal=document.getElementById('quotePreviewModal'),frame=document.getElementById('quotePreviewFrame');
+  if(!modal||!frame){downloadBlob(state.projectName+'_teklif.html',html,'text/html');return;}
+  frame.srcdoc=html;modal.classList.remove('hidden');
+  const printFrame=()=>{try{frame.contentWindow.focus();frame.contentWindow.print();}catch{studioToast('Yazdırma açılamadı. Yeni sekmede açmayı deneyin.',true);}};
+  document.getElementById('quoteClose').onclick=()=>modal.classList.add('hidden');
+  document.getElementById('quotePrint').onclick=printFrame;
+  document.getElementById('quoteNewTab').onclick=()=>{const url=URL.createObjectURL(new Blob([html],{type:'text/html'}));const link=document.createElement('a');link.href=url;link.target='_blank';link.rel='noopener noreferrer';link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);};
+  if(print)studioToast('Yazdır / PDF düğmesi ile teklifinizi yazdırabilirsiniz.');
 }
 function customerQuoteText() {
   const s=store.get();
@@ -3416,7 +3427,7 @@ function bindCostCenterEvents(root) {
   root.querySelector('#costCenterHtmlBtn')?.addEventListener('click',()=>{
     const s=store.get();downloadBlob(`${s.projectName||'proje'}_musteri_teklifi.html`,buildQuoteHtml(s,lastMetrics,lastCosts), 'text/html;charset=utf-8');
   });
-  root.querySelector('#costCenterCopyBtn')?.addEventListener('click',()=>navigator.clipboard?.writeText(customerQuoteText()));
+  root.querySelector('#costCenterCopyBtn')?.addEventListener('click',()=>copyStudioText(customerQuoteText()));
   root.querySelectorAll('#costExportInternalCsv').forEach(b=>b.addEventListener('click',exportInternalCostCsv));
 }
 
@@ -3657,6 +3668,12 @@ function init() {
   sideWorkspace='layers';ribbonSuppressed='layers';
   store.updateScoped([],s=>{s.activeWorkspace='layers';});
   bindRibbon();
+  document.getElementById('globalLogoImport')?.addEventListener('change',e=>{const file=e.target.files?.[0];e.target.value='';if(file)handleLogoUpload(file);});
+  const menuToggle=document.getElementById('mobileMenuToggle'),railToggle=document.getElementById('mobileRailToggle');
+  menuToggle?.addEventListener('click',()=>{const on=document.getElementById('mainMenuBar').classList.toggle('mobile-menu-open');menuToggle.setAttribute('aria-expanded',String(on));});
+  railToggle?.addEventListener('click',()=>{const on=document.getElementById('studioBody').classList.toggle('mobile-rail-open');railToggle.setAttribute('aria-expanded',String(on));});
+  window.addEventListener('studio-close-menus',()=>{document.getElementById('mainMenuBar')?.classList.remove('mobile-menu-open');menuToggle?.setAttribute('aria-expanded','false');});
+  window.addEventListener('keydown',e=>{if(e.key!=='Escape')return;for(const id of ['quotePreviewModal','shortcutsModal']){const el=document.getElementById(id);if(el&&!el.classList.contains('hidden')){el.classList.add('hidden');e.preventDefault();e.stopImmediatePropagation();return;}}},true);
   document.getElementById('btnFloatActiveDocker')?.addEventListener('click', () => {
     const active = sideWorkspace;
     if(!sideIds.has(active))return;
@@ -3683,14 +3700,12 @@ function init() {
   });
   document.getElementById('btnSaveDefaults')?.addEventListener('click', () => {
     const s = store.get();
-    localStorage.setItem(USER_DEFAULTS_KEY, JSON.stringify({
+    try{localStorage.setItem(USER_DEFAULTS_KEY, JSON.stringify({
       materials: s.materials,
       materialOverrides: s.materialOverrides,
       lighting: s.lighting,
       render: s.render,
-    }));
-    const w = document.getElementById('stageWarning');
-    if (w) { w.textContent = 'Renk, materyal ve aydınlatma ayarlarınız varsayılan olarak kaydedildi.'; w.classList.remove('hidden'); setTimeout(() => w.classList.add('hidden'), 2500); }
+    }));studioToast('Varsayılan ayarlar kaydedildi.');}catch{studioToast('Varsayılan ayarlar kaydedilemedi.',true);}
   });
   document.getElementById('btnOpenBackgroundPanel')?.addEventListener('click', () => {
     ribbonSuppressed=null;
@@ -4250,7 +4265,15 @@ function init() {
 }
 
 let placingObjId = null;
+let cancelShapePlacement=null;
 function startMousePlacement(tool) {
+  cancelShapePlacement?.();
+  if(store.get().mainWorkspace==='design2d'&&vector2D){
+    const pos={xMm:vector2D.view.cx,yMm:vector2D.view.cy};
+    mutate('2D '+tool+' eklendi',s=>{const o=createShapeObject(tool,s,pos);s.objects.push(o);s.selectedIds=[o.id];s.activeTool='move';});
+    vector2D.render(store.get(),fontMap);updateNumericBar(store.get());renderActiveWorkspace();
+    document.querySelectorAll('.cad-rail [data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool==='move'));return;
+  }
   // Cancel any prior unfinished placement
   if (placingObjId) {
     store.update(s => { s.objects = s.objects.filter(o => o.id !== placingObjId); });
@@ -4264,7 +4287,7 @@ function startMousePlacement(tool) {
     s.selectedIds = [obj.id];
     s.activeTool = tool;
   });
-  scheduleRebuild(true);
+  scheduleRebuild(true);renderActiveWorkspace();
   const stage = document.getElementById('stageWrap');
   const warnEl = document.getElementById('stageWarning');
   if (stage) stage.style.cursor = 'crosshair';
@@ -4287,7 +4310,7 @@ function startMousePlacement(tool) {
     document.getElementById('threeContainer')?.removeEventListener('pointerdown', onClickPlace, true);
     window.removeEventListener('keydown', onKeyCancel);
     if (stage) stage.style.cursor = '';
-    warnEl?.classList.add('hidden');
+    warnEl?.classList.add('hidden');cancelShapePlacement=null;
   };
 
   const onClickPlace = (e) => {
@@ -4317,11 +4340,12 @@ function startMousePlacement(tool) {
         s.selectedIds = s.objects.length ? [s.objects[0].id] : [];
         s.activeTool = 'select';
       });
-      scheduleRebuild(true);
+      scheduleRebuild(true);renderActiveWorkspace();
       document.querySelectorAll('.cad-rail [data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === 'select'));
     }
   };
 
+  cancelShapePlacement=()=>onKeyCancel({key:'Escape'});
   window.addEventListener('pointermove', onMovePlace);
   document.getElementById('threeContainer')?.addEventListener('pointerdown', onClickPlace, true);
   window.addEventListener('keydown', onKeyCancel);
@@ -4340,8 +4364,7 @@ function activateTool(tool) {
     return;
   }
   if (tool === 'logo') {
-    document.querySelector('[data-ws="design"]').click();
-    setTimeout(() => document.getElementById('logoFileInput')?.click(), 50);
+    document.getElementById('globalLogoImport')?.click();
     return;
   }
   if (tool === 'zoom') {
