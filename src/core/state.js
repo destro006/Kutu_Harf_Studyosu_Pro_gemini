@@ -298,14 +298,49 @@ export class StateStore {
     this.set(draft, meta);
   }
 
+  // Lightweight updates for view settings and live transforms. Other
+  // branches are never modified by these scoped callbacks.
+  updateScoped(keys,updater,meta={}){
+    const draft={...this.state,pages:(this.state.pages||[]).map(p=>p.id===this.state.activePageId?{...p}:p)};
+    for(const key of keys)draft[key]=structuredCloneSafe(this.state[key]);
+    updater(draft);this.set(draft,meta);
+  }
+  updateObject(id,updater,deep=false){
+    const i=this.state.objects.findIndex(o=>o.id===id&&!o.locked);
+    if(i<0)return false;
+    const objects=this.state.objects.slice();
+    objects[i]=deep?structuredCloneSafe(objects[i]):{...objects[i]};
+    updater(objects[i]);
+    this.set({...this.state,objects,pages:(this.state.pages||[]).map(p=>p.id===this.state.activePageId?{...p}:p)});return true;
+  }
   subscribe(fn) {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   }
 }
 
+const immutableGeometry=new WeakSet();
+export function markImmutableGeometry(value){
+  if(!value||typeof value!=='object'||immutableGeometry.has(value))return value;
+  const freeze=v=>{if(v&&typeof v==='object'&&!Object.isFrozen(v)){for(const child of Object.values(v))freeze(child);Object.freeze(v);}};
+  freeze(value);immutableGeometry.add(value);return value;
+}
 export function structuredCloneSafe(obj) {
-  return JSON.parse(JSON.stringify(obj));
+  const seen=new WeakMap();
+  const copy=v=>{
+    if(v==null||typeof v!=='object')return typeof v==='number'&&!Number.isFinite(v)?null:v;
+    if(immutableGeometry.has(v))return v;
+    if(seen.has(v))return seen.get(v);
+    if(typeof v.toJSON==='function')return copy(v.toJSON());
+    const out=Array.isArray(v)?[]:{};seen.set(v,out);
+    for(const key of Object.keys(v)){
+      const child=v[key];
+      if(typeof child==='function'||typeof child==='symbol'||child===undefined){if(Array.isArray(v))out[key]=null;continue;}
+      Object.defineProperty(out,key,{value:copy(child),writable:true,enumerable:true,configurable:true});
+    }
+    return out;
+  };
+  return copy(obj);
 }
 
 export function syncPageMirror(state) {

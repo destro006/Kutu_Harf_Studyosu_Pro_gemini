@@ -56,6 +56,9 @@ export class SignEngine {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.autoUpdate=false;
+    this.renderer.shadowMap.needsUpdate=true;
+    this._renderDirty=true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.setClearColor(0x060608, 1);
 
@@ -163,6 +166,7 @@ export class SignEngine {
     };
 
     this._onPointerDown = (e) => {
+      this.invalidate();
       this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.activePointers.size === 2) {
         this.orbit.dragging = false;
@@ -202,7 +206,7 @@ export class SignEngine {
         // Start 3D pick-marquee on empty canvas; camera orbit stays on middle mouse / Pan.
         this.pickMarquee = { startX: e.clientX, startY: e.clientY, endX: e.clientX, endY: e.clientY, additive: e.ctrlKey || e.metaKey || e.shiftKey, crossing: e.altKey };
         this._updatePickMarquee();
-      } else if (['move', 'rotate', 'scale'].includes(this.activeTool) && e.button === 0 && hitLayerId) {
+      } else if (['move', 'rotate', 'scale'].includes(this.activeTool) && e.button === 0 && hitLayerId && !this.signGroup.children.find(c=>c.userData?.layerId===hitLayerId)?.userData?.locked) {
         this.callbacks.onSelectObject?.(hitLayerId, false);
         this.draggingObjId = hitLayerId;
         this.dragMode = this.activeTool;
@@ -228,6 +232,8 @@ export class SignEngine {
     };
 
     this._onPointerMove = (e) => {
+      if(!this.activePointers.has(e.pointerId))return;
+      this.invalidate();
       if (this.activePointers.has(e.pointerId)) {
         this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       }
@@ -252,6 +258,7 @@ export class SignEngine {
       this.orbit.movedDist += Math.hypot(dx, dy);
 
       if (this.draggingObjId) {
+        this.invalidate(true);
         const targetMesh = this.signGroup.children.find(c => c.userData?.layerId === this.draggingObjId);
         if (this.dragMode === 'move') {
           const mmPerPx = (this.orbit.radius * 0.56) * 1000 / Math.max(200, this.container.clientHeight);
@@ -303,7 +310,9 @@ export class SignEngine {
     };
 
     this._onPointerUp = (e) => {
+      if(!this.activePointers.has(e.pointerId))return;
       this.activePointers.delete(e.pointerId);
+      this.invalidate();
       if (this.activePointers.size < 2) this.lastPinchDist = 0;
 
       if (this.pickMarquee) {
@@ -367,6 +376,7 @@ export class SignEngine {
     };
 
     this._onWheel = (e) => {
+      this.invalidate();
       e.preventDefault();
       const factor = e.deltaY > 0 ? 1.09 : 0.92;
       const minR = Math.max(0.6, (this.orbit.fitRadius || 2) * 0.32);
@@ -389,10 +399,13 @@ export class SignEngine {
     this._ro.observe(this.container);
   }
 
-  _resize() {
-    const w = Math.max(100, this.container.clientWidth);
-    const h = Math.max(100, this.container.clientHeight);
-    this.renderer.setPixelRatio(computeQualityPixelRatio(this.quality, window.devicePixelRatio || 1, w, h));
+  invalidate(shadows=false){this._renderDirty=true;if(shadows&&this.renderer)this.renderer.shadowMap.needsUpdate=true;}
+  _resize(force=false) {
+    if(!this.container.clientWidth||!this.container.clientHeight)return;
+    const w=Math.max(100,this.container.clientWidth),h=Math.max(100,this.container.clientHeight);
+    const dpr=computeQualityPixelRatio(this.quality,window.devicePixelRatio||1,w,h),key=w+'x'+h+'@'+dpr;
+    if(!force&&this._sizeKey===key)return;
+    this._sizeKey=key;this.renderer.setPixelRatio(dpr);this.invalidate();
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -408,6 +421,7 @@ export class SignEngine {
   }
 
   setCameraPreset(presetId) {
+    this.invalidate();
     const map = {
       front: { az: 0, pol: Math.PI / 2, mult: 0.95 },
       left: { az: -0.75, pol: Math.PI / 2 - 0.08, mult: 0.95 },
@@ -436,6 +450,7 @@ export class SignEngine {
   }
 
   zoomBy(factor) {
+    this.invalidate();
     const minR = Math.max(0.5, (this.orbit.fitRadius || 2) * 0.3);
     const maxR = Math.max(8, (this.orbit.fitRadius || 4) * 2.5);
     this.orbit.targetRadius = Math.max(minR, Math.min(maxR, this.orbit.targetRadius * factor));
@@ -456,19 +471,22 @@ export class SignEngine {
   }
 
   _clearGroup(group) {
-    while (group.children.length) {
-      const c = group.children.pop();
-      c.traverse?.((node) => {
-        if (node.geometry) node.geometry.dispose?.();
-        if (node.material) {
-          const mats = Array.isArray(node.material) ? node.material : [node.material];
-          for (const m of mats) {
-            if (m.map && m.map._disposeOnClear) m.map.dispose();
-            m.dispose?.();
-          }
+    const geometries=new Set(),materials=new Set(),textures=new Set(),shadows=new Set();
+    for(const child of [...group.children]){
+      group.remove(child);
+      child.traverse(node=>{
+        if(node.geometry)geometries.add(node.geometry);
+        if(node.shadow)shadows.add(node.shadow);
+        for(const material of Array.isArray(node.material)?node.material:node.material?[node.material]:[]){
+          materials.add(material);
+          for(const value of Object.values(material))if(value?.isTexture&&value._disposeOnClear)textures.add(value);
         }
       });
     }
+    for(const shadow of shadows){if(typeof shadow.dispose==='function')shadow.dispose();else{shadow.map?.dispose();shadow.mapPass?.dispose();}}
+    for(const texture of textures)texture.dispose();
+    for(const material of materials)material.dispose?.();
+    for(const geometry of geometries)geometry.dispose?.();
   }
 
   /**
@@ -477,6 +495,7 @@ export class SignEngine {
   updateScene(state, fontMap) {
     if (this.isDisposed) return { metricsList: [], warnings: ['WebGL kullanılamıyor.'], sizeM: { w: 1.6, h: 0.4 } };
 
+    this.invalidate(true);
     const nextQuality = state.quality || 'high';
     if (nextQuality !== this.quality) {
       this.quality = nextQuality;
@@ -523,6 +542,7 @@ export class SignEngine {
 
       const objGroup = new THREE.Group();
       objGroup.userData.layerId = obj.id;
+      objGroup.userData.locked=!!obj.locked;
 
       const lightOn = state.lighting?.enabled ?? true;
       const mode = lightOn ? (obj.lightingMode || state.lighting?.mode || 'halo') : 'none';
@@ -810,10 +830,11 @@ export class SignEngine {
     }
 
     // Wall background mesh (hidden if transparent PNG export mode)
+    const wallW=Math.max(16,Math.ceil(sizeM.w*3.5)),wallH=Math.max(10,Math.ceil(sizeM.h*5));
+    const wallKey=transparentBg?'transparent':(state.scene?.wallId||'tugla')+'|'+wallW+'|'+wallH;
+    if(this._wallKey!==wallKey){
     this._clearGroup(this.wallGroup);
     if (!transparentBg) {
-      const wallW = Math.max(16, sizeM.w * 3.5);
-      const wallH = Math.max(10, sizeM.h * 5.0);
       const wt = getWallTextures(state.scene?.wallId || 'tugla', wallW, wallH);
       wt.map._disposeOnClear = true;
       wt.bumpMap._disposeOnClear = true;
@@ -829,14 +850,20 @@ export class SignEngine {
       wallMesh.receiveShadow = true;
       this.wallGroup.add(wallMesh);
     }
+    this._wallKey=wallKey;
+    }
 
     // Scene lighting
+    const lightsKey=[night,Math.round(sizeM.w*10),Math.round(sizeM.h*10),prof.shadowSize].join('|');
+    if(this._lightsKey!==lightsKey){
     this._clearGroup(this.lightsGroup);
     const lights = buildSceneLights(night, sizeM);
     lights.traverse(light => {
       if (light.shadow?.mapSize) light.shadow.mapSize.set(prof.shadowSize, prof.shadowSize);
     });
     this.lightsGroup.add(lights);
+    this._lightsKey=lightsKey;
+    }
 
     this.currentSelectedId = state.selectedIds?.[0] || null;
 
@@ -953,6 +980,7 @@ export class SignEngine {
    * Immediately updates only the 3D selection highlight box without rebuilding letter meshes.
    */
   updateSelectionBox(state) {
+    this.invalidate();
     this._clearGroup(this.selectionGroup);
     if (!state?.scene?.transparentBg && state?.selectedIds?.length) {
       for (const child of this.signGroup.children) {
@@ -1016,6 +1044,7 @@ export class SignEngine {
       this.renderer.setSize(width, height, false);
       this.camera.aspect = width / height;
       this.camera.updateProjectionMatrix();
+      this.renderer.shadowMap.needsUpdate=true;
       this.renderer.render(this.scene, this.camera);
       return this.renderer.domElement.toDataURL('image/png');
     } finally {
@@ -1027,47 +1056,53 @@ export class SignEngine {
       this.renderer.setClearColor(previousClearColor, previousClearAlpha);
       groups.forEach((g,i) => {g.visible = previousGroups[i];});
       children.forEach(({child,visible}) => {child.visible = visible;});
-      this._resize();
+      this._resize(true);
+      this.invalidate(true);
     }
   }
 
   _startLoop() {
-    const tick = () => {
-      if (this.isDisposed) return;
-      requestAnimationFrame(tick);
-
-      const o = this.orbit;
-      o.azimuth += (o.targetAzimuth - o.azimuth) * 0.14;
-      o.polar += (o.targetPolar - o.polar) * 0.14;
-      o.radius += (o.targetRadius - o.radius) * 0.14;
-
-      const x = o.target.x + o.radius * Math.sin(o.polar) * Math.sin(o.azimuth);
-      const y = o.target.y + o.radius * Math.cos(o.polar);
-      const z = o.target.z + o.radius * Math.sin(o.polar) * Math.cos(o.azimuth);
-
-      this.camera.position.set(x, y, z);
+    const tick=()=>{
+      if(this.isDisposed)return;
+      this._raf=requestAnimationFrame(tick);
+      if(document.hidden||!this.container.clientWidth||!this.container.clientHeight)return;
+      const o=this.orbit;
+      const moving=Math.abs(o.targetAzimuth-o.azimuth)+Math.abs(o.targetPolar-o.polar)+Math.abs(o.targetRadius-o.radius)>0.00015;
+      if(!moving&&!this._renderDirty)return;
+      if(moving){
+        o.azimuth+=(o.targetAzimuth-o.azimuth)*.14;
+        o.polar+=(o.targetPolar-o.polar)*.14;
+        o.radius+=(o.targetRadius-o.radius)*.14;
+      }else{o.azimuth=o.targetAzimuth;o.polar=o.targetPolar;o.radius=o.targetRadius;}
+      this.camera.position.set(o.target.x+o.radius*Math.sin(o.polar)*Math.sin(o.azimuth),o.target.y+o.radius*Math.cos(o.polar),o.target.z+o.radius*Math.sin(o.polar)*Math.cos(o.azimuth));
       this.camera.lookAt(o.target);
-      this.renderer.render(this.scene, this.camera);
+      this._renderDirty=false;
+      this.renderer.render(this.scene,this.camera);
       this.callbacks.onFrame?.();
     };
-    requestAnimationFrame(tick);
+    this._raf=requestAnimationFrame(tick);
   }
 
   dispose() {
     this.pickMarqueeEl?.remove();
     this.pickMarqueeEl = null;
     this.isDisposed = true;
+    cancelAnimationFrame(this._raf);
+    if(!this.renderer)return;
     const dom = this.renderer.domElement;
     dom.removeEventListener('mousedown', this._onMouseDown);
     dom.removeEventListener('pointerdown', this._onPointerDown);
     window.removeEventListener('pointermove', this._onPointerMove);
     window.removeEventListener('pointerup', this._onPointerUp);
+    window.removeEventListener('pointercancel', this._onPointerUp);
     dom.removeEventListener('wheel', this._onWheel);
     dom.removeEventListener('contextmenu', this._onContextMenu);
     this._ro?.disconnect();
     this._clearGroup(this.signGroup);
     this._clearGroup(this.wallGroup);
     this._clearGroup(this.lightsGroup);
+    this._clearGroup(this.selectionGroup);
+    this._clearGroup(this.pageGroup);
     this.envManager.dispose();
     this.renderer.dispose();
   }

@@ -130,6 +130,8 @@ const store = {
   get: () => docManager.getActiveStore().get(),
   set: (s, m) => docManager.getActiveStore().set(s, m),
   update: (fn, m) => docManager.getActiveStore().update(fn, m),
+  updateScoped:(keys,fn)=>docManager.getActiveStore().updateScoped(keys,fn),
+  updateObject:(id,fn,deep=false)=>docManager.getActiveStore().updateObject(id,fn,deep),
 };
 const history = {
   push: (s, l) => docManager.getActiveHistory().push(s, l),
@@ -151,6 +153,7 @@ let lastSceneResult = { sizeM: { w: 2, h: 0.4 }, metricsList: [], warnings: [] }
 let lastMetrics = calculateManufacturingMetrics([], store.get());
 let lastCosts = calculateProjectCosts(lastMetrics, store.get());
 let lastNesting = null;
+let lastPhotomontageScene=null,lastPhotomontageUrl=null;
 let selectedNestingId = null;
 let objectClipboard = null;
 let activeCostTab = 'summary';
@@ -197,6 +200,8 @@ let measurePoints = [];
 let measureHover = null;
 let measureDragging = false;
 let dragBeforeState = null;
+let liveUiFrame=0;
+function scheduleLiveUi(){if(liveUiFrame)return;liveUiFrame=requestAnimationFrame(()=>{liveUiFrame=0;const state=store.get();updateStageChrome(state);updateNumericBar(state);});}
 let editingNodeIdx = -1;
 
 // Debounced scene rebuild
@@ -306,11 +311,10 @@ function scheduleRebuild(immediate = false) {
     const warning = document.getElementById('stageWarning');
     if (warning) { warning.textContent = 'Çalışma alanı hatası: ' + (error?.message || 'Bilinmeyen hata'); warning.classList.remove('hidden'); }
   });
-  if (immediate) safeRun();
-  else rebuildTimer = setTimeout(safeRun, 40);
+  rebuildTimer=setTimeout(safeRun,immediate?16:80);
 }
 
-function mutate(label, fn, renderWorkspace = true) {
+function mutate(label, fn, renderWorkspace = true, rebuildScene=true) {
   history.push(store.get(), label);
   store.update(s => {
     fn(s);
@@ -318,9 +322,11 @@ function mutate(label, fn, renderWorkspace = true) {
   });
   docManager.markDirty();
   updateUndoRedoButtons();
-  scheduleRebuild(true);
+  if(rebuildScene)scheduleRebuild(true);
+  else{const state=store.get();lastCosts=calculateProjectCosts(lastMetrics,state);updateStageChrome(state);updateNumericBar(state);updateCenterWorkspaces(state);writeAutosave(state);}
   if (renderWorkspace) renderActiveWorkspace();
 }
+function mutateData(label,fn,renderWorkspace=false){return mutate(label,fn,renderWorkspace,false);}
 
 function updateUndoRedoButtons() {
   const u = document.getElementById('btnUndo');
@@ -329,11 +335,23 @@ function updateUndoRedoButtons() {
   if (r) r.disabled = !history.canRedo();
 }
 
+const objectSizeCache=new WeakMap(),textSizeCache=new Map();
 function objectPhysicalSize(o){
   if(!o)return null;
-  const polys=vector2D?._getObjectPolysWorld({...o,xMm:0,yMm:0,rotationDeg:0},fontMap);
-  const size=polygonSize(polys);
-  return size&&size.widthMm>0&&size.heightMm>0?size:nominalSize(o);
+  const key=o.kind==='text'?JSON.stringify([o.fontId,o.text,o.heightMm,o.letterSpacingMm,o.lineSpacingMult,o.textAlign]):null;
+  const source=o.kind==='polygon'?o.polygonsMm:o.kind==='logo'?o.logoData:o;
+  const font=key?fontMap.get(o.fontId||'cinzel'):null;
+  let entry=key?textSizeCache.get(key):source?objectSizeCache.get(source):null;
+  if(entry&&(entry.font!==font||entry.height!==o.heightMm||entry.width!==o.widthMm||entry.radius!==o.cornerRadiusMm))entry=null;
+  if(!entry&&vector2D&&(!key||font)){
+    const size=polygonSize(vector2D._getObjectPolysWorld({...o,xMm:0,yMm:0,rotationDeg:0,scaleX:1,scaleY:1,mirrorX:false,mirrorY:false},fontMap));
+    if(size?.widthMm>0&&size?.heightMm>0){
+      entry={size,font,height:o.heightMm,width:o.widthMm,radius:o.cornerRadiusMm};
+      if(key){if(textSizeCache.size>=128)textSizeCache.delete(textSizeCache.keys().next().value);textSizeCache.set(key,entry);}
+      else if(source)objectSizeCache.set(source,entry);
+    }
+  }
+  return entry?{widthMm:entry.size.widthMm*Math.abs(o.scaleX??1),heightMm:entry.size.heightMm*Math.abs(o.scaleY??1)}:nominalSize(o);
 }
 function syncInspectorDimensions(state){
   const obj=getSelectedOrFirst(state),size=objectPhysicalSize(obj),unit=normalizeDisplayUnit(state.pageLayout?.displayUnit);
@@ -393,17 +411,12 @@ function updateStageChrome(state) {
   });
 
   // Photomontage preview sync
-  if (state.activeWorkspace === 'background' && state.photomontage.photoUrl) {
-    const prevT = state.scene.transparentBg;
-    state.scene.transparentBg = true;
-    signEngine.updateScene(state, fontMap);
-    const signUrl = signEngine.capturePng(1200, 750);
-    state.scene.transparentBg = prevT;
-    signEngine.updateScene(state, fontMap);
-    photomontageOverlay.render(state, signUrl);
-  } else {
-    photomontageOverlay.container.classList.add('hidden');
-  }
+  if(state.activeWorkspace==='background'&&state.photomontage.photoUrl&&signEngine&&!signEngine.isDisposed){
+    if(!dragBeforeState&&lastPhotomontageScene!==lastSceneResult){
+      lastPhotomontageUrl=signEngine.capturePng(900,560,{transparent:true});lastPhotomontageScene=lastSceneResult;
+    }
+    if(lastPhotomontageUrl)photomontageOverlay?.render(state,lastPhotomontageUrl);
+  }else photomontageOverlay?.container.classList.add('hidden');
 }
 
 function updateNumericBar(state) {
@@ -423,7 +436,7 @@ function updateNumericBar(state) {
     onRefreshBar: () => updateNumericBar(store.get()),
     onDisplayUnit: unit => {
       const safeUnit = normalizeDisplayUnit(unit);
-      store.update(s => { s.pageLayout.displayUnit = safeUnit; });
+      store.updateScoped(['pageLayout'],s => { s.pageLayout.displayUnit = safeUnit; });
       // Unit switching only changes the presentation of dimensions; the model remains in mm.
       updateStageChrome(store.get());
       updateNumericBar(store.get());
@@ -469,7 +482,7 @@ function updateNumericBar(state) {
       const sh = sheets[activeSheetIdx];
       const part = sh?.placements?.find(p => p.id === selectedNestingId);
       if (!part) return;
-      mutate('Nesting parça düzenleme', s => {
+      mutateData('Nesting parça düzenleme', s => {
         const sSh = s.nesting.sheets[activeSheetIdx];
         const sPart = sSh?.placements?.find(p => p.id === selectedNestingId);
         if (!sPart) return;
@@ -2127,17 +2140,17 @@ function bindWorkspaceEvents(ws, root) {
       renderActiveWorkspace();
     });
   } else if (ws === 'cost') {
-    root.querySelector('#costCurrency')?.addEventListener('change', e => mutate('Para birimi', s => { s.costConfig.currency = e.target.value; }));
-    root.querySelector('#rateUsd')?.addEventListener('change', e => mutate('USD kuru', s => { s.costConfig.rates.USD = Number(e.target.value); }));
-    root.querySelector('#rateEur')?.addEventListener('change', e => mutate('EUR kuru', s => { s.costConfig.rates.EUR = Number(e.target.value); }));
-    root.querySelector('#pricingMode')?.addEventListener('change', e => mutate('Fiyatlandırma yöntemi', s => { s.costConfig.pricingMode = e.target.value; }));
-    root.querySelector('#profitPct')?.addEventListener('change', e => mutate('Kar oranı', s => {
+    root.querySelector('#costCurrency')?.addEventListener('change', e => mutateData('Para birimi', s => { s.costConfig.currency = e.target.value; }));
+    root.querySelector('#rateUsd')?.addEventListener('change', e => mutateData('USD kuru', s => { s.costConfig.rates.USD = Number(e.target.value); }));
+    root.querySelector('#rateEur')?.addEventListener('change', e => mutateData('EUR kuru', s => { s.costConfig.rates.EUR = Number(e.target.value); }));
+    root.querySelector('#pricingMode')?.addEventListener('change', e => mutateData('Fiyatlandırma yöntemi', s => { s.costConfig.pricingMode = e.target.value; }));
+    root.querySelector('#profitPct')?.addEventListener('change', e => mutateData('Kar oranı', s => {
       if (s.costConfig.pricingMode === 'margin') s.costConfig.marginPct = Number(e.target.value);
       else s.costConfig.markupPct = Number(e.target.value);
     }));
-    root.querySelector('#overheadPct')?.addEventListener('change', e => mutate('Genel gider', s => { s.costConfig.overheadPct = Number(e.target.value); }));
-    root.querySelector('#discountPct')?.addEventListener('change', e => mutate('İndirim', s => { s.costConfig.discountPct = Number(e.target.value); }));
-    root.querySelector('#mountingId')?.addEventListener('change', e => mutate('Montaj tipi', s => { s.costConfig.mountingId = e.target.value; }));
+    root.querySelector('#overheadPct')?.addEventListener('change', e => mutateData('Genel gider', s => { s.costConfig.overheadPct = Number(e.target.value); }));
+    root.querySelector('#discountPct')?.addEventListener('change', e => mutateData('İndirim', s => { s.costConfig.discountPct = Number(e.target.value); }));
+    root.querySelector('#mountingId')?.addEventListener('change', e => mutateData('Montaj tipi', s => { s.costConfig.mountingId = e.target.value; }));
   } else if (ws === 'quote') {
     const bindQ = (id, key, isNum = false) => root.querySelector('#' + id)?.addEventListener('change', e => {
       store.update(s => { s.quote[key] = isNum ? Number(e.target.value) : e.target.value; });
@@ -2551,7 +2564,8 @@ function renderPageTabs() {
 }
 
 function setMainWorkspace(ws) {
-  store.update(s => { s.mainWorkspace = ws; });
+  store.updateScoped([],s => { s.mainWorkspace = ws; });
+  signEngine?.invalidate?.();
   document.querySelectorAll('#mainWorkspaceTabs button').forEach(b => b.classList.toggle('on', b.dataset.mainWs === ws));
 
   const is3D = ws === 'model3d' || ws === 'materials';
@@ -2660,7 +2674,7 @@ async function repackNestingSettings(label,updateNesting,quickImport=true){
     if(items.length){const out=await runVectorImportJob({jobId:Date.now(),operation:'nest',imported:{items},nesting:{...Object.fromEntries(Object.entries(next).filter(([key])=>!['sheets','unplaced','importedTabs','designTabSnapshot'].includes(key))),quickImport}},{signal:controller.signal});result=out.nesting;}
     if(controller.signal.aborted||(store.get().nesting.activeTabId||'design')!==tab)return;
     lastNesting=result;activeSheetIdx=0;selectedNestingId=null;
-    mutate(label,st=>{const {importedTabs,designTabSnapshot,activeTabId,...settings}=next;st.nesting={...st.nesting,...settings,sheets:result.sheets,unplaced:result.unplaced};},false);
+    mutateData(label,st=>{const {importedTabs,designTabSnapshot,activeTabId,...settings}=next;st.nesting={...st.nesting,...settings,sheets:result.sheets,unplaced:result.unplaced};},false);
     updateCenterWorkspaces(store.get());
   }catch(err){if(!controller.signal.aborted){const warning=document.getElementById('stageWarning');if(warning){warning.textContent=String(err.message||err);warning.classList.remove('hidden');}}}
   finally{if(nestingRepackController===controller){nestingRepackController=null;const btn=document.getElementById('cwsRunNesting');if(btn)btn.textContent='Otomatik Yerleştir';}}
@@ -2682,7 +2696,7 @@ function runAutoNesting(){
 }
 
 function openNestingVectorImport(openPicker = false) {
-  mutate('Nesting içe aktar sekmesi', s => openNestingImportTab(s.nesting), false);
+  mutateData('Nesting içe aktar sekmesi', s => openNestingImportTab(s.nesting), false);
   activeSheetIdx = 0;
   selectedNestingId = null;
   setMainWorkspace('nesting');
@@ -2745,7 +2759,7 @@ async function importNestingVectorFiles(fileList, root) {
     // Preserve the entire import picker and native controls until all CPU-heavy
     // worker calculations have completed; commit tabs in one state transaction.
     if(ready.length){
-      mutate('Nesting vektör içe aktarımı ('+ready.length+' dosya)',state=>{
+      mutateData('Nesting vektör içe aktarımı ('+ready.length+' dosya)',state=>{
         for(const job of ready){
           switchNestingTab(state.nesting,'import');
           createNestingImportedTab(state.nesting,job.imported);
@@ -2774,13 +2788,13 @@ async function importNestingVectorFiles(fileList, root) {
 function bindNestingCenterEvents(root) {
   root.querySelectorAll('[data-nest-tab]').forEach(b => b.onclick = () => {
     nestingRepackController?.abort();currentNestingImportController?.abort();
-    mutate('Nesting iş sekmesi', s => switchNestingTab(s.nesting,b.dataset.nestTab), false);
+    mutateData('Nesting iş sekmesi', s => switchNestingTab(s.nesting,b.dataset.nestTab), false);
     activeSheetIdx=0;selectedNestingId=null;
     updateCenterWorkspaces(store.get());
   });
   root.querySelectorAll('[data-nest-close]').forEach(b => b.onclick = (e) => {
     e.stopPropagation();
-    mutate('Nesting dosya sekmesini kapat', s => closeNestingImportedTab(s.nesting,b.dataset.nestClose), false);
+    mutateData('Nesting dosya sekmesini kapat', s => closeNestingImportedTab(s.nesting,b.dataset.nestClose), false);
     activeSheetIdx=0;selectedNestingId=null;
     updateCenterWorkspaces(store.get());
   });
@@ -2827,7 +2841,7 @@ function bindNestingCenterEvents(root) {
     updateNumericBar(store.get());
   });
   root.querySelector('#cwsAddSheet')?.addEventListener('click', () => {
-    mutate('Yeni nesting levhası', s => {
+    mutateData('Yeni nesting levhası', s => {
       const idx = (s.nesting.sheets?.length || 0) + 1;
       s.nesting.sheets.push({
         id: createObjectId('sheet'),
@@ -2880,7 +2894,7 @@ function bindNestingCenterEvents(root) {
     repackNestingSettings('Nesting yönü', n => { n.placementStrategy = e.target.value; }));
   const setNestingPreviewColor = (field, value) => {
     if (!/^#[a-f0-9]{6}$/i.test(value)) return;
-    mutate('Nesting önizleme rengi', s => {
+    mutateData('Nesting önizleme rengi', s => {
       s.nesting.previewColors ||= {};
       s.nesting.previewColors[field] = value;
     }, false);
@@ -2888,7 +2902,7 @@ function bindNestingCenterEvents(root) {
   };
   root.querySelector('#cwsNestBodyColor')?.addEventListener('input', e => setNestingPreviewColor('body', e.target.value));
   root.querySelector('#cwsNestHoleColor')?.addEventListener('input', e => setNestingPreviewColor('holes', e.target.value));
-  root.querySelector('#cwsNestResetColors')?.addEventListener('click', () => mutate('Nesting renklerini sıfırla', s => {
+  root.querySelector('#cwsNestResetColors')?.addEventListener('click', () => mutateData('Nesting renklerini sıfırla', s => {
     s.nesting.previewColors = { body: '#c89343', holes: '#c89343' };
   }, false));
   root.querySelector('#cwsExpSvg')?.addEventListener('click', () => {
@@ -2908,7 +2922,7 @@ function bindNestingCenterEvents(root) {
 
 function bindCncCenterEvents(root) {
   const upd = (id, fn, isChk = false) => root.querySelector('#' + id)?.addEventListener('change', e => {
-    mutate('CNC ayarı', s => fn(s.cnc, isChk ? e.target.checked : e.target.value));
+    mutateData('CNC ayarı', s => fn(s.cnc, isChk ? e.target.checked : e.target.value));
   });
   upd('cncProfile', (c, v) => { c.profile = v; });
   upd('cncKerf', (c, v) => { c.kerfMm = Number(v); });
@@ -3034,25 +3048,25 @@ function bindCostCenterEvents(root) {
     const path=el.dataset.costConfig.split('.');
     const val=el.type==='number' || el.type==='range' ? Number(el.value) : el.value;
     if(el.type==='number' && !Number.isFinite(val))return;
-    mutate('Maliyet ayarları',s=>{
+    mutateData('Maliyet ayarları',s=>{
       let cfg=s.costConfig;for(let i=0;i<path.length-1;i++)cfg=cfg[path[i]] ||= {};
       cfg[path.at(-1)]=val;
     },false);
   }));
-  root.querySelectorAll('[data-cost-include]').forEach(el=>el.addEventListener('change',()=>{mutate('Maliyet kalemi seçimi',s=>{s.costConfig.excludedCostKeys||={};if(el.checked)delete s.costConfig.excludedCostKeys[el.dataset.costInclude];else s.costConfig.excludedCostKeys[el.dataset.costInclude]=true;},false);}));
+  root.querySelectorAll('[data-cost-include]').forEach(el=>el.addEventListener('change',()=>{mutateData('Maliyet kalemi seçimi',s=>{s.costConfig.excludedCostKeys||={};if(el.checked)delete s.costConfig.excludedCostKeys[el.dataset.costInclude];else s.costConfig.excludedCostKeys[el.dataset.costInclude]=true;},false);}));
   root.querySelectorAll('[data-bulk-currency]').forEach(el=>el.addEventListener('change',()=>{
     const currency=el.value,which=el.dataset.bulkCurrency,role=el.dataset.bulkRole;
     if(!['TRY','USD','EUR'].includes(currency)||!['buy','sell'].includes(which))return;
     const current=store.get(),cards=listPriceCatalog(current).filter(r=>r.key.startsWith(role+':'));
     const changes=cards.map(r=>({r,rate:changeRateCurrency(r[which],currency,current.costConfig.rates)}));
     if(changes.some(x=>!x.rate)){alert('Önce geçerli döviz kurunu girin.');el.value='';return;}
-    mutate('Toplu para birimi değişikliği',s=>{s.costConfig.priceBook||={};for(const {r,rate} of changes){s.costConfig.priceBook[r.key]||={buy:{...r.buy},sell:{...r.sell}};s.costConfig.priceBook[r.key][which]=rate;}},false);
+    mutateData('Toplu para birimi değişikliği',s=>{s.costConfig.priceBook||={};for(const {r,rate} of changes){s.costConfig.priceBook[r.key]||={buy:{...r.buy},sell:{...r.sell}};s.costConfig.priceBook[r.key][which]=rate;}},false);
   }));
   root.querySelectorAll('[data-rate-key]').forEach(el=>el.addEventListener('change',()=>{
     const key=el.dataset.rateKey, [which,field]=el.dataset.ratePath.split('.');
     const val=field==='value'?Number(el.value):el.value;
     if(field==='value' && !(Number.isFinite(val)&&val>=0))return;
-    mutate('Malzeme alış / satış tarifesi',s=>{
+    mutateData('Malzeme alış / satış tarifesi',s=>{
       s.costConfig.priceBook ||= {};
       s.costConfig.priceBook[key] ||= {buy:{...getPriceCard(s,key).buy},sell:{...getPriceCard(s,key).sell}};
       if(field==='currency'){const next=changeRateCurrency(s.costConfig.priceBook[key][which],val,s.costConfig.rates);if(next)s.costConfig.priceBook[key][which]=next;}
@@ -3060,7 +3074,7 @@ function bindCostCenterEvents(root) {
     },false);
   }));
   root.querySelectorAll('[data-cost-reset-rate]').forEach(b=>b.addEventListener('click',()=>{
-    mutate('Tarifeyi sıfırla',s=>{delete s.costConfig.priceBook?.[b.dataset.costResetRate];},false);
+    mutateData('Tarifeyi sıfırla',s=>{delete s.costConfig.priceBook?.[b.dataset.costResetRate];},false);
   }));
   root.querySelector('#costSavePriceDefaults')?.addEventListener('click',()=>{
     try { localStorage.setItem(PRICE_TEMPLATE_STORAGE,JSON.stringify(store.get().costConfig.priceBook||{}));
@@ -3068,7 +3082,7 @@ function bindCostCenterEvents(root) {
     } catch(e){alert('Tarife tarayıcıya kaydedilemedi: '+e.message);}
   });
   root.querySelector('#costAddExtra')?.addEventListener('click',()=>{
-    mutate('Ek maliyet kalemi ekle',s=>{
+    mutateData('Ek maliyet kalemi ekle',s=>{
       s.costConfig.extraItems ||= [];
       s.costConfig.extraItems.push({id:createObjectId('extra'),label:'Özel iş / malzeme',qty:1,unit:'adet',buy:{value:0,currency:'TRY'},sell:{value:0,currency:'TRY'}});
       s.costConfig.pricingMode='unit';
@@ -3079,7 +3093,7 @@ function bindCostCenterEvents(root) {
     const path=el.dataset.extraField.split('.');
     const val=el.type==='number'?Number(el.value):el.value;
     if(el.type==='number'&&!(Number.isFinite(val)&&val>=0))return;
-    mutate('Özel iş kalemi',s=>{
+    mutateData('Özel iş kalemi',s=>{
       const item=s.costConfig.extraItems?.find(i=>i.id===id);if(!item)return;
       if(path.length===2) {item[path[0]] ||= {};item[path[0]][path[1]]=val;}
       else item[path[0]]=val;
@@ -3087,26 +3101,26 @@ function bindCostCenterEvents(root) {
     },false);
   }));
   root.querySelectorAll('[data-remove-extra]').forEach(b=>b.addEventListener('click',()=>{
-    mutate('Özel kalemi sil',s=>{s.costConfig.extraItems=(s.costConfig.extraItems||[]).filter(i=>i.id!==b.dataset.removeExtra);},false);
+    mutateData('Özel kalemi sil',s=>{s.costConfig.extraItems=(s.costConfig.extraItems||[]).filter(i=>i.id!==b.dataset.removeExtra);},false);
   }));
   root.querySelectorAll('[data-quote-field]').forEach(el=>el.addEventListener('change',()=>{
     const field=el.dataset.quoteField;
     const value=el.type==='number'?Number(el.value):el.value;
-    mutate('Teklif bilgileri',s=>{s.quote[field]=value;},false);
+    mutateData('Teklif bilgileri',s=>{s.quote[field]=value;},false);
   }));
   root.querySelectorAll('[data-cost-logo]').forEach(input=>input.addEventListener('change',async()=>{
     const file=input.files?.[0];if(!file)return;
     try{
       const data=await loadLogoAsCompressedDataUrl(file);
-      mutate('Teklif logosu',s=>{s.quote[input.dataset.costLogo]=data;},false);
+      mutateData('Teklif logosu',s=>{s.quote[input.dataset.costLogo]=data;},false);
     }catch(err){alert(err.message||'Logo okunamadı.');}
   }));
   root.querySelectorAll('[data-cost-clear-logo]').forEach(b=>b.addEventListener('click',()=>{
-    mutate('Teklif logosu kaldır',s=>{s.quote[b.dataset.costClearLogo]=null;},false);
+    mutateData('Teklif logosu kaldır',s=>{s.quote[b.dataset.costClearLogo]=null;},false);
   }));
   root.querySelector('#costQuoteLock')?.addEventListener('change',e=>{
     const locked=e.target.checked;
-    mutate('Teklif fiyatı kilidi',s=>{
+    mutateData('Teklif fiyatı kilidi',s=>{
       s.quote.locked=locked;
       s.quote.lockedSnapshot=locked?{costs:structuredCloneSafe(lastCosts),metrics:structuredCloneSafe(lastMetrics),createdAt:new Date().toISOString()}:null;
     },false);
@@ -3159,8 +3173,8 @@ function showObjectContextMenu(e, objId) {
 function showNestingPartContextMenu(e, pid) {
   if (!contextMenu) return;
   contextMenu.show(e.clientX, e.clientY, [
-    { label: '90° Döndür', action: () => mutate('Parça döndür', s => { const p = s.nesting.sheets[activeSheetIdx]?.placements?.find(x => x.id === pid); if (p) p.rotationDeg = ((p.rotationDeg || 0) + 90) % 360; }) },
-    { label: 'Kilitle / Kilidi Aç', action: () => mutate('Parça kilidi', s => { const p = s.nesting.sheets[activeSheetIdx]?.placements?.find(x => x.id === pid); if (p) p.locked = !p.locked; }) },
+    { label: '90° Döndür', action: () => mutateData('Parça döndür', s => { const p = s.nesting.sheets[activeSheetIdx]?.placements?.find(x => x.id === pid); if (p) p.rotationDeg = ((p.rotationDeg || 0) + 90) % 360; }) },
+    { label: 'Kilitle / Kilidi Aç', action: () => mutateData('Parça kilidi', s => { const p = s.nesting.sheets[activeSheetIdx]?.placements?.find(x => x.id === pid); if (p) p.locked = !p.locked; }) },
     { label: 'Kilitsizleri Yeniden Optimize Et', action: () => runAutoNesting() },
   ]);
 }
@@ -3379,15 +3393,14 @@ function init() {
       if (commit) {
         if (dragBeforeState && delta?.moved) {
           history.push(dragBeforeState, `Sahne ${mode}`);
+          docManager.markDirty();
         }
         dragBeforeState = null;
         updateUndoRedoButtons();
         scheduleRebuild(true);
         return;
       }
-      store.update(s => {
-        const o = s.objects.find(x => x.id === layerId);
-        if (!o || o.locked) return;
+      store.updateObject(layerId,o=>{
         if (mode === 'move') {
           o.xMm = Math.round((o.xMm || 0) + delta.dxMm);
           o.yMm = Math.round((o.yMm || 0) + delta.dyMm);
@@ -3400,16 +3413,8 @@ function init() {
           o.scaleY = Math.max(0.05, Math.min(20, (o.scaleY ?? 1) * delta.factor));
         }
       });
-      if (mode === 'scale') {
-        const s = store.get();
-        lastSceneResult = (signEngine && !signEngine.isDisposed)
-          ? signEngine.updateScene(s, fontMap)
-          : computeSceneWithoutWebGL(s, fontMap);
-        lastMetrics = calculateManufacturingMetrics(lastSceneResult.metricsList, s);
-        lastCosts = calculateProjectCosts(lastMetrics, s);
-      }
-      updateStageChrome(store.get());
-      updateNumericBar(store.get());
+      // The live mesh is already transformed. Rebuild manufacturing geometry only on release.
+      scheduleLiveUi();
     },
     onMoveObject_unused: (layerId, dxMm, dyMm, commit) => {
       if (commit) {
@@ -3428,7 +3433,7 @@ function init() {
     },
     onFrame: () => positionCanvasTransformHud(store.get()),
     onSelectObject: (layerId, additive) => {
-      store.update(s => { s.selectedIds = selectLayer(s, layerId, additive); });
+      store.updateScoped(['selectedIds'],s => { s.selectedIds = selectLayer(s, layerId, additive); });
       signEngine.updateSelectionBox(store.get());
       updateStageChrome(store.get());
       updateNumericBar(store.get());
@@ -3436,7 +3441,7 @@ function init() {
     },
     onSelectObjects: (ids, additive) => {
       const candidates = new Set(ids);
-      store.update(s => {
+      store.updateScoped(['selectedIds'],s => {
         const existing = additive ? s.selectedIds : [];
         const valid = s.objects.filter(o => candidates.has(o.id) && o.visible && !o.locked).map(o => o.id);
         s.selectedIds = [...new Set([...existing, ...valid])];
@@ -3446,7 +3451,8 @@ function init() {
       renderActiveWorkspace();
     },
     onDeselectObject: () => {
-      store.update(s => { s.selectedIds = []; });
+      if(!store.get().selectedIds.length)return;
+      store.updateScoped([],s => { s.selectedIds = []; });
       signEngine.updateSelectionBox(store.get());
       updateStageChrome(store.get()); updateNumericBar(store.get());
       renderActiveWorkspace();
@@ -3744,29 +3750,28 @@ function init() {
         renderActiveWorkspace();
       },
       onSelectObject: (id, additive) => {
-        store.update(s => { s.selectedIds = id ? selectLayer(s, id, additive) : []; });
+        store.updateScoped(['selectedIds'],s => { s.selectedIds = id ? selectLayer(s, id, additive) : []; });
         updateNumericBar(store.get());
         vector2D.render(store.get(), fontMap);
       },
       onTransformStart: () => { dragBeforeState = structuredCloneSafe(store.get()); },
       onLiveMove: (id, x, y) => {
-        store.update(s => { const o = s.objects.find(k => k.id === id); if (o && !o.locked) { o.xMm = x; o.yMm = y; } });
+        store.updateObject(id,o=>{o.xMm=x;o.yMm=y;});
         vector2D.render(store.get(), fontMap);
         updateNumericBar(store.get());
       },
       onLiveScale: (id, sx, sy) => {
-        store.update(s => { const o = s.objects.find(k => k.id === id); if (o && !o.locked) { o.scaleX = sx; o.scaleY = sy; } });
+        store.updateObject(id,o=>{o.scaleX=sx;o.scaleY=sy;});
         vector2D.render(store.get(), fontMap);
         updateNumericBar(store.get());
       },
       onLiveNodeMove: (id, pIdx, nIdx, wx, wy) => {
-        store.update(s => {
-          const o = s.objects.find(k => k.id === id);
-          if (o && o.polygonsMm?.[pIdx]?.outer?.[nIdx]) {
+        store.updateObject(id,o=>{
+          if (o.polygonsMm?.[pIdx]?.outer?.[nIdx]) {
             o.polygonsMm[pIdx].outer[nIdx].x = (wx - (o.xMm || 0)) / (o.scaleX ?? 1);
             o.polygonsMm[pIdx].outer[nIdx].y = (wy - (o.yMm || 0)) / (o.scaleY ?? 1);
           }
-        });
+        },true);
         vector2D.render(store.get(), fontMap);
       },
       onTransformCommit: () => {
@@ -3928,12 +3933,10 @@ function startMousePlacement(tool) {
   const onMovePlace = (mv) => {
     if (!placingObjId || !signEngine) return;
     const pt = signEngine.screenToWallMm(mv.clientX, mv.clientY);
-    store.update(s => {
-      const o = s.objects.find(x => x.id === placingObjId);
-      if (o) { o.xMm = pt.xMm; o.yMm = pt.yMm; }
-    });
-    signEngine.updateScene(store.get(), fontMap);
-    updateNumericBar(store.get());
+    store.updateObject(placingObjId,o=>{o.xMm=pt.xMm;o.yMm=pt.yMm;});
+    const mesh=signEngine.signGroup?.children.find(c=>c.userData?.layerId===placingObjId);
+    if(mesh){mesh.position.x=pt.xMm*.001;mesh.position.y=pt.yMm*.001;signEngine.invalidate(true);}
+    scheduleLiveUi();
   };
 
   const cleanup = () => {
