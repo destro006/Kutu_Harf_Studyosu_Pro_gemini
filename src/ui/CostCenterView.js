@@ -1,3 +1,4 @@
+import {normalizeDisplayUnit,formatDimensions,formatAreaM2,formatMmAsUnit} from '../core/units.js';
 import { formatMoney, listPriceCatalog, getPriceCard, toTargetCurrency, COST_ROLE_LABELS } from '../manufacturing/CostEngine.js';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -42,6 +43,7 @@ function ledger(state, cost){
  return `<div class="cst-table-scroller"><table class="cst-price-table">${TH}<tbody>${rows||'<tr><td colspan="6">Metraj hesaplanınca kalemler burada görünecek.</td></tr>'}</tbody></table></div>`;
 }
 function summary(state,metrics,cost){
+ const unit=normalizeDisplayUnit(state.pageLayout?.displayUnit);
  const cfg=state.costConfig||{},cur=cost.currency;
  const negative=cost.profitAmount<0;
  return `<div class="cst-summary">
@@ -51,12 +53,12 @@ function summary(state,metrics,cost){
  ${card('KDV Dahil Teklif',money(cost.grandTotal,cur),`KDV %${dec(cost.vatRate*100)}`,'accent')}</div>
  <div class="cst-two-col">
   <section class="cst-card"><div class="cst-heading"><div><small>GERÇEK GEOMETRİDEN</small><h3>Üretim metrajı</h3></div><span class="cst-chip">Canlı</span></div>
-   <div class="cst-metrics"><div><span>Toplam ebat</span><b>${dec(metrics.totalWidthMm)} × ${dec(metrics.totalHeightMm)} mm</b></div>
+   <div class="cst-metrics"><div><span>Toplam ebat</span><b>${formatDimensions(metrics.totalWidthMm,metrics.totalHeightMm,unit)}</b></div>
    <div><span>Harf / Parça</span><b>${dec(metrics.componentCount)} adet</b></div>
-   <div><span>Metal ön yüz</span><b>${dec(metrics.metalFaceAreaM2)} m²</b></div>
-   <div><span>Pleksi / File</span><b>${dec(metrics.acrylicAreaM2)} / ${dec(metrics.fileAreaM2)} m²</b></div>
-   <div><span>Yanak alanı</span><b>${dec(metrics.sidewallAreaM2)} m²</b></div>
-   <div><span>Kesim / Büküm</span><b>${dec(metrics.cuttingLengthM)} / ${dec(metrics.perimeterM)} m</b></div>
+   <div><span>Metal ön yüz</span><b>${formatAreaM2(metrics.metalFaceAreaM2,unit)}</b></div>
+   <div><span>Pleksi / File</span><b>${formatAreaM2(metrics.acrylicAreaM2,unit)} / ${formatAreaM2(metrics.fileAreaM2,unit)}</b></div>
+   <div><span>Yanak alanı</span><b>${formatAreaM2(metrics.sidewallAreaM2,unit)}</b></div>
+   <div><span>Kesim / Büküm</span><b>${formatMmAsUnit(metrics.cuttingLengthM*1000,unit)} / ${formatMmAsUnit(metrics.perimeterM*1000,unit)} ${unit}</b></div>
    <div><span>LED / Güç kaynağı</span><b>${dec(metrics.totalLedModules)} / ${dec(metrics.powerSupplies)} adet</b></div></div>
    <p class="cst-help">Metrajlar mevcut 3D/2D nesnelerinden hesaplanır; malzeme fire, tedarik ve montaj toleranslarını kendi tarifenize göre kontrol edin.</p>
   </section>
