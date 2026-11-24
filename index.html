@@ -134,7 +134,6 @@
             <button type="button" data-ribbon="align">Vektör ⌄</button>
             <button type="button" data-ribbon="background">Arka Plan &amp; Cephe ⌄</button>
           </nav>
-          <div id="inspectorQuickColors" class="inspector-quick-colors" aria-label="Hızlı renk paleti"></div>
           <div id="ribbonPanel" class="ribbon-panel hidden">
             <div class="ribbon-panel-head"><strong id="ribbonPanelTitle"></strong><button type="button" id="ribbonClose" class="tb-btn" title="Kapat">✕</button></div>
             <div id="ribbonPanelContent" class="ribbon-panel-content"></div>
@@ -210,6 +209,7 @@
           <button type="button" id="btnDupPage" class="page-act-btn" title="Aktif Sayfayı Çoğalt">⧉ Çoğalt</button>
           <button type="button" id="btnDelPage" class="page-act-btn" title="Aktif Sayfayı Sil">🗑</button>
         </div>
+        <div id="inspectorQuickColors" class="inspector-quick-colors vertical-palette" aria-label="Dikey RAL renk paleti"></div>
       </main>
 
       <!-- Docker Column Resizer -->
@@ -218,7 +218,7 @@
       <!-- REGION 6: Right Docker Panels -->
       <aside class="inspector-col" id="inspectorCol">
         <div class="inspector-mode-bar">
-          <span>Nesneler &amp; Proje</span>
+          <span>Çalışma Panelleri</span>
           <div style="display:flex;gap:4px">
             <button type="button" id="btnSaveDefaults" class="tb-btn" style="padding:2px 7px;font-size:11px" title="Varsayılanları Kaydet">★ Kaydet</button>
             <button type="button" id="btnFloatActiveDocker" class="tb-btn" title="Aktif paneli serbest pencereye ayır">↗ Ayır</button>
@@ -229,14 +229,22 @@
 
         <label class="inspector-panel-picker">Panel seç
           <select id="inspectorPanelSelect" aria-label="Aktif panel">
+            <option value="layers" selected>Katmanlar</option>
             <option value="objects">Nesneler</option>
-            <option value="layers">Katmanlar</option>
             <option value="projects">Projeler</option>
+            <optgroup label="Araç kategorileri">
+              <option value="properties">Metin &amp; Yapı</option>
+              <option value="materials">Malzeme &amp; Renk</option>
+              <option value="lighting">Aydınlatma</option>
+              <option value="manufacturing">İmalat</option>
+              <option value="align">Vektör &amp; Gruplama</option>
+              <option value="background">Arka Plan &amp; Cephe</option>
+            </optgroup>
           </select>
         </label>
         <nav class="workspace-tabs" id="workspaceTabs" aria-label="Docker Sekmeleri">
+          <button type="button" data-ws="layers" class="on">Katmanlar</button>
           <button type="button" data-ws="objects">Nesneler</button>
-          <button type="button" data-ws="layers">Katmanlar</button>
           <button type="button" data-ws="projects">Projeler</button>
         </nav>
 
@@ -314,6 +322,6 @@
 
   <div id="floatingWindowsLayer" class="floating-windows-layer"></div>
   <script defer src="./public/vendor/pdfjs/pdf.min.js"></script>
-  <script type="module" src="./src/main.js?v=20261124alignment5"></script>
+  <script type="module" src="./src/main.js?v=20261124panelpalette6"></script>
 </body>
 </html>

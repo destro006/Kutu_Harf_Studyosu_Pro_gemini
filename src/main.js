@@ -796,8 +796,8 @@ for (const host of Object.keys(wsLayout.dockedUnder)) {
 function arrangeDockerTabs() {
   const bar = document.getElementById('workspaceTabs');
   if (!bar) return;
-  const ids = WS_META.map(m => m.id);
-  wsLayout.tabOrder = [...new Set([...wsLayout.tabOrder, ...ids])].filter(id => ids.includes(id));
+  const ids = ['layers','objects','projects'];
+  wsLayout.tabOrder = ['layers',...new Set([...wsLayout.tabOrder,...ids].filter(id=>id!=='layers'&&ids.includes(id)))];
   for (const id of wsLayout.tabOrder) {
     const tab = bar.querySelector(`button[data-ws="${id}"]`);
     if (tab) bar.appendChild(tab);
@@ -1005,7 +1005,7 @@ function renderQuickPalette(state) {
     const colors=[...basic,...RAL_COLORS.map(c=>({...c,label:c.code+' · '+c.name}))];
     host.innerHTML='<span class="quick-palette-label">Renkler</span><div class="quick-palette-swatches" tabindex="0" aria-label="Renk paleti; kaydırarak diğer renklere ulaşın">'+colors.map(c=>`<button type="button" class="quick-palette-swatch" data-quick-hex="${c.hex}" data-quick-ral="${escapeAttr(c.code)}" aria-label="${escapeAttr(c.label)}" title="${escapeAttr(c.label)}" style="--color:${c.hex}"></button>`).join('')+'</div>';
     const strip=host.querySelector('.quick-palette-swatches');
-    strip.addEventListener('wheel',e=>{if(!e.ctrlKey&&Math.abs(e.deltaY)>Math.abs(e.deltaX)&&strip.scrollWidth>strip.clientWidth){e.preventDefault();strip.scrollLeft+=e.deltaY*(e.deltaMode===1?16:1);}}, {passive:false});
+    // Native vertical scrolling and keyboard navigation; no wheel interception.
   }
   const key=current+'|'+code;if(host.dataset.paletteSelection===key)return;host.dataset.paletteSelection=key;
   for(const button of host.querySelectorAll('[data-quick-hex]')){
@@ -1016,13 +1016,17 @@ function renderQuickPalette(state) {
 
 const ribbonIds=new Set(['properties','materials','lighting','manufacturing','align','background']);
 const sideIds=new Set(['objects','layers','projects']);
-let sideWorkspace='objects';
+let sideWorkspace='layers';
+const inspectorIds=new Set([...sideIds,...ribbonIds]);
 let ribbonSuppressed=null;
 function renderRibbon(state){
   const root=document.getElementById('ribbonPanelContent'),panel=document.getElementById('ribbonPanel'),host=document.getElementById('studioRibbon');
   if(!root||!panel||!host)return;
   const allowed=['model3d','materials','design2d'].includes(state.mainWorkspace||'model3d');
   host.classList.toggle('hidden',!allowed);
+  const palette=document.getElementById('inspectorQuickColors');
+  palette?.classList.toggle('hidden',!allowed);
+  palette?.parentElement?.classList.toggle('has-vertical-palette',allowed);
   const ws=state.activeWorkspace==='design'?'properties':state.activeWorkspace;
   const open=allowed&&ribbonIds.has(ws)&&ribbonSuppressed!==ws;
   panel.classList.toggle('hidden',!open);
@@ -1035,6 +1039,7 @@ function renderRibbon(state){
   if(root.dataset.ribbonKey===key&&root.contains(document.activeElement)&&/^(INPUT|SELECT|TEXTAREA)$/i.test(document.activeElement?.tagName||'')){root.dataset.pendingRefresh='1';return;}
   root.dataset.ribbonKey=key;root.dataset.pendingRefresh='0';
   root.classList.toggle('material-ribbon-content',ws==='materials');
+  root.classList.toggle('lighting-ribbon-content',ws==='lighting');
   const html=meta.fn(state);if(root._ribbonHtml===html&&root.childElementCount)return;
   root._ribbonHtml=html;const scroll=root.scrollTop;root.innerHTML=html;bindWorkspaceEvents(ws,root);root.scrollTop=scroll;
 }
@@ -1046,6 +1051,7 @@ function closeRibbon(){
 function bindRibbon(){
   document.querySelectorAll('[data-ribbon]').forEach(b=>b.addEventListener('click',()=>{
     if(b.classList.contains('on')){closeRibbon();return;}
+    if(ribbonIds.has(sideWorkspace))sideWorkspace='layers';
     ribbonSuppressed=null;store.updateScoped([],s=>{s.activeWorkspace=b.dataset.ribbon;});renderActiveWorkspace();updateStageChrome(store.get());
   }));
   document.getElementById('ribbonClose')?.addEventListener('click',closeRibbon);
@@ -1056,16 +1062,20 @@ function renderActiveWorkspace() {
   renderRibbon(state);
   if(state.mainWorkspace==='nesting')return;
   renderQuickPalette(state);
-  if(sideIds.has(state.activeWorkspace))sideWorkspace=state.activeWorkspace;
-  const ws=sideWorkspace;
-  const stackMode = state.ui?.stackMode === 'stacked';
+  const active=state.activeWorkspace==='design'?'properties':state.activeWorkspace;
+  const ribbonOpen=ribbonIds.has(active)&&ribbonSuppressed!==active&&['model3d','materials','design2d'].includes(state.mainWorkspace||'model3d');
+  if(sideIds.has(active))sideWorkspace=active;
+  // Advanced tools have exactly one DOM owner, avoiding duplicate control IDs.
+  const ws=ribbonOpen&&ribbonIds.has(sideWorkspace)?'layers':sideWorkspace;
+  const stackMode = state.ui?.stackMode === 'stacked' && sideIds.has(ws);
   arrangeDockerTabs();
   const tabsEl = document.getElementById('workspaceTabs');
   const panelSelect = document.getElementById('inspectorPanelSelect');
   if (panelSelect) panelSelect.value = ws;
   const stackBtn = document.getElementById('btnToggleStackMode');
   if (tabsEl) tabsEl.classList.toggle('hidden', stackMode);
-  if (stackBtn) stackBtn.textContent = stackMode ? '⊟ Sekme Modu' : '⊞ Alt Alta Aç';
+  if (stackBtn) {stackBtn.textContent = stackMode ? '⊟ Sekme Modu' : '⊞ Alt Alta Aç';stackBtn.disabled=!sideIds.has(ws);}
+  const floatBtn=document.getElementById('btnFloatActiveDocker');if(floatBtn)floatBtn.disabled=!sideIds.has(ws);
 
   const floatIds = new Set(wsLayout.floating.filter(f=>sideIds.has(f.id)).map(f => f.id));
   document.querySelectorAll('#workspaceTabs button').forEach(b => {
@@ -1542,6 +1552,7 @@ function renderLightingWs(state) {
   const colorControls=(key,label)=>`<div class="field-row"><label>${label}</label><input type="color" data-light-color="${key}" value="${light[key]}" aria-label="${label}"></div><div class="swatches">${LIGHT_COLOR_PRESETS.map(c=>`<button type="button" class="sw ${light[key]===c.hex?'on':''}" style="--c:${c.hex}" data-light-key="${key}" data-lhex="${c.hex}" title="${c.label}"></button>`).join('')}</div>`;
 
   return `
+    <div class="lighting-column">
     <section class="sec">
       <h3 class="sec-title">Aydınlatma Modu</h3>
       <div class="grid-2">
@@ -1555,11 +1566,11 @@ function renderLightingWs(state) {
       </div>
     </section>
 
-    <section class="sec"><p style="font-size:12px;color:var(--muted);margin:0">${selection.length?selection.length+' seçili nesne · bağımsız ışık ayarı':'Nesne seçilmedi · proje varsayılanları'}${!enabled?' · Genel ışık kapalı':''}</p></section>
-    ${hasFront||hasHalo?`<section class="sec"><h3 class="sec-title">Işık Rengi &amp; Renk Sıcaklığı</h3>${hasFront?colorControls('frontColor','Ön ışık rengi'):''}${hasHalo?colorControls('backColor','Arka (Halo) rengi'):''}</section>`:''}
+    <p class="lighting-selection-note">${selection.length?selection.length+' seçili nesne · bağımsız ışık ayarı':'Nesne seçilmedi · proje varsayılanları'}${!enabled?' · Genel ışık kapalı':''}</p>
     ${hasFront ? `
     <section class="sec">
       <h3 class="sec-title">Ön Yüzey Işık Ayarları</h3>
+      ${colorControls('frontColor','Ön ışık rengi')}
       <div class="field-row">
         <label>Ön Yüz Işık Şiddeti</label>
         <input id="lFrontIntRange" type="range" min="0" max="3" step="0.1" value="${light.frontIntensity}">
@@ -1568,9 +1579,12 @@ function renderLightingWs(state) {
     </section>
     ` : ''}
 
+    </div>
     ${hasHalo ? `
+    <div class="lighting-column">
     <section class="sec">
       <h3 class="sec-title">Arka (Halo) Duvar Işığı Ayarları</h3>
+      ${colorControls('backColor','Arka ışık rengi')}
       <div class="field-row">
         <label>Arka Halo Şiddeti</label>
         <input id="lBackIntRange" type="range" min="0" max="3" step="0.1" value="${light.backIntensity}">
@@ -1590,6 +1604,7 @@ function renderLightingWs(state) {
         <input id="lFalloff" type="number" min="0.3" max="2.5" step="0.1" value="${light.falloff}">
       </div>
     </section>
+    </div>
     ` : ''}
   `;
 }
@@ -3575,10 +3590,12 @@ function bindExportDialog() {
 /* ---------------- Bootstrap ---------------- */
 function init() {
   if (!autosaved) applyDefaultPriceTemplate();
-  ribbonSuppressed=store.get().activeWorkspace;
+  sideWorkspace='layers';ribbonSuppressed='layers';
+  store.updateScoped([],s=>{s.activeWorkspace='layers';});
   bindRibbon();
   document.getElementById('btnFloatActiveDocker')?.addEventListener('click', () => {
     const active = sideWorkspace;
+    if(!sideIds.has(active))return;
     detachWorkspaceToFloat(active, Math.max(36, window.innerWidth - 670), 100);
   });
   document.getElementById('btnResetDockLayout')?.addEventListener('click', () => {
@@ -3587,10 +3604,14 @@ function init() {
     saveWsLayout(); renderActiveWorkspace();
   });
   document.getElementById('inspectorPanelSelect')?.addEventListener('change', e => {
-    const id = e.target.value;
-    restoreWorkspaceToTab(id);
-    store.update(s => { s.activeWorkspace = id; s.ui.stackMode = 'tabs'; });
-    renderActiveWorkspace();
+    const id=e.target.value;if(!inspectorIds.has(id))return;
+    // Close the ribbon before mounting the same controls in the inspector.
+    sideWorkspace=id;ribbonSuppressed=id;
+    wsLayout.floating=wsLayout.floating.filter(f=>f.id!==id);
+    for(const host of Object.keys(wsLayout.dockedUnder))wsLayout.dockedUnder[host]=(wsLayout.dockedUnder[host]||[]).filter(x=>x!==id);
+    saveWsLayout();
+    store.updateScoped(['ui'],s=>{s.activeWorkspace=id;s.ui.stackMode='tabs';});
+    renderActiveWorkspace();updateStageChrome(store.get());
   });
   document.getElementById('btnToggleStackMode')?.addEventListener('click', () => {
     store.update(s => { s.ui.stackMode = s.ui.stackMode === 'stacked' ? 'tabs' : 'stacked'; });

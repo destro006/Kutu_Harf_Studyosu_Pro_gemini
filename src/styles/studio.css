@@ -1561,3 +1561,31 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 @media(max-width:650px){.ribbon-panel-content.material-ribbon-content{grid-template-columns:1fr}}
 
 .align-rail-icon{display:inline-flex;font-style:normal;align-items:center;justify-content:center}.alignment-flyout{position:fixed;z-index:1000;width:154px;padding:8px;border:1px solid #576273;border-radius:8px;background:#19212c;box-shadow:0 8px 30px #0009;color:#e8e9ee}.alignment-flyout.hidden{display:none!important}.align-flyout-title{font-size:10px;color:#eac48a;font-weight:650;margin:4px 2px 6px}.align-icon-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}.align-icon-grid button{display:flex;align-items:center;justify-content:center;padding:3px;height:32px;min-width:0;background:#202b38;border:1px solid #384657;border-radius:4px;color:#dce3ed;cursor:pointer}.align-icon-grid button:hover:not(:disabled),.align-icon-grid button:focus-visible{border-color:#d4a664;background:#3b3023;color:#f3ce92}.align-icon-grid button:disabled{opacity:.35;cursor:not-allowed}.align-icon-grid+.align-flyout-title{border-top:1px solid #384657;padding-top:8px;margin-top:8px}
+
+/* The inspector-side palette occupies its own reserved strip inside the viewport.
+   This keeps the resizable inspector grid and the two top tool strips intact. */
+.viewport-col.has-vertical-palette{position:relative;padding-right:36px;box-sizing:border-box}
+#inspectorQuickColors.vertical-palette{position:absolute;top:0;bottom:0;right:0;width:36px;max-width:36px;display:flex;flex-direction:column;align-items:center;gap:3px;min-height:0;min-width:0;padding:5px 2px;background:#101720;border-left:1px solid var(--line);border-bottom:0;z-index:12;box-sizing:border-box}
+#inspectorQuickColors.vertical-palette.hidden{display:none!important}
+#inspectorQuickColors .quick-palette-label{font-size:9px;writing-mode:vertical-rl;transform:rotate(180deg);padding:3px 0;color:var(--muted);flex:none}
+#inspectorQuickColors .quick-palette-swatches{display:flex;flex-direction:column;align-items:center;flex:1 1 auto;width:100%;min-height:0;overflow-x:hidden;overflow-y:auto;gap:4px;padding:4px 1px;scrollbar-width:thin;overscroll-behavior:contain;box-sizing:border-box}
+#inspectorQuickColors .quick-palette-swatch{flex:0 0 23px;width:23px;height:23px;border-radius:3px}
+#inspectorQuickColors .quick-palette-swatch:focus-visible{outline:2px solid #eac48a;outline-offset:1px}
+.nesting-isolated .viewport-col.has-vertical-palette{padding-right:0}
+.nesting-isolated #inspectorQuickColors{display:none!important}
+/* Intrinsic-height cards; prevent grid shrink and swatches spilling into following cards. */
+.ribbon-panel-content{flex:1 1 auto;grid-auto-rows:max-content;align-items:start;box-sizing:border-box}
+.ribbon-panel-content *,#workspaceContent *{box-sizing:border-box}
+.ribbon-panel-content .sec{min-height:max-content;max-height:none;overflow:visible}
+.lighting-ribbon-content{grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))!important}
+.lighting-column{display:flex;flex-direction:column;gap:8px;min-width:0;align-self:start;height:max-content}
+.lighting-column>.sec{display:flex;flex-direction:column;gap:8px;min-height:max-content;margin:0;flex:none;min-width:0}
+.lighting-column .sec-title{margin:0 0 2px}
+.lighting-column .swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(27px,1fr));grid-auto-rows:28px;gap:6px;min-height:max-content;margin:0 0 8px}
+.lighting-column .field-row{display:flex;flex-wrap:wrap;gap:6px;min-height:max-content;margin:0}
+.lighting-column .field-row label{flex:1 1 100%}
+.lighting-column .field-row input[type=range]{flex:1 1 90px;min-width:0}
+.lighting-column .field-row input[type=number]{flex:0 0 64px;max-width:100%}
+.lighting-selection-note{font-size:11px;color:var(--muted);margin:0;padding:0 6px 4px;line-height:1.4}
+#workspaceContent .lighting-column,#workspaceContent .material-ribbon-column{margin-bottom:8px}
+@media(max-width:960px){.viewport-col.has-vertical-palette{padding-right:32px}#inspectorQuickColors.vertical-palette{width:32px;max-width:32px}}

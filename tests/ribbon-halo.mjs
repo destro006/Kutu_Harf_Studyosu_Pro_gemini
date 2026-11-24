@@ -20,3 +20,13 @@ assert(main.includes("btn.dataset.quickRal||'Özel Renk'"));
 assert(main.includes('</div><div class="material-ribbon-column">'));
 assert(css.includes('.material-ribbon-column{display:flex;flex-direction:column'));
 console.log('✓ Full RAL swatches integrated into quick palette; independent material panel stacks');
+
+assert(html.indexOf('value="layers" selected')<html.indexOf('value="objects"'));
+for(const id of ['properties','materials','lighting','manufacturing','align','background'])assert(html.includes('option value="'+id+'"'));
+assert(main.includes("let sideWorkspace='layers'"));
+assert(main.includes('sideWorkspace=id;ribbonSuppressed=id'));
+assert(html.indexOf('id="inspectorQuickColors"')>html.indexOf('id="pageTabsBar"'));
+assert(css.includes('#inspectorQuickColors .quick-palette-swatches{display:flex;flex-direction:column'));
+assert(main.includes('class="lighting-column"'));
+assert(css.includes('grid-auto-rows:max-content'));
+console.log('✓ Layers first, all categories accessible in inspector, vertical RAL strip and non-overlapping lighting layout');
