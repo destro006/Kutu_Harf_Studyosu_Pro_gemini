@@ -4,7 +4,7 @@ import {binaryDxfToText} from './BinaryDxfImport.js';
 import {importLegacyPostScript} from './LegacyPostScriptImport.js';
 import { importVectorText, groupRings } from './VectorFileImport.js';
 import { pdfOperatorRings } from './PdfVectorImport.js';
-import { optimizeNesting } from './NestingOptimizer.js';
+import { optimizeNesting } from './NestingOptimizer.js?v=pro3-ui2';
 import { runTrueShapeNesting, validateSheetLayout } from './NestingEngine.js';
 
 function processJob(job,onProgress=()=>{}){
@@ -48,6 +48,7 @@ function processJob(job,onProgress=()=>{}){
   // Small jobs receive a compact first layout instead of showing a shelf as final.
   const compactImport=job.operation!=='nest'&&imported.items.length<=60;
   const result=compactImport?optimizeNesting(imported.items,{...config,optimizationBudgetMs:3000},job.lockedSheets||[],onProgress):job.operation==='nest'&&!config.quickImport?optimizeNesting(imported.items,config,job.lockedSheets||[],onProgress):runTrueShapeNesting(imported.items,config,job.lockedSheets||[]);
+  if(!result.optimization)result.optimization={engineVersion:'3.0-pro',selectedEngine:'quick-baseline',attempts:1,proAttempts:0,proCompleted:0,nfpAttempts:0,elapsedMs:0};
   for(const sheet of result.sheets){
     const test=validateSheetLayout(sheet,result.minSep,config.allowHoleNesting!==false);
     if(!test.valid)throw Error('Nesting doğrulaması başarısız: kesim parçaları çakışıyor.');
@@ -69,7 +70,7 @@ if(typeof self!=='undefined'&&typeof self.addEventListener==='function'){
           self.postMessage({jobId:job.jobId,result:processJob({...job,operation:'nest',imported,nesting:{...job.nesting,quickImport:imported.items.length>60,optimizationBudgetMs:3000}})});return;
         }
       }
-      try{self.postMessage({jobId:job.jobId,result:processJob(job,p=>self.postMessage({jobId:job.jobId,status:'NFP optimizasyonu · '+p.attempts+' deneme · '+Math.min(99,Math.floor(100*p.elapsedMs/p.budgetMs))+'% zaman bütçesi'}))});}
+      try{self.postMessage({jobId:job.jobId,result:processJob(job,p=>self.postMessage({jobId:job.jobId,status:'Nesting v3 Pro · '+p.attempts+' deneme · '+Math.min(99,Math.floor(100*p.elapsedMs/p.budgetMs))+'% zaman bütçesi'}))});}
       catch(original){
         if(job.operation!=='importBinary'||!['postscript','eps-binary'].includes(detectVectorFormat(new Uint8Array(job.bytes),job.filename)))throw original;
         self.postMessage({jobId:job.jobId,status:'AI/EPS için gelişmiş yerel PostScript motoru yükleniyor…'});
