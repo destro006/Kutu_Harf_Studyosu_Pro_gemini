@@ -1,3 +1,4 @@
+import {formatDimensions} from '../core/units.js';
 import { formatMoney } from './CostEngine.js';
 
 /**
@@ -26,10 +27,10 @@ export function buildQuoteHtml(state, metrics, costs, previewDataUrl = null) {
     const linePrice=Number(l.sellAmount||0)*rate;
     return `<tr><td class="line-index">${index+1}</td><td><b>${p(l.label)}</b></td><td class="number">${num(l.quantity)}</td><td>${p(l.unit)}</td><td class="number">${formatMoney(unit,curr)}</td><td class="number"><b>${formatMoney(linePrice,curr)}</b></td></tr>`;
   }).join('');
-  const dimensions = `${num(activeMetrics.totalWidthMm)} × ${num(activeMetrics.totalHeightMm)} mm`;
+  const dimensions = formatDimensions(activeMetrics.totalWidthMm,activeMetrics.totalHeightMm,state.pageLayout?.displayUnit);
   const opts = [
     `${num(activeMetrics.componentCount)} harf/parça`,
-    `${num(activeMetrics.totalWidthMm)} × ${num(activeMetrics.totalHeightMm)} mm`,
+    formatDimensions(activeMetrics.totalWidthMm,activeMetrics.totalHeightMm,state.pageLayout?.displayUnit),
     `LED: ${num(activeMetrics.totalLedModules)} modül`,
   ];
   const styles = `
