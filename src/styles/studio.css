@@ -1419,3 +1419,14 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .export-secondary-btn{color:#c9d3df;border:1px solid #465469;background:#222b38}
 .export-primary-btn{color:#251709;border:1px solid #e5c08a;background:linear-gradient(110deg,#e6bc7b,#cf9550)}
 @media(max-width:850px){.quality-status{display:none}.export-open-btn kbd{display:none}.export-modal-head{padding:17px}.export-modal-body{padding:15px}.export-modal-foot{padding:15px}}
+
+/* Extended Corel/3D export: clear real-converter availability and source scope */
+.export-format-status{font-size:10px;color:#8fe6b3;letter-spacing:.2px}
+.export-format-help{margin:0;color:#cad5e2;font-size:11px;line-height:1.55;min-height:33px;border-left:2px solid #cda16c;padding:5px 10px;background:#202a35;border-radius:0 5px 5px 0}
+.export-format-help.export-format-unavailable{border-color:#e6a173;color:#f2c6a8}
+.export-control-disabled{opacity:.47;cursor:not-allowed!important}
+.export-converter-info{border:1px solid #425064;border-radius:8px;padding:8px 11px;font-size:11px;color:#bdc9d8}
+.export-converter-info summary{cursor:pointer;font-weight:600}
+.export-converter-info p{margin:9px 0 3px;line-height:1.55}
+#btnRunExport:disabled{opacity:.45;cursor:not-allowed}
+#exportDialog .export-modal-body{gap:14px}

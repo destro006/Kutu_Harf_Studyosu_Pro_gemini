@@ -256,20 +256,25 @@
       </div>
       <div class="export-modal-body">
         <label class="export-field"><span>Dosya biçimi</span>
-          <select id="exportFormat">
-            <option value="png">PNG · 3D Sunum</option>
-            <option value="transparentPng">PNG · Şeffaf Arka Plan</option>
-            <option value="svg">SVG · Vektörel Üretim (mm)</option>
-            <option value="dxf">DXF · CNC / Lazer (1:1 mm)</option>
-            <option value="json">JSON · Düzenlenebilir Proje</option>
+          <select id="exportFormat" aria-label="Dışa aktarılacak gerçek dosya biçimi">
+            <option value="pdf">PDF · Vektörel Üretim</option>
+          </select>
+          <small id="exportFormatStatus" class="export-format-status">Gerçek çıktı üretimi</small>
+        </label>
+        <label class="export-field"><span>Çalışma kaynağı</span>
+          <select id="exportSource">
+            <option value="design">Tasarım · 2D konturlar / 3D model</option>
+            <option value="nestingActive">Nesting · Aktif levha</option>
+            <option value="nestingAll">Nesting · Tüm levhalar</option>
           </select>
         </label>
+        <p id="exportFormatHelp" class="export-format-help" aria-live="polite">Dosyanın gerçek çıktı özellikleri burada gösterilir.</p>
         <div class="export-scope-box">
           <strong>Aktarılacak kapsam</strong>
           <label><input id="exportOnlySelected" type="checkbox"> <span>Yalnızca seçili nesneleri dışa aktar</span></label>
           <small id="exportSelectionCount">Seçili nesne: 0</small>
         </div>
-        <label id="exportResolutionRow" class="export-field"><span>PNG çıkış çözünürlüğü</span>
+        <label id="exportResolutionRow" class="export-field"><span>Görsel çıkış çözünürlüğü</span>
           <select id="exportResolution">
             <option value="1600x1000">1600 × 1000 · Hızlı</option>
             <option value="2400x1500" selected>2400 × 1500 · Yüksek</option>
@@ -277,7 +282,8 @@
             <option value="5120x3200">5120 × 3200 · Baskı/Sunum</option>
           </select>
         </label>
-        <p class="export-help">SVG ve DXF çizimleri milimetre esaslıdır. Seçili nesne aktarımı yalnızca seçtiğiniz katmanları içerir. PNG'de seçili nesneler şeffaf zemine aktarılır.</p>
+        <p class="export-help">2D kesim dosyaları milimetre esaslı gerçek konturlardır. STL, OBJ, PLY ve 3MF milimetre; GLB/glTF ise metre birimini kullanır. Seçili nesneler dışındaki 3D geometri dosyaya eklenmez.</p>
+        <details class="export-converter-info"><summary>CDR, AI, DWG, FBX, USDZ ve diğer özel biçimler</summary><p>Bu biçimler listede bulunur ancak yerel dönüştürücü olmadan etkin değildir. CorelDRAW için PDF/EPS/SVG; AutoCAD için DXF; Blender ve diğer 3D uygulamalar için GLB/OBJ/STL/3MF dosyasını açıp gerekli özel biçimde kaydedin.</p></details>
         <p id="exportDialogMessage" class="export-message" aria-live="polite"></p>
       </div>
       <div class="export-modal-foot">

@@ -31,6 +31,8 @@ import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js';
 import { renderNestingSvg } from './ui/NestingView.js';
 import { applySurfaceMaterialPreset, getDisplayedSurfaceMaterial } from './core/MaterialActions.js';
 import { getExportSelection } from './export/ExportScope.js';
+import { EXPORT_FORMAT_GROUPS, getExportFormat, formatSupportsSource } from './export/ExportFormatCatalog.js';
+import { runProfessionalExport } from './export/ProfessionalExportController.js';
 import {
   assignMaterialToSelected,
   deleteSelectedLayers,
@@ -2994,34 +2996,12 @@ function resetMaterialDefaults() {
  * Export panel routes all formats through one consistent scope.
  * Selected-only exports preserve the editing document and its global state.
  */
-function studioExport(format, selectedOnly = false, resolution = '2400x1500') {
-  const state = store.get();
-  const scope = getExportSelection(state, lastSceneResult?.metricsList || [], selectedOnly);
-  if (selectedOnly && !scope.objectCount) throw new Error('Önce en az bir görünür nesne seçin.');
-  const baseName = String(state.projectName || 'tabela').replace(/[\\/:*?"<>|]/g, '_');
-  const base = baseName + (selectedOnly ? '_secili' : '');
-  if (format === 'png' || format === 'transparentPng') {
-    if (!signEngine || signEngine.isDisposed) throw new Error('PNG için 3D WebGL görünümü etkin olmalıdır.');
-    const parts = resolution.split('x').map(Number);
-    const w = Number.isFinite(parts[0]) && parts[0] > 0 ? parts[0] : 2400;
-    const h = Number.isFinite(parts[1]) && parts[1] > 0 ? parts[1] : 1500;
-    const image = signEngine.capturePng(w, h, {transparent:format === 'transparentPng' || selectedOnly,selectedIds:scope.ids});
-    downloadDataUrl(base + (format === 'transparentPng' ? '_seffaf' : '') + '.png', image);
-  } else if (format === 'svg') {
-    if (!scope.metrics.length) throw new Error('SVG için çizilebilir nesne bulunamadı.');
-    downloadBlob(base + '.svg', generateManufacturingSvg(scope.metrics), 'image/svg+xml');
-  } else if (format === 'dxf') {
-    if (!scope.metrics.length) throw new Error('DXF için çizilebilir nesne bulunamadı.');
-    const {dxfText,cncWarning} = generateManufacturingDxf(scope.metrics);
-    downloadBlob(base + '.dxf', dxfText, 'application/dxf');
-    if (cncWarning) {
-      const warning = document.getElementById('stageWarning');
-      if (warning) {warning.textContent = cncWarning;warning.classList.remove('hidden');}
-    }
-  } else if (format === 'json') {
-    downloadBlob(base + '.khs.json', serializeProject(scope.state), 'application/json');
-  } else throw new Error('Desteklenmeyen dışa aktarma biçimi: ' + format);
-  return true;
+async function studioExport(format, selectedOnly = false, resolution = '2400x1500', source = 'design') {
+  return runProfessionalExport({
+    format,source,selectedOnly,resolution,state:store.get(),
+    metricsList:lastSceneResult?.metricsList || [],signEngine,activeSheetIdx,
+    confirmCnc:message=>window.confirm(message),
+  });
 }
 
 function openExportDialog() {
@@ -3033,37 +3013,103 @@ function openExportDialog() {
   const message=document.getElementById('exportDialogMessage');
   if (message) message.textContent='';
   modal.classList.remove('hidden');
+  updateProfessionalExportDialogState();
   document.getElementById('exportFormat')?.focus();
 }
 function closeExportDialog() {
   document.getElementById('exportDialog')?.classList.add('hidden');
 }
+function updateProfessionalExportDialogState() {
+  const formatEl=document.getElementById('exportFormat');
+  const sourceEl=document.getElementById('exportSource');
+  const selectedEl=document.getElementById('exportOnlySelected');
+  const format=formatEl?.value;
+  const meta=getExportFormat(format);
+  if(!meta) return;
+  const source=sourceEl?.value || 'design';
+  const supported=meta.ready && formatSupportsSource(format,source);
+  const label=document.getElementById('exportFormatHelp');
+  if(label) {
+    const base=meta.info || (meta.ready ? 'Gerçek dosya üretimi desteklenir.' : 'Bu biçim harici lisanslı dönüştürücü veya uygulama gerektirir.');
+    label.textContent=base + (!meta.ready && meta.alt ? ' Önerilen çıktı: '+meta.alt.toUpperCase()+'.' : '') +
+      (meta.ready && !supported ? ' Seçilen kaynak ile uyumlu değil; Tasarım veya Nesting kaynağını değiştirin.' : '');
+    label.classList.toggle('export-format-unavailable',!supported);
+  }
+  const run=document.getElementById('btnRunExport');
+  if(run) {
+    run.disabled=!supported;
+    run.title=!supported ? (meta.ready?'Bu kaynak ile kullanılamaz.':'Gerçek dönüştürücü desteklenmiyor.'):'Dosyayı üret';
+  }
+  const isRaster=meta.kind==='raster';
+  document.getElementById('exportResolutionRow')?.classList.toggle('hidden',!isRaster);
+  if(selectedEl) {
+    selectedEl.disabled=source!=='design';
+    selectedEl.closest('label')?.classList.toggle('export-control-disabled',source!=='design');
+  }
+  const formatStatus=document.getElementById('exportFormatStatus');
+  if(formatStatus)formatStatus.textContent=meta.ready?(supported?'● Gerçek çıktı üretimi':'● Kaynak uyumsuz'):'● Dönüştürücü gerekli';
+  const count=(store.get().objects||[]).filter(o=>(store.get().selectedIds||[]).includes(o.id)&&o.visible!==false).length;
+  const selectedCount=document.getElementById('exportSelectionCount');
+  if(selectedCount)selectedCount.textContent='Seçili nesne: '+count+(source!=='design'?' · Nesting kaynağı kullanılıyor':'');
+}
 function bindExportDialog() {
   const modal=document.getElementById('exportDialog');
-  if (!modal) return;
+  if(!modal)return;
+  const formatEl=document.getElementById('exportFormat');
+  // Populate from a single versioned format catalogue, with honest converter statuses.
+  if(formatEl) {
+    formatEl.replaceChildren();
+    for(const group of EXPORT_FORMAT_GROUPS) {
+      const optGroup=document.createElement('optgroup');
+      optGroup.label=group.label;
+      for(const item of group.items) {
+        const opt=document.createElement('option');
+        opt.value=item.id;opt.textContent=item.label;
+        if(!item.ready) opt.dataset.converterRequired='true';
+        optGroup.appendChild(opt);
+      }
+      formatEl.appendChild(optGroup);
+    }
+    formatEl.value='pdf';
+  }
+  const sourceEl=document.getElementById('exportSource');
+  if(sourceEl)sourceEl.value='design';
   document.getElementById('btnOpenExport')?.addEventListener('click',openExportDialog);
   document.getElementById('btnCloseExport')?.addEventListener('click',closeExportDialog);
   document.getElementById('btnCancelExport')?.addEventListener('click',closeExportDialog);
   modal.addEventListener('click',e=>{if(e.target===modal)closeExportDialog();});
-  document.getElementById('exportFormat')?.addEventListener('change',e=>{
-    document.getElementById('exportResolutionRow')?.classList.toggle('hidden', !['png','transparentPng'].includes(e.target.value));
-  });
-  document.getElementById('btnRunExport')?.addEventListener('click',()=>{
+  formatEl?.addEventListener('change',updateProfessionalExportDialogState);
+  sourceEl?.addEventListener('change',updateProfessionalExportDialogState);
+  document.getElementById('exportOnlySelected')?.addEventListener('change',updateProfessionalExportDialogState);
+  document.getElementById('btnRunExport')?.addEventListener('click',async()=>{
     const message=document.getElementById('exportDialogMessage');
+    const button=document.getElementById('btnRunExport');
+    const format=formatEl?.value;
+    const meta=getExportFormat(format);
+    if(!meta?.ready) {
+      if(message)message.textContent='Bu format harici dönüştürücü gerektirir. '+(meta?.alt || 'PDF')+' kullanın.';
+      return;
+    }
+    if(button) {button.disabled=true;button.textContent='Dosya hazırlanıyor…';}
     try {
-      const format=document.getElementById('exportFormat').value;
-      const selected=document.getElementById('exportOnlySelected').checked;
-      const size=document.getElementById('exportResolution').value;
-      studioExport(format,selected,size);
+      await studioExport(format,
+        document.getElementById('exportOnlySelected')?.checked && sourceEl.value==='design',
+        document.getElementById('exportResolution')?.value || '2400x1500',
+        sourceEl?.value || 'design');
       closeExportDialog();
-    }catch(error){if(message)message.textContent=error.message||'Dışa aktarma başarısız.';}
+    } catch(error) {
+      if(message)message.textContent=error?.message||'Dışa aktarma başarısız.';
+    } finally {
+      if(button){button.textContent='Dosyayı Dışa Aktar';}
+      updateProfessionalExportDialogState();
+    }
   });
-  // Dialog Escape does not reset the CAD selection/tool.
   window.addEventListener('keydown',e=>{
-    if (e.key==='Escape' && !modal.classList.contains('hidden')) {
+    if(e.key==='Escape' && !modal.classList.contains('hidden')) {
       e.preventDefault();e.stopImmediatePropagation();closeExportDialog();
     }
   },true);
+  updateProfessionalExportDialogState();
 }
 
 /* ---------------- Bootstrap ---------------- */
