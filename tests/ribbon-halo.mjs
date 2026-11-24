@@ -12,3 +12,11 @@ assert.equal((html.match(/id="inspectorQuickColors"/g)||[]).length,1);
 assert(!engine.includes('new THREE.PointLight('));
 for(const night of [true,false]){const group=buildSceneLights(night,{w:3,h:.4});group.traverse(o=>assert(!o.isPointLight&&!o.isSpotLight));}
 console.log('✓ Two-row contextual bar, unique ribbon category controls and no circular point/spot halo lights');
+const main=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
+assert(!main.includes('btnOpenRalPalette'));
+assert(!main.includes('Tüm RAL'));
+assert(main.includes('...RAL_COLORS.map(c=>'));
+assert(main.includes("btn.dataset.quickRal||'Özel Renk'"));
+assert(main.includes('</div><div class="material-ribbon-column">'));
+assert(css.includes('.material-ribbon-column{display:flex;flex-direction:column'));
+console.log('✓ Full RAL swatches integrated into quick palette; independent material panel stacks');

@@ -974,24 +974,24 @@ function renderFloatingWindows(state) {
 }
 
 function renderQuickPalette(state) {
-  const host = document.getElementById('inspectorQuickColors');
-  if (!host) return;
-  const selected = state.objects.find(o => (state.selectedIds || []).includes(o.id));
-  const current = (selected?.faceColor || state.materials.faceColor || '').toLowerCase();
-  const basicColors = PAINT_PALETTE.slice(0, 12);
-  host.innerHTML = `<span class="quick-palette-label">Renkler</span><div class="quick-palette-swatches">${basicColors.map(c => `
-    <button type="button" class="quick-palette-swatch ${current === c.hex.toLowerCase() ? 'on' : ''}" data-quick-hex="${c.hex}" title="${c.label}" style="--color:${c.hex}"></button>
-  `).join('')}</div><button type="button" class="quick-palette-more" id="btnOpenRalPalette" title="213 RAL Classic ve tüm renk seçenekleri">Tüm RAL ▸</button>`;
-}
-function openMaterialPalette() {
-  ribbonSuppressed=null;
-  restoreWorkspaceToTab('materials');
-  matColorTab = 'ral';
-  store.update(s => { s.activeWorkspace = 'materials'; s.ui.stackMode = 'tabs'; });
-  renderActiveWorkspace();
-  const search = document.getElementById('ralSearchInput');
-  search?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  document.getElementById('inspectorCol')?.classList.add('mobile-open');
+  const host=document.getElementById('inspectorQuickColors');if(!host)return;
+  const selected=state.objects.find(o=>(state.selectedIds||[]).includes(o.id));
+  const fileli=(selected?.constructionType||state.constructionType)==='fileli';
+  const current=(fileli?(selected?.fileColor||state.fileli.fileColor):(selected?.faceColor||state.materials.faceColor)||'').toLowerCase();
+  const code=selected?.ralCode||state.materials.ralCode||'';
+  // Build the full strip once; selection changes never reset the scroll position.
+  if(!host.querySelector('.quick-palette-swatches')){
+    const basic=PAINT_PALETTE.slice(0,12).map(c=>({...c,code:''}));
+    const colors=[...basic,...RAL_COLORS.map(c=>({...c,label:c.code+' · '+c.name}))];
+    host.innerHTML='<span class="quick-palette-label">Renkler</span><div class="quick-palette-swatches" tabindex="0" aria-label="Renk paleti; kaydırarak diğer renklere ulaşın">'+colors.map(c=>`<button type="button" class="quick-palette-swatch" data-quick-hex="${c.hex}" data-quick-ral="${escapeAttr(c.code)}" aria-label="${escapeAttr(c.label)}" title="${escapeAttr(c.label)}" style="--color:${c.hex}"></button>`).join('')+'</div>';
+    const strip=host.querySelector('.quick-palette-swatches');
+    strip.addEventListener('wheel',e=>{if(!e.ctrlKey&&Math.abs(e.deltaY)>Math.abs(e.deltaX)&&strip.scrollWidth>strip.clientWidth){e.preventDefault();strip.scrollLeft+=e.deltaY*(e.deltaMode===1?16:1);}}, {passive:false});
+  }
+  const key=current+'|'+code;if(host.dataset.paletteSelection===key)return;host.dataset.paletteSelection=key;
+  for(const button of host.querySelectorAll('[data-quick-hex]')){
+    const on=code.startsWith('RAL ')?button.dataset.quickRal===code:!button.dataset.quickRal&&button.dataset.quickHex.toLowerCase()===current;
+    button.classList.toggle('on',on);button.setAttribute('aria-pressed',String(on));
+  }
 }
 
 const ribbonIds=new Set(['properties','materials','lighting','manufacturing','align','background']);
@@ -1014,6 +1014,7 @@ function renderRibbon(state){
   if(!root._ribbonFocusBound){root._ribbonFocusBound=true;root.addEventListener('focusout',()=>setTimeout(()=>{if(root.dataset.pendingRefresh==='1'&&!root.contains(document.activeElement))renderRibbon(store.get());},0));}
   if(root.dataset.ribbonKey===key&&root.contains(document.activeElement)&&/^(INPUT|SELECT|TEXTAREA)$/i.test(document.activeElement?.tagName||'')){root.dataset.pendingRefresh='1';return;}
   root.dataset.ribbonKey=key;root.dataset.pendingRefresh='0';
+  root.classList.toggle('material-ribbon-content',ws==='materials');
   const html=meta.fn(state);if(root._ribbonHtml===html&&root.childElementCount)return;
   root._ribbonHtml=html;const scroll=root.scrollTop;root.innerHTML=html;bindWorkspaceEvents(ws,root);root.scrollTop=scroll;
 }
@@ -1374,6 +1375,7 @@ function renderMaterialsWs(state) {
   const ralPaintActive = displayedMetalId === 'boyaliAluminyum' && Boolean(obj?.ralCode || state.materials.ralCode);
 
   return `
+    <div class="material-ribbon-column">
     <section class="sec">
       <h3 class="sec-title">Ön Yüzey / File Materyali</h3>
       <div class="material-selection-status" aria-live="polite">✓ ${escapeHtml(facePreset.shortLabel || facePreset.label || displayedMetalId)} · ${(state.selectedIds || []).length ? (state.selectedIds || []).length + ' seçili nesne' : 'Seçim yok: tüm kilitsiz nesneler'}</div>
@@ -1450,6 +1452,7 @@ function renderMaterialsWs(state) {
       })()}
     </section>
 
+    </div><div class="material-ribbon-column">
     <section class="sec">
       <h3 class="sec-title">Yan Bant (Dönüş) &amp; File Çerçeve</h3>
       <div class="field-row">
@@ -1508,6 +1511,7 @@ function renderMaterialsWs(state) {
         <input id="customEnvUpload" type="file" accept=".hdr,image/png,image/jpeg,image/webp" class="hidden">
       </label>
     </section>
+    </div>
   `;
 }
 
@@ -3583,12 +3587,11 @@ function init() {
     if (w) { w.textContent = 'Renk, materyal ve aydınlatma ayarlarınız varsayılan olarak kaydedildi.'; w.classList.remove('hidden'); setTimeout(() => w.classList.add('hidden'), 2500); }
   });
   document.getElementById('inspectorQuickColors')?.addEventListener('click', e => {
-    if (e.target.closest('#btnOpenRalPalette')) { openMaterialPalette(); return; }
     const btn = e.target.closest('[data-quick-hex]');
     if (!btn) return;
     const color = btn.dataset.quickHex;
     mutate('Hızlı renk paleti', s => {
-      applyRalCoating(s, color, 'face', 'Özel Renk');
+      applyRalCoating(s,color,'face',btn.dataset.quickRal||'Özel Renk');
     });
     renderQuickPalette(store.get());
   });

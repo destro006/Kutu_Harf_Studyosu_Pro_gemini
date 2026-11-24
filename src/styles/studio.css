@@ -1545,3 +1545,17 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 #studioRibbon .inspector-quick-colors{flex:1 1 245px;min-width:120px;max-width:360px;flex-wrap:nowrap;white-space:nowrap;padding:3px 6px}
 #studioRibbon .quick-palette-swatches{min-width:0;flex:1 1 auto}
 @media(max-width:720px){#studioRibbon .inspector-quick-colors{flex-basis:105px;min-width:90px}#studioRibbon .quick-palette-label{display:none}}
+
+/* Independent stacks: short cards never stretch to match a tall neighbour. */
+.ribbon-panel-content{align-items:start}
+.ribbon-panel-content>.sec{align-self:start;height:auto;min-height:0}
+.ribbon-panel-content.material-ribbon-content{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+.material-ribbon-column{display:flex;flex-direction:column;align-items:stretch;gap:7px;min-width:0}
+.material-ribbon-column>.sec{margin:0;min-width:0;height:auto;min-height:0}
+.material-ribbon-column .mat-grid{gap:5px}
+.material-ribbon-column .mat-btn{padding:5px;min-height:50px}
+.material-ribbon-column .ral-grid{max-height:230px;overflow-y:auto;overscroll-behavior:contain}
+#studioRibbon .quick-palette-swatches{scrollbar-width:thin;scrollbar-color:#566479 transparent;overscroll-behavior-x:contain}
+#studioRibbon .quick-palette-swatch{flex:0 0 20px;width:20px;height:20px}
+#studioRibbon .quick-palette-swatch:focus-visible{outline:2px solid #eac48a;outline-offset:1px}
+@media(max-width:650px){.ribbon-panel-content.material-ribbon-content{grid-template-columns:1fr}}
