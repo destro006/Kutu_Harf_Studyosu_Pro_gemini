@@ -16,7 +16,7 @@ export function betterNesting(a,b,strategy='compact'){
  for(let i=0;i<x.length;i++)if(Math.abs(x[i]-y[i])>1e-4)return x[i]<y[i];return false;
 }
 export function optimizeNesting(items,config={},locked=[],onProgress=()=>{}){
- const start=performance.now(),budget=Math.max(500,Math.min(120000,Number(config.optimizationBudgetMs)||7000)),end=start+budget;
+ const start=performance.now(),budget=Math.max(500,Math.min(120000,Number(config.optimizationBudgetMs)||3000)),end=start+budget;
  const strategy=config.placementStrategy||'compact';
  let best=null,attempts=0,nfpAttempts=0,proAttempts=0,proCompleted=0,selectedEngine='baseline';
  const sep=Math.max(.5,(config.clearanceMm??5)+(config.kerfMm??.4));
