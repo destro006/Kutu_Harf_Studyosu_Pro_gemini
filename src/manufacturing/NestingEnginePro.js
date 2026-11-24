@@ -4,7 +4,7 @@
  * time budget, per-material batches and safe locked placement preservation.
  * The worker retains the fast baseline and independently validates candidates.
  */
-import {polygonBounds,pointInPolygon,segmentsIntersect,minDistanceBetweenPolygons} from '../geometry/PolygonOffset.js';
+import {polygonBounds,pointInPolygon,segmentsIntersect} from '../geometry/PolygonOffset.js';
 import {rotatePolygon,translatePolygon,validateSheetLayout,ringLength,refreshNestingSheet} from './NestingEngine.js';
 
 const check=(deadline)=>{if(performance.now()>=deadline)throw new Error('PRO_BUDGET');};
@@ -53,7 +53,18 @@ function fitsInsideHole(outer,dx,dy,hole,hb,w,h,sep,deadline){
   check(deadline);
   for(let j=0;j<hole.length;j++)if(segmentsIntersect(ring[i],ring[(i+1)%ring.length],hole[j],hole[(j+1)%hole.length],false))return false;
  }
- return minDistanceBetweenPolygons(ring,hole)>=sep-1e-7;
+ // The generic polygon distance reports containment as an intersection.
+ // Here measure boundary clearance instead, as in the supplied v3 Pro.
+ const edgeDistance2=(p,a,b)=>{
+  const x=b.x-a.x,y=b.y-a.y,len=x*x+y*y||1e-9;
+  const t=Math.max(0,Math.min(1,((p.x-a.x)*x+(p.y-a.y)*y)/len));
+  return (p.x-a.x-t*x)**2+(p.y-a.y-t*y)**2;
+ };
+ for(const [a,b] of [[ring,hole],[hole,ring]])for(const p of a){
+  check(deadline);
+  for(let j=0;j<b.length;j++)if(edgeDistance2(p,b[j],b[(j+1)%b.length])<sep*sep-1e-7)return false;
+ }
+ return true;
 }
 
 // v3 Pro contact candidates + 16/4/1/.5 mm continuous sliding.
