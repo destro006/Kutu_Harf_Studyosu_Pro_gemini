@@ -32,15 +32,15 @@ export function displayToMm(value,unit='mm') {
   const n=Number(String(value).trim().replace(',','.'));
   return Number.isFinite(n)?n*FACTORS[normalizeDisplayUnit(unit)]:NaN;
 }
-export function formatMmAsUnit(mm,unit='mm') {
+export function formatMmAsUnit(mm,unit='mm',precision=6) {
   const v=mmToDisplay(mm,unit);
   if(!Number.isFinite(v))return '';
-  return String(Number(v.toFixed(6)));
+  return String(Number(v.toFixed(precision)));
 }
 
 /** Format physical dimensions without changing canonical millimeter geometry. */
-export function formatDimensions(w,h,unit='mm'){
- const u=normalizeDisplayUnit(unit);return formatMmAsUnit(w,u)+' × '+formatMmAsUnit(h,u)+' '+u;
+export function formatDimensions(w,h,unit='mm',precision=6){
+ const u=normalizeDisplayUnit(unit);return formatMmAsUnit(w,u,precision)+' × '+formatMmAsUnit(h,u,precision)+' '+u;
 }
 export function formatPresetLabel(p,unit='mm'){
  if(p.id==='custom')return p.label;
@@ -50,5 +50,5 @@ export function formatPresetLabel(p,unit='mm'){
 }
 export function formatAreaM2(area,unit='mm'){
  const u=normalizeDisplayUnit(unit),factor=FACTORS[u];
- return String(Number((Number(area)*1e6/(factor*factor)).toFixed(6)))+' '+u+'²';
+ return String(Number((Number(area)*1e6/(factor*factor)).toFixed(2)))+' '+u+'²';
 }
