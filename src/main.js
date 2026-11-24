@@ -1941,8 +1941,8 @@ function bindWorkspaceEvents(ws, root) {
     const bindN = (id, key) => root.querySelector('#' + id)?.addEventListener('change', e => {
       store.update(s => { s.nesting[key] = Number(e.target.value); });
     });
-    bindN('nestW', 'sheetWidthMm');
-    bindN('nestH', 'sheetHeightMm');
+    root.querySelector('#nestW')?.addEventListener('change', e => applyNestingSheetSize(e.target.value, store.get().nesting.sheetHeightMm));
+    root.querySelector('#nestH')?.addEventListener('change', e => applyNestingSheetSize(store.get().nesting.sheetWidthMm, e.target.value));
     bindN('nestMargin', 'marginMm');
     bindN('nestClear', 'clearanceMm');
     bindN('nestKerf', 'kerfMm');
@@ -1950,10 +1950,7 @@ function bindWorkspaceEvents(ws, root) {
     root.querySelector('#nestAngleStep')?.addEventListener('change', e => store.update(s => { s.nesting.fineAngleStep = Number(e.target.value); }));
     root.querySelector('#nestPreset')?.addEventListener('change', e => {
       const p = SHEET_PRESETS.find(x => x.id === e.target.value);
-      if (p) {
-        store.update(s => { s.nesting.sheetWidthMm = p.w; s.nesting.sheetHeightMm = p.h; });
-        renderActiveWorkspace();
-      }
+      if (p) applyNestingSheetSize(p.w, p.h, p.id);
     });
     root.querySelector('#nestHole')?.addEventListener('change', e => store.update(s => { s.nesting.allowHoleNesting = e.target.checked; }));
     root.querySelector('#nestGroupMat')?.addEventListener('change', e => store.update(s => { s.nesting.groupByMaterial = e.target.checked; }));
@@ -2474,7 +2471,7 @@ function setMainWorkspace(ws) {
 function syncNestingSettingsControls(sidebar, nesting) {
   if (!sidebar) return;
   const values = {
-    cwsNestPreset: nesting.presetId,
+    cwsNestPreset: SHEET_PRESETS.find(p => p.w === nesting.sheetWidthMm && p.h === nesting.sheetHeightMm)?.id || 'custom',
     cwsNestW: nesting.sheetWidthMm,
     cwsNestH: nesting.sheetHeightMm,
     cwsNestSp: nesting.spacingMm,
@@ -2526,6 +2523,27 @@ function updateCenterWorkspaces(state) {
       bindCostCenterEvents(el);
     }
   }
+}
+
+// Sheet-size edits must update the actual CAM layout rather than just the form.
+function applyNestingSheetSize(width, height, presetId = 'custom') {
+  const w = Number(width), h = Number(height);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w < 200 || h < 200) return;
+  const previous = store.get();
+  const config = { ...previous.nesting, sheetWidthMm: w, sheetHeightMm: h, presetId };
+  const items = extractNestingItems(lastSceneResult.metricsList || [], { ...previous, nesting: config });
+  const result = runTrueShapeNesting(items, config);
+  lastNesting = result;
+  activeSheetIdx = 0;
+  selectedNestingId = null;
+  mutate('Levha ebatı ve yerleşimi', st => {
+    st.nesting.sheetWidthMm = w;
+    st.nesting.sheetHeightMm = h;
+    st.nesting.presetId = presetId;
+    st.nesting.sheets = result.sheets;
+    st.nesting.unplaced = result.unplaced;
+  }, false);
+  updateCenterWorkspaces(store.get());
 }
 
 function runAutoNesting() {
@@ -2598,11 +2616,11 @@ function bindNestingCenterEvents(root) {
     nestingSettings.dataset.nestingEventsBound = 'true';
     root.querySelector('#cwsNestPreset')?.addEventListener('change', e => {
       const p = SHEET_PRESETS.find(x => x.id === e.target.value);
-      if (p) mutate('Levha önayarı', s => { s.nesting.presetId = p.id; s.nesting.sheetWidthMm = p.w; s.nesting.sheetHeightMm = p.h; });
+      if (p) applyNestingSheetSize(p.w, p.h, p.id);
     });
   const bindNum = (id, fn) => root.querySelector('#' + id)?.addEventListener('change', e => mutate('Nesting ayarı', s => fn(s.nesting, Number(e.target.value))));
-  bindNum('cwsNestW', (n, v) => { n.sheetWidthMm = Math.max(200, v); });
-  bindNum('cwsNestH', (n, v) => { n.sheetHeightMm = Math.max(200, v); });
+  root.querySelector('#cwsNestW')?.addEventListener('change', e => applyNestingSheetSize(e.target.value, store.get().nesting.sheetHeightMm));
+  root.querySelector('#cwsNestH')?.addEventListener('change', e => applyNestingSheetSize(store.get().nesting.sheetWidthMm, e.target.value));
   bindNum('cwsNestSp', (n, v) => { n.spacingMm = Math.max(0, v); });
   bindNum('cwsNestMg', (n, v) => { n.marginLeftMm = n.marginRightMm = n.marginTopMm = n.marginBottomMm = Math.max(0, v); });
   root.querySelector('#cwsNestHoles')?.addEventListener('change', e => mutate('Delik içi', s => { s.nesting.allowHoleNesting = e.target.checked; }));

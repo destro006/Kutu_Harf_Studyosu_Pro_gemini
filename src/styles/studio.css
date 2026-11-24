@@ -1234,3 +1234,28 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .quick-palette-swatch.on { border-color:#fff; box-shadow:0 0 0 2px #d4a66f; }
 .quick-palette-more { flex:0 0 auto; background:rgba(233,185,119,.13); color:#f0cd9f; border:1px solid rgba(233,185,119,.38); border-radius:6px; padding:5px 6px; font-size:11px; cursor:pointer; white-space:nowrap; }
 @media(max-width:960px) {.inspector-quick-colors { gap:5px; } .quick-palette-swatch { flex-basis:24px; width:24px; height:24px; }}
+
+/* Nesting sheet-fit: show the entire physical sheet at its true aspect ratio. */
+#nestingCenterWrap .center-ws-grid { min-height: 0; }
+#nestingCenterWrap .cws-main { min-width: 0; min-height: 0; overflow: hidden; }
+#nestingCenterWrap .nesting-sheet-fit {
+  flex: 1 1 0; min-height: 0; min-width: 0; width: 100%;
+  display: flex; align-items: center; justify-content: center;
+  position: relative; padding: 14px; overflow: hidden;
+}
+#nestingCenterWrap .nesting-sheet-svg {
+  display: block; width: 100%; height: 100%; max-width: 100%; max-height: 100%;
+  min-width: 0; min-height: 0; flex: 0 1 auto;
+  background: #0d0f13; border: 1px solid #465366; border-radius: 5px;
+}
+#nestingCenterWrap .nesting-sheet-dimensions {
+  position: absolute; left: 20px; bottom: 17px; padding: 4px 8px;
+  color: #d4dee9; background: rgba(11, 15, 20, .86);
+  border: 1px solid #465366; border-radius: 5px; font-size: 11px; pointer-events: none;
+}
+#nestingCenterWrap .nesting-sheet-empty-note {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  color: #b5bfca; background: rgba(11, 15, 20, .9); padding: 10px 16px;
+  border: 1px solid #465366; border-radius: 7px; font-size: 12px;
+  white-space: normal; text-align: center; pointer-events: none;
+}

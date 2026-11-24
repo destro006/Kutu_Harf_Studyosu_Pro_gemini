@@ -16,6 +16,14 @@ export function renderNestingCenter(state, ctx) {
   const sheets = n.sheets || [];
   const activeIdx = Math.min(Math.max(0, ctx.activeSheetIdx || 0), Math.max(0, sheets.length - 1));
   const activeSheet = sheets[activeIdx] || null;
+  const displayedSheet = activeSheet || {
+    widthMm: n.sheetWidthMm || 3000, heightMm: n.sheetHeightMm || 1500,
+    marginLeftMm: n.marginLeftMm ?? n.marginMm ?? 15,
+    marginRightMm: n.marginRightMm ?? n.marginMm ?? 15,
+    marginTopMm: n.marginTopMm ?? n.marginMm ?? 15,
+    marginBottomMm: n.marginBottomMm ?? n.marginMm ?? 15, placements: [],
+  };
+  const presetId = SHEET_PRESETS.find(p => p.w === n.sheetWidthMm && p.h === n.sheetHeightMm)?.id || 'custom';
   const totalParts = sheets.reduce((a, sh) => a + sh.placements.length, 0);
   const avgUtil = sheets.length ? sheets.reduce((a, sh) => a + (sh.utilizationPct ?? sh.utilization ?? 0), 0) / sheets.length : 0;
   const totalCutLenMm = sheets.reduce((a, sh) => a + sh.placements.reduce((s, p) => s + (p.bounds ? (p.bounds.width + p.bounds.height) * 2 : 0), 0), 0);
@@ -59,8 +67,10 @@ export function renderNestingCenter(state, ctx) {
             <button type="button" id="cwsReoptUnlocked" class="sec-btn">Kilitsizleri Optimize Et</button>
           </div>
         </div>
-        <div id="cwsNestSvgBox" style="flex:1;min-height:280px">
-          ${activeSheet ? renderNestingSvg(activeSheet, ctx.selectedPlacementId) : '<div style="padding:40px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:8px">Gerçek şekil plaka yerleşimini görmek için "Otomatik Yerleştir" butonuna tıklayın.</div>'}
+        <div id="cwsNestSvgBox" class="nesting-sheet-fit">
+          ${renderNestingSvg(displayedSheet, ctx.selectedPlacementId)}
+          <span class="nesting-sheet-dimensions">${displayedSheet.widthMm} × ${displayedSheet.heightMm} mm</span>
+          ${!activeSheet ? '<span class="nesting-sheet-empty-note">Parçaları yerleştirmek için Otomatik Yerleştir seçin</span>' : ''}
         </div>
       </div>
 
@@ -70,7 +80,8 @@ export function renderNestingCenter(state, ctx) {
         <div class="field-row">
           <label>Plaka Önayarı</label>
           <select id="cwsNestPreset">
-            ${SHEET_PRESETS.map(p => `<option value="${p.id}" ${n.presetId === p.id ? 'selected' : ''}>${p.label}</option>`).join('')}
+            ${SHEET_PRESETS.map(p => `<option value="${p.id}" ${presetId === p.id ? 'selected' : ''}>${p.label}</option>`).join('')}
+            <option value="custom" ${presetId === 'custom' ? 'selected' : ''}>Özel Ölçü</option>
           </select>
         </div>
         <div class="field-row"><label>Levha Genişliği (mm)</label><input id="cwsNestW" type="number" value="${n.sheetWidthMm}"></div>

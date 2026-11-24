@@ -34,7 +34,7 @@ export function renderNestingSvg(sheet, selectedPlacementId = null) {
     })
     .join('\n');
 
-  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;background:#0d0f13;border:1px solid #2a2e37;border-radius:8px;display:block">
+  return `<svg class="nesting-sheet-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${w} × ${h} mm nesting levhası">
     <rect x="0" y="0" width="${w}" height="${h}" fill="#12151b" />
     <rect x="${mL}" y="${mT}" width="${Math.max(10, w - mL - mR)}" height="${Math.max(10, h - mT - mB)}" fill="none" stroke="#334155" stroke-dasharray="10 8" stroke-width="2" />
     ${polysSvg}
