@@ -1,7 +1,8 @@
-import { renderDetailedCostCenter } from './CostCenterView.js';
+import {normalizeDisplayUnit,formatMmAsUnit,formatDimensions,formatPresetLabel} from '../core/units.js';
+import { renderDetailedCostCenter } from './CostCenterView.js?v=units6';
 import { ringLength, SHEET_PRESETS } from '../manufacturing/NestingEngine.js';
-import { renderNestingSvg } from './NestingView.js?v=pro3-multi4';
-import { renderNestingSourceTabs, renderNestingImportPane } from './NestingImportView.js';
+import { renderNestingSvg } from './NestingView.js?v=units6';
+import { renderNestingSourceTabs, renderNestingImportPane } from './NestingImportView.js?v=units6';
 import { MACHINE_PROFILES, validateNestedProduction } from '../export/CncGcodeExporter.js';
 import { formatMoney } from '../manufacturing/CostEngine.js';
 import { buildQuoteHtml } from '../manufacturing/QuoteGenerator.js';
@@ -17,8 +18,9 @@ const ringLengths=new WeakMap();
 function cachedRingLength(ring){if(Object.isFrozen(ring)){if(ringLengths.has(ring))return ringLengths.get(ring);const n=ringLength(ring);ringLengths.set(ring,n);return n;}return ringLength(ring);}
 export function renderNestingCenter(state, ctx) {
   const n = state.nesting;
+  const unit=normalizeDisplayUnit(state.pageLayout?.displayUnit),show=mm=>formatMmAsUnit(mm,unit);
   if ((n.activeTabId || 'design') === 'import') {
-    return `<div class="nesting-workspace" data-nesting-tab="import">${renderNestingSourceTabs(n)}${renderNestingImportPane()}</div>`;
+    return `<div class="nesting-workspace" data-nesting-tab="import">${renderNestingSourceTabs(n)}${renderNestingImportPane(unit)}</div>`;
   }
   const sheets = n.sheets || [];
   const activeIdx = Math.min(Math.max(0, ctx.activeSheetIdx || 0), Math.max(0, sheets.length - 1));
@@ -38,7 +40,7 @@ export function renderNestingCenter(state, ctx) {
   const totalCutLenMm = sheets.reduce((a, sh) => a + sh.placements.reduce((s, p) => s + (cachedRingLength(p.outer)+(p.holes||[]).reduce((a,h)=>a+cachedRingLength(h),0)), 0), 0);
 
   return `
-    <div class="nesting-workspace" data-nesting-tab="${n.activeTabId || 'design'}">
+    <div class="nesting-workspace" data-nesting-tab="${n.activeTabId || 'design'}" data-display-unit="${unit}">
     ${renderNestingSourceTabs(n)}
     <div class="center-ws-grid">
       <!-- Left: Part List & Material Groups -->
@@ -51,7 +53,7 @@ export function renderNestingCenter(state, ctx) {
               <div class="layer-item nesting-part-row ${selectedIds.has(p.id) ? 'on' : ''}" data-cws-pid="${escapeHtml(p.id)}" aria-selected="${selectedIds.has(p.id)}">
                 <input type="checkbox" data-cws-check aria-label="${escapeHtml(p.label)} seç" ${selectedIds.has(p.id)?'checked':''}>
                 <span class="layer-name">${p.locked ? '🔒 ' : ''}${escapeHtml(p.label)}</span>
-                <small class="nesting-part-size">${Math.round(p.bounds?.width || 0)}×${Math.round(p.bounds?.height || 0)}</small>
+                <small class="nesting-part-size">${show(p.bounds?.width || 0)}×${show(p.bounds?.height || 0)} ${unit}</small>
                 <button type="button" class="nesting-part-delete" data-cws-delete aria-label="${escapeHtml(p.label)} sil" title="${p.locked?'Kilitli parça':'Parçayı sil'}" ${p.locked?'disabled':''}>×</button>
               </div>
             `).join('')}
@@ -83,8 +85,8 @@ export function renderNestingCenter(state, ctx) {
           </div>
         </div>
         <div id="cwsNestSvgBox" class="nesting-sheet-fit">
-          ${renderNestingSvg(displayedSheet, selectedIds, n.previewColors)}
-          <span class="nesting-sheet-dimensions">${displayedSheet.widthMm} × ${displayedSheet.heightMm} mm</span>
+          ${renderNestingSvg(displayedSheet, selectedIds, n.previewColors,unit)}
+          <span class="nesting-sheet-dimensions">${formatDimensions(displayedSheet.widthMm,displayedSheet.heightMm,unit)}</span>
           ${!activeSheet ? '<span class="nesting-sheet-empty-note">Parçaları yerleştirmek için Otomatik Yerleştir seçin</span>' : ''}
         </div>
       </div>
@@ -95,14 +97,14 @@ export function renderNestingCenter(state, ctx) {
         <div class="field-row">
           <label>Plaka Önayarı</label>
           <select id="cwsNestPreset">
-            ${SHEET_PRESETS.map(p => `<option value="${p.id}" ${presetId === p.id ? 'selected' : ''}>${p.label}</option>`).join('')}
+            ${SHEET_PRESETS.map(p => `<option value="${p.id}" ${presetId === p.id ? 'selected' : ''}>${formatPresetLabel(p,unit)}</option>`).join('')}
             <option value="custom" ${presetId === 'custom' ? 'selected' : ''}>Özel Ölçü</option>
           </select>
         </div>
-        <div class="field-row"><label>Levha Genişliği (mm)</label><input id="cwsNestW" type="number" value="${n.sheetWidthMm}"></div>
-        <div class="field-row"><label>Levha Yüksekliği (mm)</label><input id="cwsNestH" type="number" value="${n.sheetHeightMm}"></div>
-        <div class="field-row"><label>Parça Aralığı (mm)</label><input id="cwsNestSp" type="number" value="${n.clearanceMm??5}"></div>
-        <div class="field-row"><label>Kenar Payı (mm)</label><input id="cwsNestMg" type="number" value="${n.marginLeftMm}"></div>
+        <div class="field-row"><label>Levha Genişliği (${unit})</label><input id="cwsNestW" type="number" step="any" value="${show(n.sheetWidthMm)}"></div>
+        <div class="field-row"><label>Levha Yüksekliği (${unit})</label><input id="cwsNestH" type="number" step="any" value="${show(n.sheetHeightMm)}"></div>
+        <div class="field-row"><label>Parça Aralığı (${unit})</label><input id="cwsNestSp" type="number" step="any" value="${show(n.clearanceMm??5)}"></div>
+        <div class="field-row"><label>Kenar Payı (${unit})</label><input id="cwsNestMg" type="number" step="any" value="${show(n.marginLeftMm)}"></div>
         <div class="field-row"><label>Delik İçi Yerleştirme</label><input id="cwsNestHoles" type="checkbox" ${n.allowHoleNesting ? 'checked' : ''}></div>
         <div class="field-row"><label>Fırça Yönü Kısıtı</label><input id="cwsNestGrain" type="checkbox" ${n.enforceGrainDirection ? 'checked' : ''}></div>
         <div class="field-row">
@@ -146,7 +148,7 @@ export function renderNestingCenter(state, ctx) {
         <span><b>Levha Sayısı:</b> ${sheets.length}</span>
         <span><b>Ortalama Verim:</b> %${avgUtil.toFixed(1)}</span>
         <span><b>Fire Oranı:</b> %${sheets.length ? (100 - avgUtil).toFixed(1) : '0.0'}</span>
-        <span><b>Tahmini Kesim Yolu:</b> ${(totalCutLenMm / 1000).toFixed(2)} m</span>
+        <span><b>Tahmini Kesim Yolu:</b> ${show(totalCutLenMm)} ${unit}</span>
         <span><b>Yerleşmeyen:</b> ${(n.unplaced || []).length}</span>
         ${n.optimizationInfo?.engineVersion==='3.0-pro'?`<span id="nestingLastEngine"><b>Son yerleşim:</b> ${n.optimizationInfo.selectedEngine==='v3-pro'?'v3 Pro':n.optimizationInfo.selectedEngine==='clipper-nfp'?'Clipper NFP (daha iyi doğrulanmış sonuç)':'Hızlı güvenli dizgi'}${n.optimizationInfo.proAttempts?` · Pro: ${n.optimizationInfo.proCompleted??0}/${n.optimizationInfo.proAttempts} tamamlanan deneme`:''} · ${n.optimizationInfo.attempts??0} deneme · ${((n.optimizationInfo.elapsedMs??0)/1000).toFixed(1)} sn</span>`:'<span id="nestingLastEngine">Son yerleşim: v3 Pro sürümünde henüz hesaplanmadı</span>'}
       </div>
@@ -158,6 +160,7 @@ export function renderNestingCenter(state, ctx) {
 export function renderCncCenter(state) {
   const sheets = state.nesting?.sheets || [];
   const cnc = state.cnc || {};
+  const unit=normalizeDisplayUnit(state.pageLayout?.displayUnit),show=mm=>formatMmAsUnit(mm,unit);
   const val = validateNestedProduction(sheets, cnc);
 
   return `
@@ -170,8 +173,8 @@ export function renderCncCenter(state) {
             ${MACHINE_PROFILES.map(p => `<option value="${p.id}" ${cnc.profile === p.id ? 'selected' : ''}>${p.label}</option>`).join('')}
           </select>
         </div>
-        <div class="field-row"><label>Kesim Kerfi (mm)</label><input id="cncKerf" type="number" step="0.05" value="${cnc.kerfMm ?? 0.2}"></div>
-        <div class="field-row"><label>Takım Çapı (mm)</label><input id="cncToolDia" type="number" step="0.5" value="${cnc.toolDiameterMm ?? 3.0}"></div>
+        <div class="field-row"><label>Kesim Kerfi (${unit})</label><input id="cncKerf" type="number" step="${show(0.05)}" value="${show(cnc.kerfMm ?? 0.2)}"></div>
+        <div class="field-row"><label>Takım Çapı (${unit})</label><input id="cncToolDia" type="number" step="${show(0.5)}" value="${show(cnc.toolDiameterMm ?? 3.0)}"></div>
         <div class="field-row">
           <label>Takım Telafisi</label>
           <select id="cncComp">
@@ -187,9 +190,9 @@ export function renderCncCenter(state) {
             <option value="outer_first" ${cnc.sequence === 'outer_first' ? 'selected' : ''}>Önce Dış Kontur</option>
           </select>
         </div>
-        <div class="field-row"><label>Giriş / Çıkış (Lead-in/out mm)</label><input id="cncLeadIn" type="number" step="0.5" value="${cnc.leadInMm ?? 3}"></div>
+        <div class="field-row"><label>Giriş / Çıkış (Lead-in/out ${unit})</label><input id="cncLeadIn" type="number" step="${show(0.5)}" value="${show(cnc.leadInMm ?? 3)}"></div>
         <div class="field-row"><label>Mikro Köprü (Micro-tabs)</label><input id="cncTabs" type="checkbox" ${cnc.microTabs ? 'checked' : ''}></div>
-        <div class="field-row"><label>Eğri Toleransı (mm)</label><input id="cncTol" type="number" step="0.05" value="${cnc.curveTolMm ?? 0.1}"></div>
+        <div class="field-row"><label>Eğri Toleransı (${unit})</label><input id="cncTol" type="number" step="${show(0.05)}" value="${show(cnc.curveTolMm ?? 0.1)}"></div>
       </div>
 
       <div class="sec">
