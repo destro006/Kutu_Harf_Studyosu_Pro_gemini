@@ -11,7 +11,8 @@ import { renderPropertyBar } from './ui/PropertyBar.js';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=pro3-fast3';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=pro3-multi4';
+import {nextNestingSelection,deleteNestingParts} from './manufacturing/NestingSelection.js';
 import { generateNestedGcode, generateNestedHpgl } from './export/CncGcodeExporter.js';
 import { HistoryManager } from './core/history.js';
 import {
@@ -162,6 +163,16 @@ let lastCosts = calculateProjectCosts(lastMetrics, store.get());
 let lastNesting = null;
 let lastPhotomontageScene=null,lastPhotomontageUrl=null;
 let selectedNestingId = null;
+let selectedNestingIds=new Set(),nestingSelectionAnchor=null,nestingSelectionScope=null;
+function clearNestingSelection(){selectedNestingId=null;selectedNestingIds.clear();nestingSelectionAnchor=null;}
+function syncNestingSelectionScope(state){
+ const key=JSON.stringify([docManager.activeDocId,state.activePageId,state.nesting.activeTabId||'design',activeSheetIdx]);
+ if(key!==nestingSelectionScope){clearNestingSelection();nestingSelectionScope=key;}
+ const ids=new Set((state.nesting.sheets?.[activeSheetIdx]?.placements||[]).map(p=>p.id));
+ selectedNestingIds=new Set([...selectedNestingIds].filter(id=>ids.has(id)));
+ if(!selectedNestingIds.has(selectedNestingId))selectedNestingId=[...selectedNestingIds].at(-1)??null;
+ if(!ids.has(nestingSelectionAnchor))nestingSelectionAnchor=null;
+}
 let objectClipboard = null;
 let activeCostTab = 'summary';
 let activeCostRole = 'face';
@@ -479,6 +490,7 @@ function bindAlignmentRail(){
  updateAlignmentRail(store.get());
 }
 function updateNumericBar(state) {
+  if(state.mainWorkspace==='nesting')syncNestingSelectionScope(state);
   updateAlignmentRail(state);
   renderPropertyBar(state, {
     activeSheetIdx,
@@ -2711,7 +2723,8 @@ function updateCenterWorkspaces(state) {
       const targetTabId = state.nesting.activeTabId || 'design';
       if(currentNestingImportController&&targetTabId==='import'&&currentTabId==='import')return;
       if(nestingGesture?.active)return;
-      const html=renderNestingCenter(state,{activeSheetIdx,selectedPlacementId:selectedNestingId});
+      syncNestingSelectionScope(state);
+      const html=renderNestingCenter(state,{activeSheetIdx,selectedPlacementId:selectedNestingId,selectedPlacementIds:[...selectedNestingIds]});
       if(el._lastHtml===html)return;
       el._lastHtml=html;
       if (grid && currentTabId === targetTabId && grid.querySelector('.cws-side-r')) {
@@ -2721,7 +2734,7 @@ function updateCenterWorkspaces(state) {
         for (const cls of ['cws-side', 'cws-main', 'cws-bottom']) {
           const current = grid.querySelector(':scope > .' + cls);
           const next = template.content.querySelector('.' + cls);
-          if (current && next) current.replaceWith(next);
+          if (current && next) {const scroll=current.scrollTop;current.replaceWith(next);next.scrollTop=scroll;}
         }
         const tabs = el.querySelector('.nesting-source-tabs');
         const nextTabs = template.content.querySelector('.nesting-source-tabs');
@@ -2764,7 +2777,7 @@ async function repackNestingSettings(label,updateNesting,quickImport=true){
     let result={sheets:[],unplaced:[],sheetCount:0,overallUtilizationPct:0,totalScrapM2:0,interlockedPairs:0,totalCutLengthM:0,minSep:nestingSeparation(next)};
     if(items.length){const out=await runVectorImportJob({jobId:Date.now(),operation:'nest',imported:{items},nesting:{...Object.fromEntries(Object.entries(next).filter(([key])=>!['sheets','unplaced','importedTabs','designTabSnapshot'].includes(key))),quickImport},lockedSheets:next.sheets?.filter(sh=>sh.placements.some(p=>p.locked))||[]},{signal:controller.signal,onStatus:status=>{const b=document.getElementById('cwsRunNesting');if(b&&nestingRepackController===controller)b.textContent=status+' · İptal';}});result=out.nesting;}
     if(controller.signal.aborted||docManager.activeDocId!==docId||store.get().activePageId!==pageId||(store.get().nesting.activeTabId||'design')!==tab)return;
-    lastNesting=result;activeSheetIdx=0;selectedNestingId=null;
+    lastNesting=result;activeSheetIdx=0;clearNestingSelection();
     next.optimizationInfo=result.optimization||null;
     mutateData(label,st=>{const {importedTabs,designTabSnapshot,activeTabId,...settings}=next;st.nesting={...st.nesting,...settings,sheets:result.sheets,unplaced:result.unplaced};},false);
     updateCenterWorkspaces(store.get());
@@ -2790,7 +2803,7 @@ function runAutoNesting(){
 function openNestingVectorImport(openPicker = false) {
   mutateData('Nesting içe aktar sekmesi', s => openNestingImportTab(s.nesting), false);
   activeSheetIdx = 0;
-  selectedNestingId = null;
+  clearNestingSelection();
   setMainWorkspace('nesting');
   if (openPicker) document.getElementById('nestVectorFileInput')?.click();
 }
@@ -2870,7 +2883,7 @@ async function importNestingVectorFiles(fileList, root) {
           syncActiveNestingTab(state.nesting);
         }
       },false);
-      activeSheetIdx=0;selectedNestingId=null;
+      activeSheetIdx=0;clearNestingSelection();
       setMainWorkspace('nesting');
       updateCenterWorkspaces(store.get());
     }
@@ -2904,18 +2917,14 @@ function applyNestingEdit(n,p,action,value){
   return editNestingPlacement(p,action,value);
 }
 function editSelectedNesting(action,value){
+  if(action==='delete'){removeNestingSelection();return;}
   const current=getNestingSelection();if(!current||current.locked&&action!=='toggleLock')return;
   nestingRepackController?.abort();
   const id=current.id;
   mutateData('Nesting parça '+action,s=>{
     const n=s.nesting,sh=n.sheets[activeSheetIdx],p=sh?.placements.find(x=>x.id===id);
     if(!p)return;
-    if(action==='delete'){
-      n.partOverrides||={};n.partOverrides[id]={...(n.partOverrides[id]||{}),deleted:true};
-      sh.placements=sh.placements.filter(x=>x.id!==id);
-      n.unplaced=(n.unplaced||[]).filter(x=>(x.item?.id||x.id)!==id);
-      selectedNestingId=null;
-    }else if(action==='toggleLock')p.locked=!p.locked;
+    if(action==='toggleLock')p.locked=!p.locked;
     else if(action==='move'){applyNestingEdit(n,p,'x',value.x);applyNestingEdit(n,p,'y',value.y);}
     else applyNestingEdit(n,p,action,value);
     refreshNestingSheet(sh,nestingSeparation(n));
@@ -2930,20 +2939,39 @@ function syncWorkspaceRail(ws){
   }
   for(const b of document.querySelectorAll('.cad-rail [data-action]'))b.disabled=isNest&&b.dataset.action!=='delete';
 }
-function selectNestingPart(id){
-  if(id===selectedNestingId)return;
-  const previous=selectedNestingId;selectedNestingId=id;
-  // A selection changes two existing nodes, not the entire complex sheet.
-  const root=document.getElementById('nestingCenterWrap');
-  const paint=(pid,on)=>{
-    if(pid==null||!root)return;
-    const g=root.querySelector('[data-pid="'+CSS.escape(pid)+'"]');
-    if(g){g.classList.toggle('nest-picked',on);const path=g.querySelector('[data-nest-body]');if(path&&!g.classList.contains('nest-collision')){path.setAttribute('stroke',on?'#ffffff':(store.get().nesting.previewColors?.body||'#c89343'));path.setAttribute('stroke-width',on?'4':'2');path.setAttribute('fill-opacity',on?'0.83':'0.55');}g.querySelector('text')?.remove();}
-    root.querySelector('[data-cws-pid="'+CSS.escape(pid)+'"]')?.classList.toggle('on',on);
-  };
-  paint(previous,false);paint(id,true);
-  const btn=root?.querySelector('#cwsDeletePart');if(btn)btn.disabled=!id;
-  updateNumericBar(store.get());
+function removeNestingSelection(singleId=null){
+ const state=store.get();syncNestingSelectionScope(state);
+ const ids=singleId==null?[...selectedNestingIds]:[singleId];
+ const wanted=new Set(ids);
+ const removable=(state.nesting.sheets?.[activeSheetIdx]?.placements||[]).filter(p=>wanted.has(p.id)&&!p.locked).map(p=>p.id);
+ if(!removable.length)return;
+ nestingRepackController?.abort();
+ for(const id of removable)selectedNestingIds.delete(id);
+ if(!selectedNestingIds.has(selectedNestingId))selectedNestingId=[...selectedNestingIds].at(-1)??null;
+ if(removable.includes(nestingSelectionAnchor))nestingSelectionAnchor=null;
+ mutateData(removable.length+' nesting parçası silindi',s=>deleteNestingParts(s.nesting,activeSheetIdx,removable,nestingSeparation(s.nesting)),false);
+}
+function selectNestingPart(id,{toggle=false,range=false,addRange=false}={}){
+ const state=store.get();syncNestingSelectionScope(state);
+ const ordered=(state.nesting.sheets?.[activeSheetIdx]?.placements||[]).map(p=>p.id);
+ const previous=selectedNestingIds;
+ const next=nextNestingSelection(ordered,previous,nestingSelectionAnchor,id,{toggle,range,addRange});
+ selectedNestingIds=new Set(next.ids);selectedNestingId=next.primary;nestingSelectionAnchor=next.anchor;
+ const root=document.getElementById('nestingCenterWrap');
+ const paint=(pid,on)=>{
+  if(!root)return;
+  const g=root.querySelector('[data-pid="'+CSS.escape(pid)+'"]');
+  if(g){g.classList.toggle('nest-picked',on);const path=g.querySelector('[data-nest-body]');if(path&&!g.classList.contains('nest-collision')){path.setAttribute('stroke',on?'#ffffff':(state.nesting.previewColors?.body||'#c89343'));path.setAttribute('stroke-width',on?'4':'2');path.setAttribute('fill-opacity',on?'0.83':'0.55');}if(!on)g.querySelector('text')?.remove();}
+  const row=root.querySelector('[data-cws-pid="'+CSS.escape(pid)+'"]');
+  if(row){row.classList.toggle('on',on);row.setAttribute('aria-selected',String(on));const cb=row.querySelector('[data-cws-check]');if(cb)cb.checked=on;}
+ };
+ for(const pid of new Set([...previous,...selectedNestingIds]))if(previous.has(pid)!==selectedNestingIds.has(pid))paint(pid,selectedNestingIds.has(pid));
+ if(root)root._lastHtml=null;
+ const btn=root?.querySelector('#cwsDeletePart');
+ const count=(state.nesting.sheets?.[activeSheetIdx]?.placements||[]).filter(p=>selectedNestingIds.has(p.id)&&!p.locked).length;
+ if(btn){btn.disabled=!count;btn.textContent=count>1?'Seçilenleri Sil ('+count+')':'Parçayı Sil';}
+ const label=root?.querySelector('#nestingSelectedCount');if(label)label.textContent=selectedNestingIds.size?selectedNestingIds.size+' seçili':'';
+ updateNumericBar(state);
 }
 
 function bindNestingGestures(root){
@@ -2959,6 +2987,7 @@ function bindNestingGestures(root){
     e.preventDefault();e.stopPropagation();
     const part=store.get().nesting.sheets?.[activeSheetIdx]?.placements.find(p=>p.id===group.dataset.pid);
     if(!part)return;
+    if(nestingTool==='select'&&(e.ctrlKey||e.metaKey||e.shiftKey)){selectNestingPart(part.id,{toggle:e.ctrlKey||e.metaKey,range:e.shiftKey,addRange:e.ctrlKey||e.metaKey});return;}
     const start=point(e),h=store.get().nesting.sheets[activeSheetIdx].heightMm;
     const center={x:(part.bounds.minX+part.bounds.maxX)/2,y:h-(part.bounds.minY+part.bounds.maxY)/2};
     drag={part,group,start,center,h,tool:nestingTool==='select'?'move':nestingTool,pointer:e.pointerId,moved:false,dx:0,dy:0,factor:1,angle:0};
@@ -3000,13 +3029,13 @@ function bindNestingCenterEvents(root) {
   root.querySelectorAll('[data-nest-tab]').forEach(b => b.onclick = () => {
     nestingRepackController?.abort();currentNestingImportController?.abort();
     mutateData('Nesting iş sekmesi', s => switchNestingTab(s.nesting,b.dataset.nestTab), false);
-    activeSheetIdx=0;selectedNestingId=null;
+    activeSheetIdx=0;clearNestingSelection();
     updateCenterWorkspaces(store.get());
   });
   root.querySelectorAll('[data-nest-close]').forEach(b => b.onclick = (e) => {
     e.stopPropagation();
     mutateData('Nesting dosya sekmesini kapat', s => closeNestingImportedTab(s.nesting,b.dataset.nestClose), false);
-    activeSheetIdx=0;selectedNestingId=null;
+    activeSheetIdx=0;clearNestingSelection();
     updateCenterWorkspaces(store.get());
   });
   root.querySelector('[data-nest-import]')?.addEventListener('click',() => openNestingVectorImport(true));
@@ -3023,17 +3052,24 @@ function bindNestingCenterEvents(root) {
   }
   root.querySelectorAll('[data-cws-sheet]').forEach(b => b.onclick = () => {
     activeSheetIdx = Number(b.dataset.cwsSheet);
+    clearNestingSelection();
     updateCenterWorkspaces(store.get());
     updateNumericBar(store.get());
   });
-  root.querySelectorAll('[data-cws-pid]').forEach(el => el.onclick = () => {
-    selectNestingPart(el.dataset.cwsPid);
+  root.querySelectorAll('[data-cws-pid]').forEach(el => {
+    el.onclick=e=>{
+      if(e.target.closest('[data-cws-delete]'))return;
+      const checkbox=Boolean(e.target.closest('[data-cws-check]'));
+      selectNestingPart(el.dataset.cwsPid,{toggle:checkbox||e.ctrlKey||e.metaKey,range:e.shiftKey,addRange:e.ctrlKey||e.metaKey});
+      const cb=el.querySelector('[data-cws-check]');if(cb)cb.checked=selectedNestingIds.has(el.dataset.cwsPid);
+    };
+    const del=el.querySelector('[data-cws-delete]');if(del)del.onclick=e=>{e.stopPropagation();removeNestingSelection(el.dataset.cwsPid);};
   });
   root.querySelectorAll('#cwsNestSvgBox [data-pid]').forEach(g => {
     g.onclick = e=>{e.stopPropagation();};
     g.oncontextmenu = (e) => {
       e.preventDefault();
-      selectedNestingId = g.getAttribute('data-pid');
+      selectNestingPart(g.getAttribute('data-pid'));
       showNestingPartContextMenu(e, selectedNestingId);
     };
   });
@@ -3414,7 +3450,7 @@ function showNestingPartContextMenu(e, pid) {
   contextMenu.show(e.clientX, e.clientY, [
     { label: '90° Döndür', action: () => mutateData('Parça döndür', s => { const p = s.nesting.sheets[activeSheetIdx]?.placements?.find(x => x.id === pid); if(p){editNestingPlacement(p,'rot',((p.angleDeg||0)+90)%360);validateSheetLayout(s.nesting.sheets[activeSheetIdx],(s.nesting.clearanceMm??5)+(s.nesting.kerfMm??.4));} }) },
     { label: 'Kilitle / Kilidi Aç', action: () => mutateData('Parça kilidi', s => { const p = s.nesting.sheets[activeSheetIdx]?.placements?.find(x => x.id === pid); if (p) p.locked = !p.locked; }) },
-    { label: 'Parçayı Sil',kbd:'Del',danger:true,action:()=>{selectedNestingId=pid;editSelectedNesting('delete');} },
+    { label: 'Parçayı Sil',kbd:'Del',danger:true,action:()=>removeNestingSelection(pid) },
     { label: 'Kilitsizleri Yeniden Optimize Et', action: () => runAutoNesting() },
   ]);
 }
