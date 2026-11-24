@@ -7,11 +7,11 @@ import { StateStore, createDefaultState, createObjectId, structuredCloneSafe } f
 import { DocumentManager } from './core/DocumentManager.js';
 import { Vector2DCanvas } from './cad/Vector2DCanvas.js';
 import { ContextMenu } from './ui/ContextMenu.js';
-import { renderPropertyBar } from './ui/PropertyBar.js';
+import { renderPropertyBar } from './ui/PropertyBar.js?v=units6';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
-import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm } from './core/units.js';
+import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=toolbar5';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=pro3-multi4';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=units6';
 import {nextNestingSelection,deleteNestingParts} from './manufacturing/NestingSelection.js';
 import { generateNestedGcode, generateNestedHpgl } from './export/CncGcodeExporter.js';
 import { HistoryManager } from './core/history.js';
@@ -77,7 +77,7 @@ import {
   switchNestingTab, closeNestingImportedTab, syncActiveNestingTab, applyNestingPartOverrides,
 } from './manufacturing/NestingTabs.js';
 import { calculateProjectCosts, formatMoney, getPriceCard, listPriceCatalog, changeRateCurrency } from './manufacturing/CostEngine.js';
-import { buildQuoteHtml } from './manufacturing/QuoteGenerator.js';
+import { buildQuoteHtml } from './manufacturing/QuoteGenerator.js?v=units6';
 import {
   downloadBlob,
   downloadDataUrl,
@@ -507,6 +507,8 @@ function updateNumericBar(state) {
       updateStageChrome(store.get());
       updateNumericBar(store.get());
       renderActiveWorkspace();
+      updateCenterWorkspaces(store.get());
+      drawCadOverlay(store.get());
       if (store.get().mainWorkspace === 'design2d') vector2D?.render(store.get(), fontMap);
       writeAutosave(store.get());
     },
@@ -575,6 +577,7 @@ function updateNumericBar(state) {
 
 /* ---------------- CAD 2D Overlay (Ruler, Pen, Node Editing, Measure) ---------------- */
 function drawCadOverlay(state) {
+  const unit=normalizeDisplayUnit(state.pageLayout?.displayUnit),show=mm=>formatMmAsUnit(mm,unit);
   const canvas = document.getElementById('cadOverlay');
   const wrap = document.getElementById('stageWrap');
   if (!canvas || !wrap) return;
@@ -628,7 +631,7 @@ function drawCadOverlay(state) {
       ctx.moveTo(sx, sy - 14); ctx.lineTo(sx, sy + 14);
       ctx.stroke();
       ctx.setLineDash([]);
-      const lbl = `X: ${Math.round(mmX)} mm  Y: ${Math.round(mmY)} mm`;
+      const lbl = `X: ${show(mmX)} ${unit}  Y: ${show(mmY)} ${unit}`;
       ctx.font = 'bold 11px sans-serif';
       const tw = ctx.measureText(lbl).width + 14;
       const bx = Math.min(canvas.width - tw - 8, sx + 14);
@@ -659,7 +662,7 @@ function drawCadOverlay(state) {
         const dx = Math.round(p1.mmX - p0.mmX);
         const dy = Math.round(p1.mmY - p0.mmY);
         const dist = Math.round(Math.hypot(dx, dy));
-        const lbl = `📏 ${dist} mm  (ΔX: ${Math.abs(dx)}  ΔY: ${Math.abs(dy)})`;
+        const lbl = `📏 ${show(dist)} ${unit}  (ΔX: ${show(Math.abs(dx))}  ΔY: ${show(Math.abs(dy))})`;
         ctx.font = 'bold 12px sans-serif';
         const tw = ctx.measureText(lbl).width + 16;
         const anchorX = measureDragging ? p1.sx + 14 : (p0.sx + p1.sx) / 2 - tw / 2;
@@ -747,17 +750,18 @@ function renderMaterialsAndLightDocker(state) {
 }
 
 function renderManufacturingDocker(state) {
+  const unit=normalizeDisplayUnit(state.pageLayout?.displayUnit),show=mm=>formatMmAsUnit(mm,unit);
   const obj = getSelectedOrFirst(state);
   const fw = obj?.fileWidthMm ?? state.fileli?.fileWidthMm ?? 5;
   return `
     <section class="sec">
       <h3 class="sec-title">Fileli &amp; İmalat Parametreleri</h3>
-      <div class="field-row"><label>File Genişliği (mm)</label><input id="mfgFileW" type="number" min="0" max="40" value="${fw}"></div>
-      <div class="field-row"><label>Kenar Çıta Ebatı (mm)</label><input id="mfgDepth" type="number" min="10" max="400" value="${obj?.depthMm ?? 80}"></div>
-      <div class="field-row"><label>Pleksi Kalınlığı (mm)</label><input id="mfgAcThick" type="number" min="1" max="20" step="0.5" value="${state.fileli?.acrylicThicknessMm ?? 3}"></div>
-      <div class="field-row"><label>Pleksi İçe Çökme (mm)</label><input id="mfgAcInset" type="number" min="0" max="20" step="0.5" value="${state.fileli?.acrylicInsetMm ?? 2.5}"></div>
-      <div class="field-row"><label>Ön File Metal Yüksekliği (mm)</label><input id="mfgMetThick" type="number" min="0.5" max="5" step="0.1" value="${state.fileli?.fileThicknessMm ?? 2}"></div>
-      <div class="field-row"><label>Yanak Sac Kalınlığı (mm)</label><input id="mfgWallThickness" type="number" min="0.2" max="3" step="0.1" value="${state.fileli?.metalThicknessMm ?? 1}"></div>
+      <div class="field-row"><label>File Genişliği (${unit})</label><input id="mfgFileW" type="number" step="any" min="${show(0)}" max="${show(40)}" value="${show(fw)}"></div>
+      <div class="field-row"><label>Kenar Çıta Ebatı (${unit})</label><input id="mfgDepth" type="number" step="any" min="${show(10)}" max="${show(400)}" value="${show(obj?.depthMm ?? 80)}"></div>
+      <div class="field-row"><label>Pleksi Kalınlığı (${unit})</label><input id="mfgAcThick" type="number" min="${show(1)}" max="${show(20)}" step="${show(0.5)}" value="${show(state.fileli?.acrylicThicknessMm ?? 3)}"></div>
+      <div class="field-row"><label>Pleksi İçe Çökme (${unit})</label><input id="mfgAcInset" type="number" min="${show(0)}" max="${show(20)}" step="${show(0.5)}" value="${show(state.fileli?.acrylicInsetMm ?? 2.5)}"></div>
+      <div class="field-row"><label>Ön File Metal Yüksekliği (${unit})</label><input id="mfgMetThick" type="number" min="${show(0.5)}" max="${show(5)}" step="${show(0.1)}" value="${show(state.fileli?.fileThicknessMm ?? 2)}"></div>
+      <div class="field-row"><label>Yanak Sac Kalınlığı (${unit})</label><input id="mfgWallThickness" type="number" min="${show(0.2)}" max="${show(3)}" step="${show(0.1)}" value="${show(state.fileli?.metalThicknessMm ?? 1)}"></div>
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
         <button type="button" class="cta-btn" id="mfgGoNest">Nesting'e Geç</button>
         <button type="button" class="sec-btn" id="mfgGoCnc">Üretim / CNC</button>
@@ -1249,31 +1253,31 @@ function renderDesignWs(state) {
     <section class="sec">
       <h3 class="sec-title">4. Fileli Kutu Harf Ayarları <small>Dış ölçü korunur</small></h3>
       <div class="chips" style="margin-bottom:8px">
-        ${FILELI_PRESET_WIDTHS.map(w => `<button type="button" class="chip ${fw === w ? 'on' : ''}" data-fw="${w}">${w} mm</button>`).join('')}
+        ${FILELI_PRESET_WIDTHS.map(w => `<button type="button" class="chip ${fw === w ? 'on' : ''}" data-fw="${w}">${show(w)} ${unit}</button>`).join('')}
       </div>
       <div class="field-row">
-        <label>Özel File Genişliği (mm)</label>
-        <input id="wsFileWidthMm" type="number" min="1" max="60" step="0.5" value="${fw}">
+        <label>Özel File Genişliği (${unit})</label>
+        <input id="wsFileWidthMm" type="number" min="${show(1)}" max="${show(60)}" step="${show(0.5)}" value="${show(fw)}">
       </div>
       <div class="field-row">
-        <label>File Kalınlığı (mm)</label>
-        <input id="wsFileThickMm" type="number" min="0.8" max="10" step="0.2" value="${state.fileli.fileThicknessMm}">
+        <label>File Kalınlığı (${unit})</label>
+        <input id="wsFileThickMm" type="number" min="${show(0.8)}" max="${show(10)}" step="${show(0.2)}" value="${show(state.fileli.fileThicknessMm)}">
       </div>
       <div class="field-row">
-        <label>Yanak Sac Kalınlığı (mm)</label>
-        <input id="wsWallThicknessMm" type="number" min="0.2" max="3" step="0.1" value="${state.fileli.metalThicknessMm ?? 1}">
+        <label>Yanak Sac Kalınlığı (${unit})</label>
+        <input id="wsWallThicknessMm" type="number" min="${show(0.2)}" max="${show(3)}" step="${show(0.1)}" value="${show(state.fileli.metalThicknessMm ?? 1)}">
       </div>
       <div class="field-row">
-        <label>File Pahı (mm)</label>
-        <input id="wsBorderBevelMm" type="number" min="0" max="4" step="0.2" value="${state.fileli.borderBevelMm}">
+        <label>File Pahı (${unit})</label>
+        <input id="wsBorderBevelMm" type="number" min="${show(0)}" max="${show(4)}" step="${show(0.2)}" value="${show(state.fileli.borderBevelMm)}">
       </div>
       <div class="field-row">
-        <label>Pleksi İçe Girinti (mm)</label>
-        <input id="wsAcrylicInsetMm" type="number" min="0" max="25" step="0.5" value="${state.fileli.acrylicInsetMm}">
+        <label>Pleksi İçe Girinti (${unit})</label>
+        <input id="wsAcrylicInsetMm" type="number" min="${show(0)}" max="${show(25)}" step="${show(0.5)}" value="${show(state.fileli.acrylicInsetMm)}">
       </div>
       <div class="field-row">
-        <label>Pleksi Kalınlığı (mm)</label>
-        <input id="wsAcrylicThickMm" type="number" min="1.5" max="15" step="0.5" value="${state.fileli.acrylicThicknessMm}">
+        <label>Pleksi Kalınlığı (${unit})</label>
+        <input id="wsAcrylicThickMm" type="number" min="${show(1.5)}" max="${show(15)}" step="${show(0.5)}" value="${show(state.fileli.acrylicThicknessMm)}">
       </div>
     </section>
     ` : ''}
@@ -1374,6 +1378,7 @@ function applyRalCoating(s, hex, part = 'face', ralCode = '') {
 }
 
 function renderMaterialsWs(state) {
+  const unit=normalizeDisplayUnit(state.pageLayout?.displayUnit),show=mm=>formatMmAsUnit(mm,unit);
   const obj = state.objects.find(o => (state.selectedIds || []).includes(o.id)) || null;
   const faceId = obj?.faceMaterial || state.materials.faceId;
   const sideId = obj?.sideMaterial || state.materials.sideId;
@@ -1502,7 +1507,7 @@ function renderMaterialsWs(state) {
       <div class="field-row"><label>Fırçalama Yoğunluğu</label><input id="ovrBrushInt" type="number" min="0" max="1.5" step="0.05" value="${state.materialOverrides.brushIntensity}"></div>
       ` : ''}
       <div class="field-row"><label>Patlatılmış Katman Görünümü (3D Kesit)</label><input id="chkExploded" type="checkbox" ${state.render.explodedView ? 'checked' : ''}></div>
-      <div class="field-row"><label>Pah Genişliği (mm)</label><input id="ovrBevel" type="number" min="0" max="6" step="0.2" value="${state.materialOverrides.bevelMm}"></div>
+      <div class="field-row"><label>Pah Genişliği (${unit})</label><input id="ovrBevel" type="number" min="${show(0)}" max="${show(6)}" step="${show(0.2)}" value="${show(state.materialOverrides.bevelMm)}"></div>
       ${(facePreset.kind === 'acrylic' || (obj?.constructionType || state.constructionType) === 'fileli' || (obj?.constructionType || state.constructionType) === 'pleksi') ? `<div class="field-row"><label>Pleksi Opaklık</label><input id="ovrAcOpacity" type="number" min="0.2" max="1" step="0.02" value="${state.materialOverrides.acrylicOpacity}"></div>` : ''}
     </section>
 
@@ -1526,6 +1531,7 @@ function renderMaterialsWs(state) {
 }
 
 function renderLightingWs(state) {
+  const unit=normalizeDisplayUnit(state.pageLayout?.displayUnit),show=mm=>formatMmAsUnit(mm,unit);
   const selection=selectedLightingObjects(state),obj=selection[0],light=resolveObjectLighting(obj,state);
   const mode=light.mode,enabled=light.enabled;
   const hasFront=mode==='front'||mode==='both',hasHalo=mode==='halo'||mode==='both';
@@ -1571,9 +1577,9 @@ function renderLightingWs(state) {
         <input id="lBackInt" type="number" min="0" max="3" step="0.1" value="${light.backIntensity}" style="width:62px">
       </div>
       <div class="field-row">
-        <label>Duvardan Uzaklık (mm)</label>
-        <input id="lWallDistRange" type="range" min="5" max="150" step="5" value="${light.wallDistanceMm}">
-        <input id="lWallDist" type="number" min="5" max="150" step="5" value="${light.wallDistanceMm}" style="width:62px">
+        <label>Duvardan Uzaklık (${unit})</label>
+        <input id="lWallDistRange" type="range" min="${show(5)}" max="${show(150)}" step="${show(5)}" value="${show(light.wallDistanceMm)}">
+        <input id="lWallDist" type="number" min="${show(5)}" max="${show(150)}" step="${show(5)}" value="${show(light.wallDistanceMm)}" style="width:62px">
       </div>
       <div class="field-row">
         <label>Halo Yayılımı</label>
@@ -1652,6 +1658,7 @@ function renderBackgroundWs(state) {
 }
 
 function renderNestingWs(state) {
+  const unit=normalizeDisplayUnit(state.pageLayout?.displayUnit),show=mm=>formatMmAsUnit(mm,unit);
   const n = state.nesting;
   return `
     <section class="sec">
@@ -1659,15 +1666,15 @@ function renderNestingWs(state) {
       <div class="field-row">
         <label>Plaka Önayarı</label>
         <select id="nestPreset">
-          ${SHEET_PRESETS.map(p => `<option value="${p.id}" ${n.sheetWidthMm === p.w && n.sheetHeightMm === p.h ? 'selected' : ''}>${p.label}</option>`).join('')}
+          ${SHEET_PRESETS.map(p => `<option value="${p.id}" ${n.sheetWidthMm === p.w && n.sheetHeightMm === p.h ? 'selected' : ''}>${formatPresetLabel(p,unit)}</option>`).join('')}
           <option value="custom">Özel Ölçü</option>
         </select>
       </div>
-      <div class="field-row"><label>Plaka Genişliği (mm)</label><input id="nestW" type="number" min="200" max="6000" step="50" value="${n.sheetWidthMm}"></div>
-      <div class="field-row"><label>Plaka Yüksekliği (mm)</label><input id="nestH" type="number" min="200" max="4000" step="50" value="${n.sheetHeightMm}"></div>
-      <div class="field-row"><label>Kenar Payı (mm)</label><input id="nestMargin" type="number" min="0" max="100" step="1" value="${n.marginMm}"></div>
-      <div class="field-row"><label>Kesim Boşluğu (mm)</label><input id="nestClear" type="number" min="1" max="50" step="0.5" value="${n.clearanceMm}"></div>
-      <div class="field-row"><label>Kerf / Lazer Payı (mm)</label><input id="nestKerf" type="number" min="0" max="5" step="0.1" value="${n.kerfMm}"></div>
+      <div class="field-row"><label>Plaka Genişliği (${unit})</label><input id="nestW" type="number" min="${show(200)}" max="${show(6000)}" step="${show(50)}" value="${show(n.sheetWidthMm)}"></div>
+      <div class="field-row"><label>Plaka Yüksekliği (${unit})</label><input id="nestH" type="number" min="${show(200)}" max="${show(4000)}" step="${show(50)}" value="${show(n.sheetHeightMm)}"></div>
+      <div class="field-row"><label>Kenar Payı (${unit})</label><input id="nestMargin" type="number" min="${show(0)}" max="${show(100)}" step="${show(1)}" value="${show(n.marginMm)}"></div>
+      <div class="field-row"><label>Kesim Boşluğu (${unit})</label><input id="nestClear" type="number" min="${show(1)}" max="${show(50)}" step="${show(0.5)}" value="${show(n.clearanceMm)}"></div>
+      <div class="field-row"><label>Kerf / Lazer Payı (${unit})</label><input id="nestKerf" type="number" min="${show(0)}" max="${show(5)}" step="${show(0.1)}" value="${show(n.kerfMm)}"></div>
       <div class="field-row"><label>Kopya Adedi</label><input id="nestCopies" type="number" min="1" max="50" step="1" value="${n.copies}"></div>
       <div class="field-row"><label>Delik İçi Yerleştirme (O/D)</label><input id="nestHole" type="checkbox" ${n.allowHoleNesting !== false ? 'checked' : ''}></div>
       <div class="field-row"><label>Malzemeye Göre Ayır</label><input id="nestGroupMat" type="checkbox" ${n.groupByMaterial !== false ? 'checked' : ''}></div>
@@ -1704,24 +1711,24 @@ function renderNestingWs(state) {
       <h3 class="sec-title">Nesting Sonuçları <small>${lastNesting.sheetCount} Plaka</small></h3>
       <p style="font-size:12px;margin:0 0 8px">
         Verimlilik: <strong>%${lastNesting.overallUtilizationPct.toFixed(1)}</strong> ·
-        Fire: <strong>${lastNesting.totalScrapM2.toFixed(2)} m²</strong> ·
+        Fire: <strong>${formatAreaM2(lastNesting.totalScrapM2,unit)}</strong> ·
         İç İçe Geçme: <strong>${lastNesting.interlockedPairs} çift</strong>
       </p>
       ${lastNesting.unplaced.length ? `<div style="background:rgba(239,68,68,0.14);border:1px solid #ef4444;padding:6px 8px;border-radius:6px;font-size:11.5px;margin-bottom:8px">Yerleştirilemeyen (${lastNesting.unplaced.length}): ${lastNesting.unplaced.map(u => escapeHtml(u.item.label + " — " + u.reason)).join(", ")}</div>` : ''}
       ${lastNesting.sheets.map(sh => `
         <div style="margin-bottom:10px">
           <div style="font-size:11.5px;color:var(--muted);margin-bottom:4px">
-            Plaka #${sh.index} [${escapeHtml(sh.materialGroup)}] (${sh.widthMm}×${sh.heightMm} mm) — %${sh.utilizationPct.toFixed(1)} dolu · ${sh.placements.length} parça
+            Plaka #${sh.index} [${escapeHtml(sh.materialGroup)}] (${formatDimensions(sh.widthMm,sh.heightMm,unit)}) — %${sh.utilizationPct.toFixed(1)} dolu · ${sh.placements.length} parça
           </div>
-          ${renderNestingSvg(sh, selectedNestingId)}
+          ${renderNestingSvg(sh, selectedNestingId,{},unit)}
         </div>
       `).join('')}
       ${selectedNestingId ? `
         <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap">
-          <button type="button" class="sec-btn" data-nest-nudge="-20,0">← 20mm</button>
-          <button type="button" class="sec-btn" data-nest-nudge="20,0">20mm →</button>
-          <button type="button" class="sec-btn" data-nest-nudge="0,20">↑ 20mm</button>
-          <button type="button" class="sec-btn" data-nest-nudge="0,-20">↓ 20mm</button>
+          <button type="button" class="sec-btn" data-nest-nudge="-20,0">← ${show(20)} ${unit}</button>
+          <button type="button" class="sec-btn" data-nest-nudge="20,0">${show(20)} ${unit} →</button>
+          <button type="button" class="sec-btn" data-nest-nudge="0,20">↑ ${show(20)} ${unit}</button>
+          <button type="button" class="sec-btn" data-nest-nudge="0,-20">↓ ${show(20)} ${unit}</button>
           <button type="button" class="sec-btn" id="btnLockNestPart">🔒 Kilitle/Çöz</button>
         </div>
       ` : '<p style="font-size:11px;color:var(--muted);margin:4px 0 0">Manuel kaydırmak veya kilitlemek için plaka üzerindeki bir parçaya tıklayın.</p>'}
@@ -1881,7 +1888,7 @@ function bindWorkspaceEvents(ws, root) {
     });
 
     const bindNum = (id, fn) => root.querySelector('#' + id)?.addEventListener('change', e => {
-      const units=['wsHeightMm','wsWidthMm','wsDepthMm','wsSpacingMm'];
+      const units=['wsHeightMm','wsWidthMm','wsDepthMm','wsSpacingMm','wsFileWidthMm','wsFileThickMm','wsWallThicknessMm','wsBorderBevelMm','wsAcrylicInsetMm','wsAcrylicThickMm'];
       const value=units.includes(id)?displayToMm(e.target.value,store.get().pageLayout?.displayUnit):Number(e.target.value);
       if(Number.isFinite(value))mutate('Ölçü değiştirildi',s=>fn(s,value));
     });
@@ -2013,7 +2020,7 @@ function bindWorkspaceEvents(ws, root) {
       });
     });
 
-    const bindOvr = (id, fn) => root.querySelector('#' + id)?.addEventListener('change', e => mutate('Materyal ayarı', s => fn(s, Number(e.target.value)), false));
+    const bindOvr = (id, fn) => root.querySelector('#' + id)?.addEventListener('change', e => mutate('Materyal ayarı', s => fn(s, id==='ovrBevel'?displayToMm(e.target.value,store.get().pageLayout?.displayUnit):Number(e.target.value)), false));
     bindOvr('ovrMetalness', (s, v) => { s.materialOverrides.metalness = v; });
     bindOvr('ovrRoughness', (s, v) => { s.materialOverrides.roughness = v; });
     bindOvr('ovrRefl', (s, v) => { s.render.reflectionIntensity = v; });
@@ -2054,7 +2061,7 @@ function bindWorkspaceEvents(ws, root) {
     const bindL=(id,key,mirrorId=null)=>{
       const el=root.querySelector('#'+id);if(!el)return;
       el.addEventListener('input',e=>{const mirror=mirrorId&&root.querySelector('#'+mirrorId);if(mirror)mirror.value=e.target.value;});
-      el.addEventListener('change',e=>editLighting(key,Number(e.target.value)));
+      el.addEventListener('change',e=>editLighting(key,key==='wallDistanceMm'?displayToMm(e.target.value,store.get().pageLayout?.displayUnit):Number(e.target.value)));
     };
     bindL('lFrontInt', 'frontIntensity', 'lFrontIntRange');
     bindL('lFrontIntRange', 'frontIntensity', 'lFrontInt');
@@ -2077,7 +2084,7 @@ function bindWorkspaceEvents(ws, root) {
       if (e.target.value) { docManager.moveSelectedToPage(e.target.value, false); scheduleRebuild(true); renderActiveWorkspace(); }
     });
   } else if (ws === 'manufacturing') {
-    const bindM = (id, fn) => root.querySelector('#' + id)?.addEventListener('change', e => mutate('İmalat ayarı', s => fn(s, Number(e.target.value))));
+    const bindM = (id, fn) => root.querySelector('#' + id)?.addEventListener('change', e => mutate('İmalat ayarı', s => fn(s, displayToMm(e.target.value,store.get().pageLayout?.displayUnit))));
     bindM('mfgFileW', (s, v) => { const fw = Math.max(0, Math.min(40, v)); s.fileli.fileWidthMm = fw; const o = getSelectedOrFirst(s); if (o) o.fileWidthMm = fw; });
     bindM('mfgDepth', (s, v) => { const o = getSelectedOrFirst(s); if (o) o.depthMm = Math.max(10, v); });
     bindM('mfgAcThick', (s, v) => { s.fileli.acrylicThicknessMm = Math.max(1, v); });
@@ -2140,10 +2147,10 @@ function bindWorkspaceEvents(ws, root) {
     root.querySelector('#btnClearPm')?.addEventListener('click', () => mutate('Fotoğraf kaldır', s => { s.photomontage.photoUrl = null; }));
   } else if (ws === 'nesting') {
     const bindN = (id, key) => root.querySelector('#' + id)?.addEventListener('change', e => {
-      store.update(s => { s.nesting[key] = Number(e.target.value); });
+      store.update(s => { s.nesting[key] = key==='copies'?Number(e.target.value):displayToMm(e.target.value,s.pageLayout?.displayUnit); });
     });
-    root.querySelector('#nestW')?.addEventListener('change', e => applyNestingSheetSize(e.target.value, store.get().nesting.sheetHeightMm));
-    root.querySelector('#nestH')?.addEventListener('change', e => applyNestingSheetSize(store.get().nesting.sheetWidthMm, e.target.value));
+    root.querySelector('#nestW')?.addEventListener('change', e => applyNestingSheetSize(displayToMm(e.target.value,store.get().pageLayout?.displayUnit), store.get().nesting.sheetHeightMm));
+    root.querySelector('#nestH')?.addEventListener('change', e => applyNestingSheetSize(store.get().nesting.sheetWidthMm, displayToMm(e.target.value,store.get().pageLayout?.displayUnit)));
     bindN('nestMargin', 'marginMm');
     bindN('nestClear', 'clearanceMm');
     bindN('nestKerf', 'kerfMm');
@@ -2237,7 +2244,7 @@ function bindWorkspaceEvents(ws, root) {
       const s = store.get();
       const text = [
         `📋 *${s.projectName}*`,
-        `Ölçü: ${lastMetrics.totalWidthMm} × ${lastMetrics.totalHeightMm} mm`,
+        `Ölçü: ${formatDimensions(lastMetrics.totalWidthMm,lastMetrics.totalHeightMm,s.pageLayout?.displayUnit)}`,
         `Parça: ${lastMetrics.componentCount} adet · LED: ${lastMetrics.totalLedModules} modül`,
         `KDV Dahil Toplam: ${formatMoney(lastCosts.grandTotal, lastCosts.currency)}`,
         `Teslimat: ${s.quote.productionDays} iş günü`,
@@ -2683,14 +2690,15 @@ function setMainWorkspace(ws) {
 
 // Keep the Nesting sheet-size editor mounted. Replacing the entire workspace DOM
 // on every mutation closes native <select> menus and discards input focus.
-function syncNestingSettingsControls(sidebar, nesting) {
+function syncNestingSettingsControls(sidebar, nesting, displayUnit) {
+  const unit=normalizeDisplayUnit(displayUnit),show=mm=>formatMmAsUnit(mm,unit);
   if (!sidebar) return;
   const values = {
     cwsNestPreset: SHEET_PRESETS.find(p => p.w === nesting.sheetWidthMm && p.h === nesting.sheetHeightMm)?.id || 'custom',
-    cwsNestW: nesting.sheetWidthMm,
-    cwsNestH: nesting.sheetHeightMm,
-    cwsNestSp: nesting.clearanceMm,
-    cwsNestMg: nesting.marginLeftMm,
+    cwsNestW: show(nesting.sheetWidthMm),
+    cwsNestH: show(nesting.sheetHeightMm),
+    cwsNestSp: show(nesting.clearanceMm),
+    cwsNestMg: show(nesting.marginLeftMm),
     cwsNestRot: nesting.rotationStepDeg ?? 90,
     cwsNestStrategy: nesting.placementStrategy || 'compact',
     cwsNestBodyColor: nesting.previewColors?.body || '#c89343',
@@ -2720,7 +2728,7 @@ function updateCenterWorkspaces(state) {
       const html=renderNestingCenter(state,{activeSheetIdx,selectedPlacementId:selectedNestingId,selectedPlacementIds:[...selectedNestingIds]});
       if(el._lastHtml===html)return;
       el._lastHtml=html;
-      if (grid && currentTabId === targetTabId && grid.querySelector('.cws-side-r')) {
+      if (grid && currentTabId === targetTabId && el.querySelector('.nesting-workspace')?.dataset.displayUnit===normalizeDisplayUnit(state.pageLayout?.displayUnit) && grid.querySelector('.cws-side-r')) {
         // Replace only changing parts; preserve the exact right-panel DOM node.
         const template = document.createElement('template');
         template.innerHTML = html;
@@ -2732,7 +2740,7 @@ function updateCenterWorkspaces(state) {
         const tabs = el.querySelector('.nesting-source-tabs');
         const nextTabs = template.content.querySelector('.nesting-source-tabs');
         if (tabs && nextTabs) tabs.replaceWith(nextTabs);
-        syncNestingSettingsControls(grid.querySelector('.cws-side-r'), state.nesting);
+        syncNestingSettingsControls(grid.querySelector('.cws-side-r'), state.nesting,state.pageLayout?.displayUnit);
       } else {
         el.innerHTML = html;
       }
@@ -2813,7 +2821,7 @@ async function importNestingVectorFiles(fileList, root) {
   if (currentNestingImportController) {say('Mevcut içe aktarmayı tamamlayın veya iptal edin.');return;}
   const unit = root.querySelector('#nestImportUnit')?.value || 'auto';
   const scale = Number(root.querySelector('#nestImportScale')?.value || 1);
-  const tolerance = Number(root.querySelector('#nestImportTolerance')?.value || 1);
+  const tolerance = displayToMm(root.querySelector('#nestImportTolerance')?.value || formatMmAsUnit(1,store.get().pageLayout?.displayUnit),store.get().pageLayout?.displayUnit);
   if (!(scale > 0 && scale <= 1000) || !(tolerance > 0)) {say('Ölçek veya hassasiyet geçersiz.');return;}
   const controller = new AbortController();
   currentNestingImportController=controller;
@@ -3105,14 +3113,14 @@ function bindNestingCenterEvents(root) {
       const p = SHEET_PRESETS.find(x => x.id === e.target.value);
       if (p) applyNestingSheetSize(p.w, p.h, p.id);
     });
-  root.querySelector('#cwsNestW')?.addEventListener('change', e => applyNestingSheetSize(e.target.value, store.get().nesting.sheetHeightMm));
-  root.querySelector('#cwsNestH')?.addEventListener('change', e => applyNestingSheetSize(store.get().nesting.sheetWidthMm, e.target.value));
+  root.querySelector('#cwsNestW')?.addEventListener('change', e => applyNestingSheetSize(displayToMm(e.target.value,store.get().pageLayout?.displayUnit), store.get().nesting.sheetHeightMm));
+  root.querySelector('#cwsNestH')?.addEventListener('change', e => applyNestingSheetSize(store.get().nesting.sheetWidthMm, displayToMm(e.target.value,store.get().pageLayout?.displayUnit)));
   root.querySelector('#cwsNestSp')?.addEventListener('change', e => {
-    const v = Number(e.target.value);
+    const v = displayToMm(e.target.value,store.get().pageLayout?.displayUnit);
     if (Number.isFinite(v) && v >= 0) repackNestingSettings('Parça aralığı', n => { n.clearanceMm = v; });
   });
   root.querySelector('#cwsNestMg')?.addEventListener('change', e => {
-    const v = Number(e.target.value);
+    const v = displayToMm(e.target.value,store.get().pageLayout?.displayUnit);
     if (Number.isFinite(v) && v >= 0) repackNestingSettings('Levha kenar payı', n => {
       n.marginMm = n.marginLeftMm = n.marginRightMm = n.marginTopMm = n.marginBottomMm = v;
     });
@@ -3155,7 +3163,7 @@ function bindNestingCenterEvents(root) {
 
 function bindCncCenterEvents(root) {
   const upd = (id, fn, isChk = false) => root.querySelector('#' + id)?.addEventListener('change', e => {
-    mutateData('CNC ayarı', s => fn(s.cnc, isChk ? e.target.checked : e.target.value));
+    mutateData('CNC ayarı', s => fn(s.cnc, isChk ? e.target.checked : ['cncKerf','cncToolDia','cncLeadIn','cncTol'].includes(id)?displayToMm(e.target.value,s.pageLayout?.displayUnit):e.target.value));
   });
   upd('cncProfile', (c, v) => { c.profile = v; });
   upd('cncKerf', (c, v) => { c.kerfMm = Number(v); });
@@ -3221,7 +3229,7 @@ function customerQuoteText() {
     `*${s.quote?.companyName || 'Tabela Teklifi'}*`,
     `Proje: ${s.projectName}`,
     `Müşteri: ${s.quote?.customerCompany || s.quote?.customerName || '—'}`,
-    `Ölçü: ${metrics.totalWidthMm} × ${metrics.totalHeightMm} mm`,
+    `Ölçü: ${formatDimensions(metrics.totalWidthMm,metrics.totalHeightMm,s.pageLayout?.displayUnit)}`,
     `KDV Hariç: ${formatMoney(cost.subtotal, cost.currency)}`,
     `KDV Dahil: *${formatMoney(cost.grandTotal, cost.currency)}*`,
     `Üretim: ${s.quote?.productionDays || 7} iş günü`,
