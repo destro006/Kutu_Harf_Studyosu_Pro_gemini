@@ -304,11 +304,19 @@ export function getBrushedTexture(scale = 5, intensity = 0.65, directionDeg = 0)
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   const img = ctx.createImageData(size, size);
 
+  // Fine directional grain with subtle lengthwise variation, not cloudy 2D noise.
+  const strength = Math.max(0, Math.min(1, intensity));
   for (let y = 0; y < size; y++) {
-    const rowJitter = hash2d(0, y, 77);
+    const fineBand = valueNoise(0, y / 2.2, 77) - 0.5;
+    const hairline = hash2d(0, y, 113) - 0.5;
+    const scratch = Math.pow(hash2d(0, y, 131), 18);
     for (let x = 0; x < size; x++) {
-      const f = valueNoise(x / 60, y, 79) * 0.5 + valueNoise(x / 9, y, 83) * 0.25;
-      const base = 0.65 + (rowJitter - 0.5) * 0.38 * intensity + (f - 0.35) * 0.42 * intensity;
+      const alongGrain = valueNoise(x / 160, y / 3, 79) - 0.5;
+      const microNoise = hash2d(x, y, 83) - 0.5;
+      const base = 0.73 + strength * (
+        fineBand * 0.36 + hairline * 0.18 - scratch * 0.07 +
+        alongGrain * 0.045 + microNoise * 0.018
+      );
       const val = Math.max(20, Math.min(255, Math.round(base * 255)));
       const idx = (y * size + x) * 4;
       img.data[idx] = val;
@@ -369,8 +377,8 @@ export function createSignMaterial(presetId, overrides = {}, lightContext = {}) 
       roughness: Math.max(0.015, Math.min(1, roughness)),
       roughnessMap: brushMap,
       bumpMap: brushMap,
-      bumpScale: brushed ? 0.0012 * textureStrength * brushIntensity : 0,
-      anisotropy: brushed ? Math.min(1, 0.85 * brushIntensity) : (preset.anisotropy || 0),
+      bumpScale: brushed ? 0.012 * textureStrength * brushIntensity : 0,
+      anisotropy: brushed ? Math.min(1, 0.72 + 0.18 * brushIntensity) : (preset.anisotropy || 0),
       anisotropyRotation: (brushDirection * Math.PI) / 180,
       clearcoat: roughness < 0.1 ? (preset.clearcoat ?? 0.6) : (preset.clearcoat ?? 0),
       clearcoatRoughness: preset.clearcoatRoughness ?? 0.04,

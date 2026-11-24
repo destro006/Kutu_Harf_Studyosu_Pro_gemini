@@ -89,6 +89,31 @@ const autosaved = readAutosave();
 if (autosaved) {
   docManager.getActiveStore().set(autosaved);
   docManager.getActiveDoc().title = autosaved.projectName || 'Yeni Tabela Projesi';
+} else {
+  applySavedMaterialDefaults(docManager.getActiveStore());
+}
+
+// Personal presets apply to fresh projects; restored projects retain their own finish.
+function applySavedMaterialDefaults(targetStore) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(USER_DEFAULTS_KEY) || 'null');
+    if (!saved?.materials || !saved?.lighting || !saved?.render) return;
+    targetStore.update(s => {
+      for (const key of ['materials', 'materialOverrides', 'lighting', 'render']) {
+        if (saved[key] && typeof saved[key] === 'object') {
+          s[key] = { ...s[key], ...saved[key] };
+        }
+      }
+      for (const o of s.objects || []) {
+        o.faceMaterial = s.materials.faceId;
+        o.faceColor = s.materials.faceColor;
+        o.sideMaterial = s.materials.sideId;
+        o.sideColor = s.materials.sideColor;
+        o.sideFollowsFace = s.materials.sideFollowsFace;
+        o.lightingMode = s.lighting.mode;
+      }
+    });
+  } catch { /* Use built-in defaults when browser storage is unavailable. */ }
 }
 const store = {
   get: () => docManager.getActiveStore().get(),
@@ -149,7 +174,7 @@ function pasteSelectionFromClipboard() {
 }
 
 let fontSearchQuery = '';
-let matColorTab = 'ral';
+let matColorTab = 'basic';
 let ralGroupFilter = 'all';
 let ralSearchQuery = '';
 let ralTargetPart = 'face';
@@ -2489,8 +2514,8 @@ function syncNestingSettingsControls(sidebar, nesting) {
     cwsNestMg: nesting.marginLeftMm,
     cwsNestRot: nesting.rotationStepDeg ?? 90,
     cwsNestStrategy: nesting.placementStrategy || 'compact',
-    cwsNestBodyColor: nesting.previewColors?.body || '#246b83',
-    cwsNestHoleColor: nesting.previewColors?.holes || '#dca653',
+    cwsNestBodyColor: nesting.previewColors?.body || '#c89343',
+    cwsNestHoleColor: nesting.previewColors?.holes || '#c89343',
     cwsNestHoles: nesting.allowHoleNesting,
     cwsNestGrain: nesting.enforceGrainDirection,
   };
@@ -2677,7 +2702,7 @@ function bindNestingCenterEvents(root) {
   root.querySelector('#cwsNestBodyColor')?.addEventListener('input', e => setNestingPreviewColor('body', e.target.value));
   root.querySelector('#cwsNestHoleColor')?.addEventListener('input', e => setNestingPreviewColor('holes', e.target.value));
   root.querySelector('#cwsNestResetColors')?.addEventListener('click', () => mutate('Nesting renklerini sıfırla', s => {
-    s.nesting.previewColors = { body: '#246b83', holes: '#dca653' };
+    s.nesting.previewColors = { body: '#c89343', holes: '#c89343' };
   }, false));
   root.querySelector('#cwsExpSvg')?.addEventListener('click', () => {
     const sh = store.get().nesting.sheets[activeSheetIdx];
@@ -3574,6 +3599,7 @@ function init() {
   document.getElementById('btnPasteBetweenTabs')?.addEventListener('click', pasteSelectionFromClipboard);
   document.getElementById('btnNewDocTab')?.addEventListener('click', () => {
     docManager.newDocument();
+    applySavedMaterialDefaults(docManager.getActiveStore());
     applyDefaultPriceTemplate();
     renderDocumentTabs();
     setMainWorkspace(store.get().mainWorkspace || 'model3d');

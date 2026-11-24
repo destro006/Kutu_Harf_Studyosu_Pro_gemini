@@ -13,8 +13,8 @@ export function renderNestingSvg(sheet, selectedPlacementId = null, colors = {})
   const mT = sheet.marginTopMm ?? sheet.marginMm ?? 15;
   const mB = sheet.marginBottomMm ?? sheet.marginMm ?? 15;
   const validColor = (value, fallback) => /^#[0-9a-f]{6}$/i.test(value || '') ? value : fallback;
-  const bodyColor = validColor(colors?.body, '#246b83');
-  const holeColor = validColor(colors?.holes, '#dca653');
+  const bodyColor = validColor(colors?.body, '#c89343');
+  const holeColor = validColor(colors?.holes, '#c89343');
   const toD = pts => 'M ' + pts.map(pt => `${pt.x.toFixed(1)},${(h - pt.y).toFixed(1)}`).join(' L ') + ' Z';
   // Color-code empty interior contours separately. This is only a preview
   // overlay; holes remain actual holes in the exported manufacturing geometry.

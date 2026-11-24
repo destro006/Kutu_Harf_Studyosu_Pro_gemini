@@ -110,8 +110,8 @@ export function renderNestingCenter(state, ctx) {
         </div>
         <h3 class="sec-title" style="margin-top:14px">Önizleme Renkleri</h3>
         <div class="nesting-preview-palette">
-          <label class="nesting-palette-option"><span>Tüm harf gövdeleri</span><input id="cwsNestBodyColor" type="color" value="${/^#[a-f0-9]{6}$/i.test(n.previewColors?.body || '') ? n.previewColors.body : '#246b83'}" title="Tüm harfler için tek renk"></label>
-          <label class="nesting-palette-option"><span>A / O / R iç boşlukları</span><input id="cwsNestHoleColor" type="color" value="${/^#[a-f0-9]{6}$/i.test(n.previewColors?.holes || '') ? n.previewColors.holes : '#dca653'}" title="Bütün iç boşluklar için tek renk"></label>
+          <label class="nesting-palette-option"><span>Tüm harf gövdeleri</span><input id="cwsNestBodyColor" type="color" value="${/^#[a-f0-9]{6}$/i.test(n.previewColors?.body || '') ? n.previewColors.body : '#c89343'}" title="Tüm harfler için tek renk"></label>
+          <label class="nesting-palette-option"><span>A / O / R iç boşlukları</span><input id="cwsNestHoleColor" type="color" value="${/^#[a-f0-9]{6}$/i.test(n.previewColors?.holes || '') ? n.previewColors.holes : '#c89343'}" title="Bütün iç boşluklar için tek renk"></label>
           <button type="button" id="cwsNestResetColors" class="sec-btn">Renkleri Sıfırla</button>
           <small>Bu renkler yalnızca nesting önizlemesidir; CNC, DXF ve SVG kesim konturları değişmez.</small>
         </div>

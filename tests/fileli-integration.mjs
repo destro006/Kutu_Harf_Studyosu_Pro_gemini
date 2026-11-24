@@ -9,8 +9,13 @@ import { serializeProject, deserializeProject } from '../src/core/projectSeriali
 import { createDefaultState } from '../src/core/state.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const font = parseFont(fs.readFileSync(path.join(ROOT, 'public/fonts/montserrat-latin-800-normal-C3dfDxXV.woff')).buffer);
-const fontExt = parseFont(fs.readFileSync(path.join(ROOT, 'public/fonts/montserrat-latin-ext-800-normal-Wjq_OapB.woff')).buffer);
+function readFont(file) {
+  const bytes = fs.readFileSync(file);
+  // Node Buffers can be views into a larger shared ArrayBuffer.
+  return parseFont(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+}
+const font = readFont(path.join(ROOT, 'public/fonts/montserrat-latin-800-normal-C3dfDxXV.woff'));
+const fontExt = readFont(path.join(ROOT, 'public/fonts/montserrat-latin-ext-800-normal-Wjq_OapB.woff'));
 const glyphs = layoutTextMm([font, fontExt], 'MERHABA', 300, 8).glyphs;
 assert.equal(glyphs.length, 7);
 let geometryCount = 0, triangles = 0;

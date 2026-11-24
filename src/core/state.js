@@ -48,9 +48,9 @@ export function createDefaultState() {
       metalness: null,
       roughness: null,
       brushDirection: 0,
-      brushScale: 5,
-      brushIntensity: 0.7,
-      textureStrength: 0.25,
+      brushScale: 6,
+      brushIntensity: 0.82,
+      textureStrength: 0.4,
       bevelMm: 1.8,
       acrylicOpacity: 0.94,
       acrylicTransmission: 0.18,
@@ -75,20 +75,20 @@ export function createDefaultState() {
       envPreset: 'luxuryGold',
       envRotationDeg: 0,
       envPitchDeg: 0,
-      envIntensity: 1.15,
-      reflectionIntensity: 1.25,
+      envIntensity: 1.25,
+      reflectionIntensity: 1.45,
       customCardScale: 1.0,
       exposure: 1.05,
       useCustomEnv: false,
     },
 
     lighting: {
-      enabled: false,
-      mode: 'none', // 'front' | 'halo' | 'both' | 'none'
+      enabled: true,
+      mode: 'halo', // 'front' | 'halo' | 'both' | 'none'
       colorHex: '#ffc982',
       ledKind: 'mono', // 'mono' | 'rgb'
       frontIntensity: 1.0,
-      backIntensity: 1.1,
+      backIntensity: 1.35,
       haloSpread: 1.0,
       falloff: 1.0,
       wallDistanceMm: 35,
@@ -160,7 +160,7 @@ export function createDefaultState() {
         name: 'Ana Tabela Yazısı',
         kind: 'text',
         text: 'MARKANIZ',
-        fontId: 'montserrat',
+        fontId: 'cinzel',
         heightMm: 400,
         depthMm: 80,
         letterSpacingMm: 8,
@@ -188,7 +188,7 @@ export function createDefaultState() {
         fileColor: '#f5c66a',
         acrylicMaterial: 'opalPleksi',
         acrylicColor: '#f3f3ee',
-        lightingMode: 'none',
+        lightingMode: 'halo',
       },
     ],
 
@@ -201,8 +201,8 @@ export function createDefaultState() {
       allowedAngles: [0, 90, 180, 270],
       fineAngleStep: 0, // 0 = use allowedAngles, >0 = e.g. 45 or 15 deg steps
       rotationStepDeg: 90, // 0=fixed, 180=two positions, 90=quarter turns, 45=eighth turns
-      placementStrategy: 'compact', // compact | vertical | bottomLeft
-      previewColors: { body: '#246b83', holes: '#dca653' },
+      placementStrategy: 'vertical', // compact | vertical | bottomLeft
+      previewColors: { body: '#c89343', holes: '#c89343' },
       copies: 1,
       grainDirection: 'none',
       targetPart: 'all',
