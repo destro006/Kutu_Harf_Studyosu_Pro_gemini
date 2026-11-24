@@ -15,7 +15,7 @@ export function renderNestingSourceTabs(n={}) {
 export function renderNestingImportPane() {
  return `<div class="nesting-import-panel">
    <div class="nesting-import-hero"><div class="nesting-import-mark">▧</div>
-     <div><h2>Vektör Dosyası İçe Aktar</h2><p>SVG, PDF, AI/EPS statik konturları, ASCII/Binary DXF ve HPGL/PLT dosyalarını cihazında aç. Büyük dosyalar ayrı iş parçacığında işlenir. Önce hızlı güvenli yerleşim, sonra isteğe bağlı optimizasyon.</p></div>
+     <div><h2>Vektör Dosyası İçe Aktar</h2><p>CDR, DWG, SVG, PDF, AI/EPS statik konturları, ASCII/Binary DXF ve HPGL/PLT dosyalarını cihazında aç. Büyük dosyalar ayrı iş parçacığında işlenir. Önce hızlı güvenli yerleşim, sonra isteğe bağlı optimizasyon.</p></div>
    </div>
    <div class="nesting-import-controls">
      <label>Dosya ölçek birimi<select id="nestImportUnit"><option value="auto">Otomatik · dosyadan oku</option><option value="mm">Milimetre (mm)</option><option value="cm">Santimetre (cm)</option><option value="m">Metre (m)</option><option value="in">İnç (in)</option><option value="px">Piksel · 96 DPI</option></select></label>
@@ -24,11 +24,11 @@ export function renderNestingImportPane() {
    </div>
    <label class="nesting-file-drop" id="nestVectorDropZone" for="nestVectorFileInput">
       <span class="nesting-drop-icon">⇪</span><strong>Dosya seç veya buraya sürükle</strong>
-      <span>SVG · SVGZ · PDF · AI / EPS / PS (statik konturlar) · DXF (ASCII/Binary) · HPGL / PLT</span><span>Birden fazla dosya seçebilirsin; her dosya ayrı sekmede açılır.</span>
+      <span>CDR · DWG · SVG · SVGZ · PDF · AI/EPS/PS · DXF · HPGL / PLT</span><span>Birden fazla dosya seçebilirsin; her dosya ayrı sekmede açılır.</span>
    </label>
    <input hidden type="file" id="nestVectorFileInput" accept=".svg,.dxf,.plt,.hpgl,.pdf,.eps,.ps,.ai,.cdr,.dwg,.wmf,.emf,.cgm,.cmx,.svgz" multiple>
    <div class="nesting-import-progress"><p id="nestImportMessage" class="nesting-import-message" role="status" aria-live="polite">Sabit 12 MB sınırı kaldırıldı. Dosyalar yerel olarak işlenir.</p><button type="button" hidden id="nestImportCancel" class="nesting-import-cancel">✕ İptal Et</button></div>
-   <details class="nesting-import-converters"><summary>Özel dosya formatları: CDR, AI, EPS, DWG, WMF, EMF ve diğerleri</summary><p><b>PDF yerel PDF.js ile doğrudan açılır.</b> PDF uyumlu AI ve eski AI/EPS/PS statik konturları okunur. Karmaşık PostScript, özel Illustrator verisi, CDR, DWG, WMF, EMF, CGM ve CMX için tam motor desteği henüz yoktur. Eksik üretim geometrisi oluşturmamak için desteklenmeyen işlemler bildirilir.</p></details>
+   <details class="nesting-import-converters"><summary>Özel dosya formatları: CDR, AI, EPS, DWG, WMF, EMF ve diğerleri</summary><p><b>PDF yerel PDF.js ile doğrudan açılır.</b> PDF uyumlu AI ve eski AI/EPS/PS statik konturları okunur. CDR (ilk sayfa) libcdr, DWG (2B konturlar) LibreDWG motoruyla yerel açılır. Karmaşık PostScript, özel Illustrator verisi, WMF, EMF, CGM ve CMX için tam destek yoktur. Eksik üretim geometrisi oluşturmamak için desteklenmeyen işlemler bildirilir.</p></details>
    <p class="nesting-import-caution">Üretim güvenliği: Dosya içe aktarıldığında kapalı konturlar, iç boşluklar ve fiziksel ölçüler kontrol edilir. CNC çıkışından önce makine, malzeme ve ölçüleri onaylayın.</p>
  </div>`;
 }

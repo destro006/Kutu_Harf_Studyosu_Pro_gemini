@@ -20,6 +20,7 @@ export async function runVectorImportJob(job,{signal,onStatus=()=>{}}={}){
   const abort=()=>complete(new DOMException('İçe aktarma iptal edildi.','AbortError'));
   worker.onmessage=e=>{
    if(e.data?.jobId!==job.jobId)return;
+   if(e.data?.status){onStatus(e.data.status);return;}
    complete(e.data?.error?new Error(e.data.error):null,e.data?.result);
   };
   worker.onmessageerror=()=>complete(new Error('Nesting motorundan gelen veri okunamadı.'));

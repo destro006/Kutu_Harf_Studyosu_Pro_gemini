@@ -10,7 +10,9 @@ export const VECTOR_INPUT_FORMATS=[
  {id:'plt',ext:'.plt',label:'HPGL/PLT · Plotter konturları',ready:true},
  {id:'hpgl',ext:'.hpgl',label:'HPGL · Plotter konturları',ready:true},
  ...['eps','ps','ai'].map(id=>({id,ext:'.'+id,label:id.toUpperCase()+' · Statik konturlar',ready:true})),
- ...['cdr','dwg','wmf','emf','cgm','cmx','svgz','afdesign','sketch'].map(id=>({id,ext:'.'+id,label:id.toUpperCase()+' · Harici dönüştürme gerekli',ready:false})),
+ {id:'cdr',ext:'.cdr',label:'CorelDRAW · libcdr WASM (ilk sayfa)',ready:true},
+ {id:'dwg',ext:'.dwg',label:'AutoCAD DWG · LibreDWG WASM (2B konturlar)',ready:true},
+ ...['wmf','emf','cgm','cmx','svgz','afdesign','sketch'].map(id=>({id,ext:'.'+id,label:id.toUpperCase()+' · Harici dönüştürme gerekli',ready:false})),
 ];
 const D=1e-9;
 const round=v=>Math.round(v*1000)/1000;
@@ -264,6 +266,7 @@ export function importVectorText(text,filename,options={}){
  if(!meta)throw Error('Desteklenmeyen uzantı: '+ext+'. SVG, DXF veya HPGL/PLT kullanın.');
  if(!meta.ready)throw Error(ext.toUpperCase()+' dosyasını doğrudan okumak için güvenilir dönüştürücü gerekiyor. CorelDRAW/Illustrator/AutoCAD içinden vektörleri SVG veya ASCII DXF biçiminde dışa aktarıp içe aktarın. Dosyanın uzantısını değiştirmek yeterli değildir.');
  // No arbitrary file-byte limit: conversion runs in a cancellable worker.
+ if(['cdr','dwg'].includes(ext))throw Error(ext.toUpperCase()+' binary dosyası yerel WASM dönüştürücü ile açılmalıdır.');
  if(ext==='pdf')throw Error('PDF dosyası binary olarak yerel PDF.js motoruyla açılmalıdır.');
  if(['ai','eps','ps'].includes(ext))return importLegacyPostScript(text,filename,options);
  if(ext==='svg')return importSvgText(text,filename,options);

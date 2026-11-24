@@ -56,9 +56,19 @@ function processJob(job){
 // Protect UI: this module is also importable in deterministic Node tests.
 export { processJob as runNestingImportJob };
 if(typeof self!=='undefined'&&typeof self.addEventListener==='function'){
-  self.addEventListener('message',event=>{
+  self.addEventListener('message',async event=>{
     const job=event.data;
-    try{self.postMessage({jobId:job.jobId,result:processJob(job)});}
+    try{
+      if(job.operation==='importBinary'){
+        const kind=detectVectorFormat(new Uint8Array(job.bytes),job.filename);
+        if(['cdr','dwg'].includes(kind)){
+          const {importNativeCad}=await import('./NativeCadImport.js');
+          const imported=await importNativeCad(job.bytes,job.filename,kind,job.options||{},status=>self.postMessage({jobId:job.jobId,status}));
+          self.postMessage({jobId:job.jobId,result:processJob({...job,operation:'nest',imported,nesting:{...job.nesting,quickImport:true}})});return;
+        }
+      }
+      self.postMessage({jobId:job.jobId,result:processJob(job)});
+    }
     catch(err){self.postMessage({jobId:job.jobId,error:String(err?.message||err)});}
   });
 }
