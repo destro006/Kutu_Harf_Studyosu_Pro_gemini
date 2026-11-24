@@ -54,7 +54,7 @@ export function renderNestingCenter(state, ctx) {
         ${(n.unplaced || []).length ? `
           <h3 class="sec-title" style="margin-top:12px;color:var(--danger)">Yerleşmeyenler (${n.unplaced.length})</h3>
           <div style="font-size:11.5px;color:var(--danger)">
-            ${n.unplaced.map(u => `<div>• ${escapeHtml(u.label)} (${escapeHtml(u.reason || 'Sığmadı')})</div>`).join('')}
+            ${n.unplaced.map(u => `<div>• ${escapeHtml(u.item?.label||u.label)} (${escapeHtml(u.reason || 'Sığmadı')})</div>`).join('')}
           </div>
         ` : ''}
       </div>
@@ -106,6 +106,9 @@ export function renderNestingCenter(state, ctx) {
             <option value="180" ${n.rotationStepDeg === 180 ? 'selected' : ''}>0° / 180°</option>
             <option value="90" ${(n.rotationStepDeg ?? 90) === 90 ? 'selected' : ''}>90° Adımlı</option>
             <option value="45" ${n.rotationStepDeg === 45 ? 'selected' : ''}>45° Adımlı</option>
+            <option value="30" ${n.rotationStepDeg === 30 ? 'selected' : ''}>30° Adımlı</option>
+            <option value="15" ${n.rotationStepDeg === 15 ? 'selected' : ''}>15° Adımlı</option>
+            <option value="5" ${n.rotationStepDeg === 5 ? 'selected' : ''}>5° Adımlı · detaylı</option>
           </select>
         </div>
         <h3 class="sec-title" style="margin-top:14px">Yerleşim Tercihi</h3>

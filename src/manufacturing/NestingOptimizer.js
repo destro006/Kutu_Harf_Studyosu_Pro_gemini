@@ -23,7 +23,7 @@ export function optimizeNesting(items,config={},locked=[],onProgress=()=>{}){
   for(const [itemOrder,placementStrategy,quickImport] of trials){
     if(attempts&&performance.now()>=end)break;
     if(!quickImport&&items.length>160)continue;
-    const deadline=quickImport?end:Math.min(end,performance.now()+Math.max(250,budget/5));
+    const deadline=quickImport?(best?end:Infinity):Math.min(end,performance.now()+Math.max(250,budget/4));
     try{const out=runTrueShapeNesting(items,{...config,itemOrder,placementStrategy,quickImport,deadline},locked);attempts++;accept(out);onProgress({attempts,score:best?nestingScore(best):null});}
     catch(e){if(e.message!=='NEST_BUDGET')throw e;}
   }

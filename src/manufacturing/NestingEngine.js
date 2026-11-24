@@ -254,7 +254,7 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
   // The UI rotation selector is authoritative. Older projects that lack it
   // retain their explicit allowedAngles/fineAngleStep settings.
   let angles = allowedAngles.length ? allowedAngles : [0, 90, 180, 270];
-  if (rotationStepDeg != null && [0, 45, 90, 180].includes(Number(rotationStepDeg))) {
+  if (rotationStepDeg != null && [0, 5, 15, 30, 45, 90, 180].includes(Number(rotationStepDeg))) {
     angles = Number(rotationStepDeg) === 0 ? [0] :
       Array.from({length:360 / Number(rotationStepDeg)}, (_, i) => i * Number(rotationStepDeg));
   } else if (fineAngleStep > 0) {
@@ -564,6 +564,40 @@ function findBestPlacementOnSheet(sheet, variants, minX, minY, maxX, maxY, allow
     }
     const xs = [...candX].filter(x => x >= minX && x + v.bounds.width <= maxX + 1e-5).sort((a,b)=>a-b);
     const ys = [...candY].filter(y => y >= minY && y + v.bounds.height <= maxY + 1e-5).sort((a,b)=>a-b);
+    if(Number.isFinite(deadline)){
+      const candidates=[];
+      for(const x of xs)for(const y of ys)candidates.push({x,y,score:scoreAt(x,y,v)});
+      // Sample contour vertex contacts (not an exact no-fit-polygon solver).
+      const sample=pts=>pts.filter((_,i)=>i%Math.max(1,Math.ceil(pts.length/12))===0);
+      for(const p of sheet.placements){
+        for(const a of sample(p.outer))for(const b of sample(v.outer)){
+          for(const [dx,dy] of [[minSep+.01,0],[-minSep-.01,0],[0,minSep+.01],[0,-minSep-.01]]){
+            const x=a.x-b.x+dx,y=a.y-b.y+dy;
+            if(x>=minX&&y>=minY&&x+v.bounds.width<=maxX+1e-5&&y+v.bounds.height<=maxY+1e-5)candidates.push({x,y,score:scoreAt(x,y,v)});
+          }
+        }
+      }
+      candidates.sort((a,b)=>a.score-b.score);
+      let found=null,checks=0;const seen=new Set();
+      for(const {x,y,score} of candidates){
+        if(performance.now()>deadline)throw Error('NEST_BUDGET');
+        const key=Math.round(x*10)+','+Math.round(y*10);if(seen.has(key))continue;seen.add(key);
+        if(++checks>450)break;
+        if(!fitsOnSheet(sheet,translatePolygon(v.outer,x,y),{minX:x,minY:y,maxX:x+v.bounds.width,maxY:y+v.bounds.height}))continue;
+        found={x,y,score};break;
+      }
+      if(found){
+        let cx=found.x,cy=found.y;
+        const fits=(x,y)=>fitsOnSheet(sheet,translatePolygon(v.outer,x,y),{minX:x,minY:y,maxX:x+v.bounds.width,maxY:y+v.bounds.height});
+        for(const delta of [12,3,1]){
+          while(cx-delta>=minX&&fits(cx-delta,cy)){cx-=delta;if(performance.now()>deadline)throw Error('NEST_BUDGET');}
+          while(cy-delta>=minY&&fits(cx,cy-delta)){cy-=delta;if(performance.now()>deadline)throw Error('NEST_BUDGET');}
+        }
+        const score=scoreAt(cx,cy,v);
+        if(score<bestScore){bestScore=score;best={angleDeg:v.ang,xMm:cx,yMm:cy,outer:translatePolygon(v.outer,cx,cy),holes:v.holes.map(h=>translatePolygon(h,cx,cy)),bounds:{minX:cx,minY:cy,maxX:cx+v.bounds.width,maxY:cy+v.bounds.height,width:v.bounds.width,height:v.bounds.height}};}
+      }
+      continue;
+    }
     for (const x of xs) {
       if(performance.now()>deadline)throw Error('NEST_BUDGET');
       for (const y of ys) {

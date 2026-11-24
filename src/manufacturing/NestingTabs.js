@@ -32,6 +32,7 @@ export function switchNestingTab(n, nextTabId) {
   if(nextTabId==='import') {n.activeTabId='import';return true;}
   const source=nextTabId==='design'?n.designTabSnapshot:n.importedTabs.find(t=>t.id===nextTabId)?.settings;
   if(source)for(const field of NESTING_TAB_FIELDS)if(Object.hasOwn(source,field))n[field]=clone(source[field]);
+  for(const field of ['partOverrides','optimizationInfo'])if(!source||!Object.hasOwn(source,field))n[field]=field==='partOverrides'?{}:null;
   n.activeTabId=nextTabId;
   return true;
 }
@@ -44,7 +45,7 @@ export function createNestingImportedTab(n, imported, options={}) {
   if(n.importedTabs.some(t=>t.id===id))throw Error('Bu nesting sekme kimliği zaten kullanımda.');
   const tab={id,name:asName(imported.filename||options.name),format:imported.format||'vector',
     items:markImmutableGeometry(clone(imported.items)),warnings:clone(imported.warnings||[]),
-    settings:{...snapshotNestingTab(n),sheets:[],unplaced:[],partOverrides:{}}};
+    settings:{...snapshotNestingTab(n),sheets:[],unplaced:[],partOverrides:{},optimizationInfo:null}};
   n.importedTabs.push(tab);
   for(const field of NESTING_TAB_FIELDS)if(Object.hasOwn(tab.settings,field))n[field]=clone(tab.settings[field]);
   n.activeTabId=id;
@@ -72,9 +73,9 @@ export function getNestingTabTitle(n) {
 
 // Edits belong to this nesting source, not to the original 3D document.
 export function applyNestingPartOverrides(items,n){
-  const overrides=n.partOverrides||{};
-  return items.filter(item=>!overrides[item.id]?.deleted).map(item=>{
-    const factor=overrides[item.id]?.scale||1;
+  const overrides=n.partOverrides||{},get=item=>overrides[item.id]||overrides[item.id+'_copy0'];
+  return items.filter(item=>!get(item)?.deleted).map(item=>{
+    const factor=get(item)?.scale||1;
     if(factor===1)return item;
     const scale=ring=>ring.map(p=>({x:p.x*factor,y:p.y*factor}));
     return {...item,outer:scale(item.outer),holes:(item.holes||[]).map(scale),areaMm2:item.areaMm2*factor*factor};

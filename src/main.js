@@ -492,6 +492,7 @@ function updateNumericBar(state) {
       else signEngine?.setCameraPreset('fit');
     },
     onNestingPartEdit: (action, val) => {
+      nestingRepackController?.abort();
       const sheets = store.get().nesting?.sheets || [];
       const sh = sheets[activeSheetIdx];
       const part = sh?.placements?.find(p => p.id === selectedNestingId);
@@ -2584,7 +2585,8 @@ function renderPageTabs() {
 
 function setMainWorkspace(ws) {
   const previous=store.get().mainWorkspace;
-  if(previous!==ws){nestingGesture?.cancel?.();nestingGesture=null;}
+  if(previous!==ws){nestingGesture?.cancel?.();nestingGesture=null;signEngine?.cancelActiveDrag?.();}
+  document.getElementById('studioBody')?.classList.toggle('nesting-isolated',ws==='nesting');
   store.updateScoped([],s => { s.mainWorkspace = ws; });
   document.querySelectorAll('#mainWorkspaceTabs button').forEach(b => b.classList.toggle('on', b.dataset.mainWs === ws));
 
@@ -2697,7 +2699,7 @@ async function repackNestingSettings(label,updateNesting,quickImport=true){
   const button=document.getElementById('cwsRunNesting');
   if(button)button.textContent='İşleniyor… (tekrar tıkla: iptal)';
   try{
-    let result={sheets:[],unplaced:[]};
+    let result={sheets:[],unplaced:[],sheetCount:0,overallUtilizationPct:0,totalScrapM2:0,interlockedPairs:0,totalCutLengthM:0,minSep:nestingSeparation(next)};
     if(items.length){const out=await runVectorImportJob({jobId:Date.now(),operation:'nest',imported:{items},nesting:{...Object.fromEntries(Object.entries(next).filter(([key])=>!['sheets','unplaced','importedTabs','designTabSnapshot'].includes(key))),quickImport},lockedSheets:next.sheets?.filter(sh=>sh.placements.some(p=>p.locked))||[]},{signal:controller.signal});result=out.nesting;}
     if(controller.signal.aborted||docManager.activeDocId!==docId||store.get().activePageId!==pageId||(store.get().nesting.activeTabId||'design')!==tab)return;
     lastNesting=result;activeSheetIdx=0;selectedNestingId=null;
@@ -3335,6 +3337,7 @@ function resetMaterialDefaults() {
  * Selected-only exports preserve the editing document and its global state.
  */
 async function studioExport(format, selectedOnly = false, resolution = '2400x1500', source = 'design') {
+  if(source==='design'&&['png','transparentPng','jpg','webp','bmp','stl','stla','glb','gltf','ply','3mf','obj'].includes(format)&&!is3DWorkspace(store.get()))throw Error('3D model veya görsel çıktı için önce 3D Kutu Harf sekmesini açın.');
   return runProfessionalExport({
     format,source,selectedOnly,resolution,state:store.get(),
     metricsList:lastSceneResult?.metricsList || [],signEngine,activeSheetIdx,

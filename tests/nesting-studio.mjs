@@ -8,7 +8,7 @@ const items=[rect('background',2300,600),...Array.from({length:14},(_,i)=>rect('
 const state=createDefaultState(),n=state.nesting;const tab=createNestingImportedTab(n,{filename:'fixture.pdf',items});
 const config={sheetWidthMm:3000,sheetHeightMm:1500,clearanceMm:5,kerfMm:.4,optimizationBudgetMs:800};
 const baseline=runTrueShapeNesting(items,{...config,quickImport:true});
-const result=optimizeNesting(items,config);assert.equal(result.unplaced.length,0);assert(!betterNesting(baseline,result));
+const result=optimizeNesting(items,config);assert.equal(result.unplaced.length,0);assert(!betterNesting(baseline,result));assert(result.optimization.attempts>0);
 n.sheets=result.sheets;n.partOverrides={background:{deleted:true},part0:{scale:2}};
 const edited=applyNestingPartOverrides(getActiveNestingImportedItems(n),n);assert.equal(edited.length,14);assert.equal(edited.find(x=>x.id==='part0').areaMm2,items[1].areaMm2*4);
 syncActiveNestingTab(n);switchNestingTab(n,'design');switchNestingTab(n,tab.id);assert(n.partOverrides.background.deleted);
