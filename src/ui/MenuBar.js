@@ -96,6 +96,8 @@ export function attachMenuBar(actions) {
     bar.querySelectorAll('.menu-btn').forEach(b => b.classList.remove('on'));
   };
 
+  window.addEventListener('keydown',e=>{if(e.key==='Escape'&&openKey){e.preventDefault();e.stopImmediatePropagation();closeMenu();}},true);
+  window.addEventListener('studio-close-menus',closeMenu);
   bar.querySelectorAll('.menu-btn').forEach(btn => {
     btn.onclick = (e) => {
       e.stopPropagation();
