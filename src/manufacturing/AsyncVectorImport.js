@@ -1,4 +1,3 @@
-import { runNestingImportJob } from './NestingImportWorker.js';
 
 /**
  * Dedicated worker per import: cancellation terminates CPU-heavy parsers and

@@ -2763,7 +2763,7 @@ async function repackNestingSettings(label,updateNesting,quickImport=true){
   if(button)button.textContent='İşleniyor… (tekrar tıkla: iptal)';
   try{
     let result={sheets:[],unplaced:[],sheetCount:0,overallUtilizationPct:0,totalScrapM2:0,interlockedPairs:0,totalCutLengthM:0,minSep:nestingSeparation(next)};
-    if(items.length){const out=await runVectorImportJob({jobId:Date.now(),operation:'nest',imported:{items},nesting:{...Object.fromEntries(Object.entries(next).filter(([key])=>!['sheets','unplaced','importedTabs','designTabSnapshot'].includes(key))),quickImport},lockedSheets:next.sheets?.filter(sh=>sh.placements.some(p=>p.locked))||[]},{signal:controller.signal});result=out.nesting;}
+    if(items.length){const out=await runVectorImportJob({jobId:Date.now(),operation:'nest',imported:{items},nesting:{...Object.fromEntries(Object.entries(next).filter(([key])=>!['sheets','unplaced','importedTabs','designTabSnapshot'].includes(key))),quickImport},lockedSheets:next.sheets?.filter(sh=>sh.placements.some(p=>p.locked))||[]},{signal:controller.signal,onStatus:status=>{const b=document.getElementById('cwsRunNesting');if(b&&nestingRepackController===controller)b.textContent=status+' · İptal';}});result=out.nesting;}
     if(controller.signal.aborted||docManager.activeDocId!==docId||store.get().activePageId!==pageId||(store.get().nesting.activeTabId||'design')!==tab)return;
     lastNesting=result;activeSheetIdx=0;selectedNestingId=null;
     next.optimizationInfo=result.optimization||null;

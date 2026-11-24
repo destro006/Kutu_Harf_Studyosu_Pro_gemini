@@ -43,4 +43,6 @@ const fixture=path.join(root,'tests/native-cad-fixtures');await fs.mkdir(fixture
 await pinned(dwg+'test/test-data/2018/circle.dwg',path.join(fixture,'circle2018.dwg'),'7e524a9d2770ab7011a85c12c1d1134bb1011154');
 await pinned(dwg+'test/test-data/2000/Polygon.dwg',path.join(fixture,'polygon2000.dwg'),'d1d4663a841210ff99192df61c5102dc4b4e1fbb');
 await pinned('https://raw.githubusercontent.com/fumikrobot/source-code/278c033dd96319ef7cef37685ca623d160c38a23/draw%20file%20prepare/test.cdr',path.join(fixture,'test.cdr'),'46331005467171e3a280f1c84eb51d3a90bb5d15');
-console.log('Native CAD engines and pinned upstream test fixtures prepared.');
+await build({stdin:{contents:"import ClipperLib from 'clipper-lib'; export default ClipperLib;",resolveDir:root},outfile:path.join(out,'clipper-runtime.js'),format:'esm',platform:'browser',bundle:true,legalComments:'inline'});
+await fs.writeFile(path.join(out,'CLIPPER-NOTICE.txt'),'Clipper 6.4.2, Angus Johnson; JavaScript port Timo. Boost Software License 1.0. https://www.boost.org/LICENSE_1_0.txt\nSource: https://www.npmjs.com/package/clipper-lib\n');
+console.log('Native CAD engines, Clipper NFP kernel and pinned upstream test fixtures prepared.');

@@ -7,7 +7,7 @@ import { pdfOperatorRings } from './PdfVectorImport.js';
 import { optimizeNesting } from './NestingOptimizer.js';
 import { runTrueShapeNesting, validateSheetLayout } from './NestingEngine.js';
 
-function processJob(job){
+function processJob(job,onProgress=()=>{}){
   let imported;
   if(job.operation==='importBinary'){
     const data=new Uint8Array(job.bytes),kind=detectVectorFormat(data,job.filename);
@@ -45,9 +45,9 @@ function processJob(job){
   } else throw Error('Bilinmeyen içe aktarma işlemi.');
   if(!imported.items?.length)throw Error('Dosyada üretilebilir kapalı vektör parçası yok.');
   const config={...(job.nesting||{}),quickImport:job.operation!=='nest'||Boolean(job.nesting?.quickImport)};
-  const result=job.operation==='nest'&&!config.quickImport?optimizeNesting(imported.items,config,job.lockedSheets||[]):runTrueShapeNesting(imported.items,config,job.lockedSheets||[]);
+  const result=job.operation==='nest'&&!config.quickImport?optimizeNesting(imported.items,config,job.lockedSheets||[],onProgress):runTrueShapeNesting(imported.items,config,job.lockedSheets||[]);
   for(const sheet of result.sheets){
-    const test=validateSheetLayout(sheet,(job.nesting?.clearanceMm??5)+(job.nesting?.kerfMm??.4));
+    const test=validateSheetLayout(sheet,result.minSep,config.allowHoleNesting!==false);
     if(!test.valid)throw Error('Nesting doğrulaması başarısız: kesim parçaları çakışıyor.');
   }
   return {imported,nesting:result};
@@ -67,7 +67,7 @@ if(typeof self!=='undefined'&&typeof self.addEventListener==='function'){
           self.postMessage({jobId:job.jobId,result:processJob({...job,operation:'nest',imported,nesting:{...job.nesting,quickImport:true}})});return;
         }
       }
-      try{self.postMessage({jobId:job.jobId,result:processJob(job)});}
+      try{self.postMessage({jobId:job.jobId,result:processJob(job,p=>self.postMessage({jobId:job.jobId,status:'NFP optimizasyonu · '+p.attempts+' deneme · '+Math.min(99,Math.floor(100*p.elapsedMs/p.budgetMs))+'% zaman bütçesi'}))});}
       catch(original){
         if(job.operation!=='importBinary'||!['postscript','eps-binary'].includes(detectVectorFormat(new Uint8Array(job.bytes),job.filename)))throw original;
         self.postMessage({jobId:job.jobId,status:'AI/EPS için gelişmiş yerel PostScript motoru yükleniyor…'});

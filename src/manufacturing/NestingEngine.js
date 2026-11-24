@@ -1,6 +1,7 @@
 import {
   ensureWinding,
   minDistanceBetweenPolygons,
+  distPointToSegment,
   pointInPolygon,
   polygonArea,
   polygonBounds,
@@ -91,11 +92,11 @@ export function extractNestingItems(metricsList, state) {
 
       const addRing = (outer, holes, partType, materialName, thicknessMm, operation) => {
         const rawOuter = ensureWinding(outer, true);
-        const normOuter = simplifyClosedPolygon(rawOuter, 1.5);
+        const normOuter = rawOuter; // preserve original manufacturing contour
         if (normOuter.length < 3) return;
         const b = polygonBounds(normOuter);
         const shift = p => ({ x: p.x - b.minX, y: p.y - b.minY });
-        const normHoles = (holes || []).map(h => simplifyClosedPolygon(ensureWinding(h, false), 1.5).map(shift));
+        const normHoles = (holes || []).map(h => ensureWinding(h, false).map(shift));
         const holeArea = normHoles.reduce((acc, h) => acc + polygonArea(h), 0);
         const areaMm2 = Math.max(0, polygonArea(normOuter) - holeArea);
 
@@ -149,7 +150,7 @@ function fitsInsideHole(candPoly, holePoly, minSep) {
     return false;
   }
   // Every vertex of candPoly must be inside holePoly
-  for (let i = 0; i < candPoly.length; i += Math.max(1, Math.floor(candPoly.length / 8))) {
+  for (let i = 0; i < candPoly.length; i++) {
     if (!pointInPolygon(candPoly[i], holePoly)) return false;
   }
   // No edge crossing and minimum distance >= minSep
@@ -169,13 +170,14 @@ function fitsInsideHole(candPoly, holePoly, minSep) {
       minD = Math.min(minD, Math.hypot(pt.x - (a.x + t * vx), pt.y - (a.y + t * vy)));
     }
   }
-  return minD >= minSep;
+  for(const pt of holePoly)for(let j=0;j<candPoly.length;j++)minD=Math.min(minD,distPointToSegment(pt,candPoly[j],candPoly[(j+1)%candPoly.length]));
+  return minD >= minSep-1e-7;
 }
 
 /**
  * Validates every placement on a sheet for overlaps, out-of-bounds, and insufficient spacing.
  */
-export function validateSheetLayout(sheet, minSep = 5) {
+export function validateSheetLayout(sheet, minSep = 5, allowHoleNesting = sheet.allowHoleNesting !== false) {
   const errors = [];
   const mL = sheet.marginLeftMm ?? sheet.marginMm ?? 15;
   const mR = sheet.marginRightMm ?? sheet.marginMm ?? 15;
@@ -201,12 +203,12 @@ export function validateSheetLayout(sheet, minSep = 5) {
       const ab=a.bounds,bb=b.bounds;
       if(ab.maxX+minSep<=bb.minX+1e-5)break;
       if(ab.maxX+minSep<=bb.minX+1e-5||bb.maxX+minSep<=ab.minX+1e-5||ab.maxY+minSep<=bb.minY+1e-5||bb.maxY+minSep<=ab.minY+1e-5)continue;
-      const insideAHole = a.holes?.some(h => fitsInsideHole(b.outer, h, minSep));
-      const insideBHole = b.holes?.some(h => fitsInsideHole(a.outer, h, minSep));
+      const insideAHole = allowHoleNesting&&a.holes?.some(h => fitsInsideHole(b.outer, h, minSep));
+      const insideBHole = allowHoleNesting&&b.holes?.some(h => fitsInsideHole(a.outer, h, minSep));
       if (insideAHole || insideBHole) continue;
 
       const d = minDistanceBetweenPolygons(a.outer, b.outer);
-      if (d < minSep - 0.05 || polygonsIntersect(a.outer, b.outer)) {
+      if (d < minSep - 1e-5 || polygonsIntersect(a.outer, b.outer)) {
         a.hasCollision = true;
         b.hasCollision = true;
         errors.push(`${a.label} ↔ ${b.label}: Çarpışma veya yetersiz boşluk (${d.toFixed(1)} mm < ${minSep.toFixed(1)} mm).`);
@@ -240,7 +242,7 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
     allowHoleNesting = true,
     groupByMaterial = true,
     quickImport = false,
-    itemOrder='area', deadline=Infinity,
+    itemOrder='area', deadline=Infinity, nfpSearch=null, orderIds=null, anglePreferences=null,
   } = config;
 
   const mL = marginLeftMm ?? marginMm;
@@ -282,6 +284,7 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
     const sizes=new Map(batchItems.map(item=>[item,extent(item)]));
     const sorted=batchItems.slice().sort((a,b)=>{
       const x=sizes.get(a),y=sizes.get(b);
+      if(orderIds)return (orderIds.get(a.id)??0)-(orderIds.get(b.id)??0);
       if(itemOrder==='box')return y.width*y.height-x.width*x.height||b.areaMm2-a.areaMm2;
       if(itemOrder==='long')return Math.max(y.width,y.height)-Math.max(x.width,x.height)||b.areaMm2-a.areaMm2;
       if(itemOrder==='short')return Math.min(y.width,y.height)-Math.min(x.width,x.height)||b.areaMm2-a.areaMm2;
@@ -300,7 +303,7 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
             materialGroup,
             widthMm: sheetWidthMm,
             heightMm: sheetHeightMm,
-            marginMm,
+            marginMm,allowHoleNesting,
             marginLeftMm: mL,
             marginRightMm: mR,
             marginTopMm: mT,
@@ -343,12 +346,12 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
       return true;
     };
 
-    const choose=(sheet,variants)=>quickImport?findQuickPlacement(sheet,variants,mL,mB,sheetWidthMm-mR,sheetHeightMm-mT,minSep):findBestPlacementOnSheet(sheet,variants,mL,mB,sheetWidthMm-mR,sheetHeightMm-mT,allowHoleNesting,fitsOnSheet,minSep,placementStrategy,deadline);
+    const choose=(sheet,variants)=>quickImport||performance.now()>=deadline?findQuickPlacement(sheet,variants,mL,mB,sheetWidthMm-mR,sheetHeightMm-mT,minSep):findBestPlacementOnSheet(sheet,variants,mL,mB,sheetWidthMm-mR,sheetHeightMm-mT,allowHoleNesting,fitsOnSheet,minSep,placementStrategy,deadline,nfpSearch);
     for (const item of sorted) {
-      if(performance.now()>deadline)throw Error('NEST_BUDGET');
       if (lockedIds.has(item.id)) continue;
 
-      const variants = angles.map(ang => {
+      const preferred=anglePreferences?.get(item.id),orderedAngles=preferred==null?angles:[...angles].sort((a,b)=>(a===preferred?-1:b===preferred?1:0));
+      const variants = orderedAngles.map(ang => {
         const rO = rotatePolygon(item.outer, ang);
         const rH = (item.holes || []).map(h => {
           const rad = (ang * Math.PI) / 180;
@@ -381,7 +384,7 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
           materialGroup,
           widthMm: sheetWidthMm,
           heightMm: sheetHeightMm,
-          marginMm,
+          marginMm,allowHoleNesting,
           marginLeftMm: mL,
           marginRightMm: mR,
           marginTopMm: mT,
@@ -501,6 +504,11 @@ function findQuickPlacement(sheet,variants,minX,minY,maxX,maxY,sep){
     layout={shelves:[],nextY:startY};quickShelves.set(sheet,layout);
   }
   let pick=null;
+  // A true-shape search may have inserted parts after the quick shelf cache
+  // was created. Reset that cache whenever its recorded population changes.
+  if(layout.count!==sheet.placements.length){
+    layout={shelves:[],nextY:Math.max(minY,...sheet.placements.map(p=>p.bounds.maxY+gap)),count:sheet.placements.length};quickShelves.set(sheet,layout);
+  }
   for(const shelf of layout.shelves)for(const v of variants){
     const w=v.bounds.width,h=v.bounds.height;
     if(h<=shelf.h+1e-6&&shelf.x+w<=maxX+1e-6){
@@ -515,11 +523,11 @@ function findQuickPlacement(sheet,variants,minX,minY,maxX,maxY,sep){
     layout.shelves.push(shelf);layout.nextY+=shelf.h+gap;pick={shelf,v};
   }
   const {shelf,v}=pick,x=shelf.x,y=shelf.y,w=v.bounds.width,h=v.bounds.height;
-  shelf.x+=w+gap;
+  shelf.x+=w+gap;layout.count=sheet.placements.length+1;
   return {angleDeg:v.ang,xMm:x,yMm:y,outer:translatePolygon(v.outer,x,y),holes:v.holes.map(r=>translatePolygon(r,x,y)),bounds:{minX:x,minY:y,maxX:x+w,maxY:y+h,width:w,height:h}};
 }
 
-function findBestPlacementOnSheet(sheet, variants, minX, minY, maxX, maxY, allowHoleNesting, fitsOnSheet, minSep = 5, strategy = 'compact',deadline=Infinity) {
+function findBestPlacementOnSheet(sheet, variants, minX, minY, maxX, maxY, allowHoleNesting, fitsOnSheet, minSep = 5, strategy = 'compact',deadline=Infinity,nfpSearch=null) {
   let best = null, bestScore = Infinity;
   const occupiedX = Math.max(minX, ...sheet.placements.map(p => p.bounds.maxX));
   const occupiedY = Math.max(minY, ...sheet.placements.map(p => p.bounds.maxY));
@@ -541,6 +549,7 @@ function findBestPlacementOnSheet(sheet, variants, minX, minY, maxX, maxY, allow
   };
 
   for (const v of variants) {
+    if(performance.now()>=deadline)break;
     const candX = new Set([minX]);
     const candY = new Set([minY]);
     const stepX = Math.max(35, usableW / 14);
@@ -566,10 +575,14 @@ function findBestPlacementOnSheet(sheet, variants, minX, minY, maxX, maxY, allow
     const ys = [...candY].filter(y => y >= minY && y + v.bounds.height <= maxY + 1e-5).sort((a,b)=>a-b);
     if(Number.isFinite(deadline)){
       const candidates=[];
+      if(nfpSearch&&sheet.placements.length&&performance.now()<deadline){
+        for(const {x,y} of nfpSearch(sheet,v,minX,minY,maxX,maxY,minSep,deadline))candidates.push({x,y,score:scoreAt(x,y,v)});
+      }
       for(const x of xs)for(const y of ys)candidates.push({x,y,score:scoreAt(x,y,v)});
       // Sample contour vertex contacts (not an exact no-fit-polygon solver).
       const sample=pts=>pts.filter((_,i)=>i%Math.max(1,Math.ceil(pts.length/12))===0);
       for(const p of sheet.placements){
+        if(performance.now()>=deadline)break;
         for(const a of sample(p.outer))for(const b of sample(v.outer)){
           for(const [dx,dy] of [[minSep+.01,0],[-minSep-.01,0],[0,minSep+.01],[0,-minSep-.01]]){
             const x=a.x-b.x+dx,y=a.y-b.y+dy;
@@ -580,18 +593,19 @@ function findBestPlacementOnSheet(sheet, variants, minX, minY, maxX, maxY, allow
       candidates.sort((a,b)=>a.score-b.score);
       let found=null,checks=0;const seen=new Set();
       for(const {x,y,score} of candidates){
-        if(performance.now()>deadline)throw Error('NEST_BUDGET');
-        const key=Math.round(x*10)+','+Math.round(y*10);if(seen.has(key))continue;seen.add(key);
-        if(++checks>450)break;
+        if(performance.now()>deadline)break;
+        const key=Math.round(x*1000)+','+Math.round(y*1000);if(seen.has(key))continue;seen.add(key);
+        if(++checks>1200)break;
         if(!fitsOnSheet(sheet,translatePolygon(v.outer,x,y),{minX:x,minY:y,maxX:x+v.bounds.width,maxY:y+v.bounds.height}))continue;
         found={x,y,score};break;
       }
       if(found){
         let cx=found.x,cy=found.y;
         const fits=(x,y)=>fitsOnSheet(sheet,translatePolygon(v.outer,x,y),{minX:x,minY:y,maxX:x+v.bounds.width,maxY:y+v.bounds.height});
-        for(const delta of [12,3,1]){
-          while(cx-delta>=minX&&fits(cx-delta,cy)){cx-=delta;if(performance.now()>deadline)throw Error('NEST_BUDGET');}
-          while(cy-delta>=minY&&fits(cx,cy-delta)){cy-=delta;if(performance.now()>deadline)throw Error('NEST_BUDGET');}
+        for(const delta of [12,3,1,.1]){
+          if(performance.now()>=deadline)break;
+          while(cx-delta>=minX&&fits(cx-delta,cy)){cx-=delta;if(performance.now()>deadline)break;}
+          while(cy-delta>=minY&&fits(cx,cy-delta)){cy-=delta;if(performance.now()>deadline)break;}
         }
         const score=scoreAt(cx,cy,v);
         if(score<bestScore){bestScore=score;best={angleDeg:v.ang,xMm:cx,yMm:cy,outer:translatePolygon(v.outer,cx,cy),holes:v.holes.map(h=>translatePolygon(h,cx,cy)),bounds:{minX:cx,minY:cy,maxX:cx+v.bounds.width,maxY:cy+v.bounds.height,width:v.bounds.width,height:v.bounds.height}};}
@@ -599,9 +613,9 @@ function findBestPlacementOnSheet(sheet, variants, minX, minY, maxX, maxY, allow
       continue;
     }
     for (const x of xs) {
-      if(performance.now()>deadline)throw Error('NEST_BUDGET');
+      if(performance.now()>deadline)break;
       for (const y of ys) {
-        if(performance.now()>deadline)throw Error('NEST_BUDGET');
+        if(performance.now()>deadline)break;
         const box = {minX:x,minY:y,maxX:x+v.bounds.width,maxY:y+v.bounds.height};
         const outline = translatePolygon(v.outer,x,y);
         if (!fitsOnSheet(sheet,outline,box)) continue;
