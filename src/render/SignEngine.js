@@ -409,7 +409,10 @@ export class SignEngine {
     dom.addEventListener('wheel', this._onWheel, { passive: false });
     dom.addEventListener('contextmenu', this._onContextMenu);
 
-    this._ro = new ResizeObserver(() => this._resize());
+    this._ro = new ResizeObserver(() => {
+      if(this._resizeFrame!=null)return;
+      this._resizeFrame=requestAnimationFrame(()=>{this._resizeFrame=null;if(!this.isDisposed)this._resize();});
+    });
     this._ro.observe(this.container);
   }
 
@@ -1113,7 +1116,7 @@ export class SignEngine {
     dom.removeEventListener('wheel', this._onWheel);
     dom.removeEventListener('contextmenu', this._onContextMenu);
     dom.removeEventListener('dblclick',this._onDoubleClick);
-    this._ro?.disconnect();
+    this._ro?.disconnect();if(this._resizeFrame!=null)cancelAnimationFrame(this._resizeFrame);
     this._clearGroup(this.signGroup);
     this._clearGroup(this.wallGroup);
     this._clearGroup(this.lightsGroup);
