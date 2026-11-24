@@ -8,6 +8,8 @@ import THREE from '../src/vendor/three.js';
 
 const state = createDefaultState();
 const obj = structuredClone(state.objects[0]);
+// Default new projects are metal; this test intentionally exercises fileli construction.
+obj.constructionType = 'fileli';
 // Changing only the FILE material in an existing project must color the whole
 // channel letter metal, even if that project has a stale independent side ID.
 obj.fileMaterial = 'roseGold';
