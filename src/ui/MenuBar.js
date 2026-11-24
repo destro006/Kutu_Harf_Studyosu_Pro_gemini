@@ -15,9 +15,7 @@ export function attachMenuBar(actions) {
       { label: 'Projeyi Kaydet', kbd: 'Ctrl+S', fn: () => actions.saveDoc() },
       { label: 'JSON Farklı Kaydet...', fn: () => actions.saveJsonFile() },
       { sep: true },
-      { label: 'PNG Sunum İndir', fn: () => actions.exportPng() },
-      { label: 'Katmanlı SVG İndir', fn: () => actions.exportSvg() },
-      { label: 'Katmanlı DXF İndir', fn: () => actions.exportDxf() },
+      { label: 'Dışa Aktar...', kbd: 'Ctrl+E', fn: () => actions.openExport() },
     ],
     edit: [
       { label: 'Geri Al', kbd: 'Ctrl+Z', fn: () => actions.undo() },

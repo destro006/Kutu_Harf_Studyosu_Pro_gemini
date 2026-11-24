@@ -1391,3 +1391,31 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .nesting-palette-option {display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:var(--text)}
 .nesting-palette-option input[type=color] {width:48px;min-width:48px;height:29px;cursor:pointer;padding:2px;background:transparent;border:1px solid var(--line);border-radius:6px}
 .nesting-preview-palette small {font-size:10px;line-height:1.5;color:var(--muted)}
+
+/* Unified, Corel-like export workspace. No row of tiny format buttons. */
+.quality-status{font-size:10px;color:#bac6d4;white-space:nowrap;max-width:155px;overflow:hidden;text-overflow:ellipsis}
+.export-open-btn{border-color:#bb925b!important;background:linear-gradient(120deg,#3a3025,#61492a)!important;color:#ffe4b4!important;white-space:nowrap;font-weight:700}
+.export-open-btn kbd{font-size:9px;font-weight:500;opacity:.8;margin-left:5px}
+.material-selection-status{border:1px solid #b48b53;background:rgba(202,157,84,.11);color:#f4d5a2;border-radius:7px;margin:4px 0 8px;padding:9px;font-size:11px;line-height:1.5}
+.export-modal.hidden{display:none!important}
+.export-modal{position:fixed;inset:0;z-index:20000;display:grid;place-items:center;padding:16px;background:rgba(3,7,13,.72);backdrop-filter:blur(9px)}
+.export-modal-card{width:min(530px,100%);max-height:92vh;overflow-y:auto;background:#181e29;color:#f0f4fa;border:1px solid #596374;border-radius:15px;box-shadow:0 30px 95px #0009}
+.export-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:24px 24px 16px;border-bottom:1px solid #303a48}
+.export-modal-head h2{font-size:24px;margin:7px 0 0;font-weight:720}
+.export-eyebrow{color:#caa16a;letter-spacing:1.3px;font-size:9px;font-weight:700}
+.export-modal-close{width:33px;height:33px;background:#252e3b;border:1px solid #465469;color:#dce4f0;border-radius:7px;cursor:pointer}
+.export-modal-body{padding:21px 24px;display:flex;flex-direction:column;gap:19px}
+.export-field{display:flex;flex-direction:column;gap:9px;color:#c8d3de;font-size:12px;font-weight:650}
+.export-field select{height:42px;width:100%;padding:0 12px;background:#101722;border:1px solid #465469;border-radius:8px;color:#f0f4fa;font:inherit}
+.export-scope-box{display:flex;flex-direction:column;gap:10px;background:#121b29;border:1px solid #39475b;border-radius:10px;padding:15px}
+.export-scope-box strong{font-size:12px;color:#ead0a1}
+.export-scope-box label{display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px}
+.export-scope-box input{width:17px;height:17px;accent-color:#d5ab6d}
+.export-scope-box small,.export-help{font-size:11px;color:#aab6c6;line-height:1.6}
+.export-help{margin:0}
+.export-message{min-height:16px;color:#f7c687;font-size:12px;margin:0}
+.export-modal-foot{display:flex;justify-content:flex-end;gap:9px;padding:16px 24px 22px;border-top:1px solid #303a48}
+.export-modal-foot button{border-radius:8px;padding:11px 17px;font-weight:700;cursor:pointer}
+.export-secondary-btn{color:#c9d3df;border:1px solid #465469;background:#222b38}
+.export-primary-btn{color:#251709;border:1px solid #e5c08a;background:linear-gradient(110deg,#e6bc7b,#cf9550)}
+@media(max-width:850px){.quality-status{display:none}.export-open-btn kbd{display:none}.export-modal-head{padding:17px}.export-modal-body{padding:15px}.export-modal-foot{padding:15px}}

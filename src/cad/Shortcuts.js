@@ -39,6 +39,7 @@ export const SHORTCUT_GROUPS = [
       { keys: 'Ctrl + G / Ctrl + U', label: 'Grupla / Grubu Çöz' },
       { keys: 'Ctrl + Z / Ctrl + Y', label: 'Geri Al / Yinele' },
       { keys: 'Ctrl + C / Ctrl + X / Ctrl + V', label: 'Kopyala / Kes / Yapıştır' },
+      { keys: 'Ctrl + E', label: 'Dışa Aktar (Seçili Nesneler Dahil)' },
       { keys: 'Ctrl + A', label: 'Tüm Nesneleri Seç' },
       { keys: 'Ctrl + S', label: 'Projeyi Kaydet' },
       { keys: 'Delete', label: 'Seçili Kilitsiz Nesneyi Sil' },
@@ -90,6 +91,7 @@ export function attachShortcuts(handlers) {
       if (ctrl && key === 'z') { e.preventDefault(); handlers.onUndo?.(); return; }
       if (ctrl && key === 'y') { e.preventDefault(); handlers.onRedo?.(); return; }
       if (ctrl && key === 's') { e.preventDefault(); handlers.onSave?.(); return; }
+      if (ctrl && key === 'e') { e.preventDefault(); handlers.onExport?.(); return; }
     }
 
     // Never intercept single-key tools or Delete while typing in any input/select

@@ -66,11 +66,15 @@
           <option value="high" selected>Yüksek Kalite</option>
           <option value="ultra">Ultra / Sunum</option>
         </select>
-        <button id="btnExportPng" class="tb-btn" type="button" title="Yüksek çözünürlüklü PNG indir">PNG</button>
-        <button id="btnExportTransparentPng" class="tb-btn" type="button" title="Şeffaf PNG indir">Şeffaf</button>
-        <button id="btnExportSvg" class="tb-btn" type="button" title="Katmanlı SVG vektör indir">SVG</button>
-        <button id="btnExportDxf" class="tb-btn" type="button" title="Katmanlı DXF indir">DXF</button>
-        <button id="btnSaveJson" class="tb-btn" type="button" title="Proje JSON dışa aktar">JSON</button>
+        <span id="qualityStatus" class="quality-status" title="3D görüntüleme çözünürlüğü">3D kalite: Yüksek</span>
+        <button id="btnOpenExport" class="tb-btn export-open-btn" type="button" title="Dışa Aktar (Ctrl+E)">⇧ Dışa Aktar <kbd>Ctrl+E</kbd></button>
+        <div id="legacyExportActions" hidden>
+          <button id="btnExportPng" type="button">PNG</button>
+          <button id="btnExportTransparentPng" type="button">Şeffaf PNG</button>
+          <button id="btnExportSvg" type="button">SVG</button>
+          <button id="btnExportDxf" type="button">DXF</button>
+          <button id="btnSaveJson" type="button">JSON</button>
+        </div>
         <button id="btnToggleMobileInspector" class="tb-btn mobile-only-btn" type="button">☰ Panel</button>
       </div>
     </header>
@@ -241,6 +245,45 @@
         <button type="button" id="btnCloseShortcuts" class="close-btn">✕</button>
       </div>
       <div id="shortcutsBody" class="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="exportDialog" class="export-modal hidden" role="dialog" aria-modal="true" aria-labelledby="exportDialogTitle">
+    <div class="export-modal-card">
+      <div class="export-modal-head">
+        <div><span class="export-eyebrow">KUTU HARF STÜDYOSU · DOSYA İŞLEMLERİ</span><h2 id="exportDialogTitle">Dışa Aktar</h2></div>
+        <button id="btnCloseExport" type="button" class="export-modal-close" aria-label="Kapat">✕</button>
+      </div>
+      <div class="export-modal-body">
+        <label class="export-field"><span>Dosya biçimi</span>
+          <select id="exportFormat">
+            <option value="png">PNG · 3D Sunum</option>
+            <option value="transparentPng">PNG · Şeffaf Arka Plan</option>
+            <option value="svg">SVG · Vektörel Üretim (mm)</option>
+            <option value="dxf">DXF · CNC / Lazer (1:1 mm)</option>
+            <option value="json">JSON · Düzenlenebilir Proje</option>
+          </select>
+        </label>
+        <div class="export-scope-box">
+          <strong>Aktarılacak kapsam</strong>
+          <label><input id="exportOnlySelected" type="checkbox"> <span>Yalnızca seçili nesneleri dışa aktar</span></label>
+          <small id="exportSelectionCount">Seçili nesne: 0</small>
+        </div>
+        <label id="exportResolutionRow" class="export-field"><span>PNG çıkış çözünürlüğü</span>
+          <select id="exportResolution">
+            <option value="1600x1000">1600 × 1000 · Hızlı</option>
+            <option value="2400x1500" selected>2400 × 1500 · Yüksek</option>
+            <option value="3840x2400">3840 × 2400 · Ultra</option>
+            <option value="5120x3200">5120 × 3200 · Baskı/Sunum</option>
+          </select>
+        </label>
+        <p class="export-help">SVG ve DXF çizimleri milimetre esaslıdır. Seçili nesne aktarımı yalnızca seçtiğiniz katmanları içerir. PNG'de seçili nesneler şeffaf zemine aktarılır.</p>
+        <p id="exportDialogMessage" class="export-message" aria-live="polite"></p>
+      </div>
+      <div class="export-modal-foot">
+        <button id="btnCancelExport" class="export-secondary-btn" type="button">Vazgeç</button>
+        <button id="btnRunExport" class="export-primary-btn" type="button">Dosyayı Dışa Aktar</button>
+      </div>
     </div>
   </div>
 

@@ -16,12 +16,20 @@ import { layoutTextMm } from '../geometry/FontManager.js';
  * - Quality presets (performance, balanced, high, ultra)
  */
 
-const QUALITY_PROFILES = {
-  performance: { dprMax: 1.0, shadowSize: 512, shadows: false },
-  balanced: { dprMax: 1.5, shadowSize: 1024, shadows: true },
-  high: { dprMax: 2.0, shadowSize: 2048, shadows: true },
-  ultra: { dprMax: 2.5, shadowSize: 2048, shadows: true },
+export const QUALITY_PROFILES = {
+  performance: { dprMax: 1, renderScale: 0.8, shadowSize: 512, shadows: false },
+  balanced: { dprMax: 1.35, renderScale: 1, shadowSize: 1024, shadows: true },
+  high: { dprMax: 2, renderScale: 1.35, shadowSize: 2048, shadows: true },
+  ultra: { dprMax: 2.5, renderScale: 1.9, shadowSize: 4096, shadows: true },
 };
+// The internal render resolution differs even on ordinary 1x desktop screens.
+// Bound the framebuffer to 8MP to avoid exhausting mobile GPU memory.
+export function computeQualityPixelRatio(id, deviceDpr = 1, width = 1200, height = 800) {
+  const prof = QUALITY_PROFILES[id] || QUALITY_PROFILES.high;
+  const desired = Math.max(0.5, Number(deviceDpr) || 1) * prof.renderScale;
+  const memoryCap = Math.sqrt(8_000_000 / Math.max(1, width * height));
+  return Math.max(0.5, Math.min(desired, prof.dprMax, memoryCap));
+}
 
 export class SignEngine {
   constructor(container, callbacks = {}) {
@@ -384,11 +392,19 @@ export class SignEngine {
   _resize() {
     const w = Math.max(100, this.container.clientWidth);
     const h = Math.max(100, this.container.clientHeight);
-    const prof = QUALITY_PROFILES[this.quality] || QUALITY_PROFILES.high;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, prof.dprMax));
+    this.renderer.setPixelRatio(computeQualityPixelRatio(this.quality, window.devicePixelRatio || 1, w, h));
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+  }
+
+  getQualityInfo() {
+    if (this.isDisposed) return null;
+    const width = Math.max(100, this.container.clientWidth);
+    const height = Math.max(100, this.container.clientHeight);
+    const profile = QUALITY_PROFILES[this.quality] || QUALITY_PROFILES.high;
+    return {pixelRatio:computeQualityPixelRatio(this.quality, window.devicePixelRatio || 1, width, height),
+      shadowSize:profile.shadowSize, shadows:profile.shadows};
   }
 
   setCameraPreset(presetId) {
@@ -461,7 +477,11 @@ export class SignEngine {
   updateScene(state, fontMap) {
     if (this.isDisposed) return { metricsList: [], warnings: ['WebGL kullanılamıyor.'], sizeM: { w: 1.6, h: 0.4 } };
 
-    this.quality = state.quality || 'high';
+    const nextQuality = state.quality || 'high';
+    if (nextQuality !== this.quality) {
+      this.quality = nextQuality;
+      this._resize(); // immediately updates actual GPU framebuffer resolution
+    }
     const prof = QUALITY_PROFILES[this.quality] || QUALITY_PROFILES.high;
     this.renderer.shadowMap.enabled = prof.shadows;
     this.renderer.toneMappingExposure = state.render?.exposure ?? 1.0;
@@ -805,7 +825,11 @@ export class SignEngine {
 
     // Scene lighting
     this._clearGroup(this.lightsGroup);
-    this.lightsGroup.add(buildSceneLights(night, sizeM));
+    const lights = buildSceneLights(night, sizeM);
+    lights.traverse(light => {
+      if (light.shadow?.mapSize) light.shadow.mapSize.set(prof.shadowSize, prof.shadowSize);
+    });
+    this.lightsGroup.add(lights);
 
     this.currentSelectedId = state.selectedIds?.[0] || null;
 
@@ -944,23 +968,60 @@ export class SignEngine {
     }
   }
 
-  capturePng(width = 2400, height = 1500) {
-    const prevW = this.container.clientWidth;
-    const prevH = this.container.clientHeight;
+  capturePng(width = 2400, height = 1500, options = {}) {
+    if (this.isDisposed || !this.renderer) throw new Error('3D WebGL kullanılamıyor.');
+    const opts = options && typeof options === 'object' ? options : {};
+    const selectedIds = opts.selectedIds ? new Set(opts.selectedIds) : null;
+    if (selectedIds && !selectedIds.size) throw new Error('Dışa aktarılacak seçili nesne yok.');
+    const cameraPos = this.camera.position.clone();
+    const cameraQuat = this.camera.quaternion.clone();
     const prevAspect = this.camera.aspect;
-
-    this.renderer.setPixelRatio(1);
-    this.renderer.setSize(width, height, false);
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
-    this.renderer.render(this.scene, this.camera);
-    const dataUrl = this.renderer.domElement.toDataURL('image/png');
-
-    // Restore
-    this.camera.aspect = prevAspect;
-    this.camera.updateProjectionMatrix();
-    this._resize();
-    return dataUrl;
+    const previousBackground = this.scene.background;
+    const previousClearColor = this.renderer.getClearColor(new THREE.Color()).clone();
+    const previousClearAlpha = this.renderer.getClearAlpha();
+    const groups = [this.wallGroup, this.pageGroup, this.selectionGroup];
+    const previousGroups = groups.map(g => g.visible);
+    const children = this.signGroup.children.map(child => ({child, visible:child.visible}));
+    try {
+      if (opts.transparent || selectedIds) {
+        this.scene.background = null;
+        this.renderer.setClearColor(0x000000, 0);
+        for (const group of groups) group.visible = false;
+      }
+      if (selectedIds) {
+        const bounds = new THREE.Box3();
+        for (const {child} of children) {
+          child.visible = child.visible && selectedIds.has(child.userData?.layerId);
+          if (child.visible) bounds.expandByObject(child);
+        }
+        if (!bounds.isEmpty()) {
+          const center = bounds.getCenter(new THREE.Vector3());
+          const size = bounds.getSize(new THREE.Vector3());
+          const aspect = width / height;
+          const fov = THREE.MathUtils.degToRad(this.camera.fov);
+          const distance = Math.max(size.y, size.x / Math.max(aspect, 0.1)) / Math.max(0.01,2*Math.tan(fov/2)) * 1.4 + size.z;
+          const viewDirection = cameraPos.clone().sub(this.orbit.target).normalize();
+          this.camera.position.copy(center).addScaledVector(viewDirection, Math.max(0.25, distance));
+          this.camera.lookAt(center);
+        }
+      }
+      this.renderer.setPixelRatio(1);
+      this.renderer.setSize(width, height, false);
+      this.camera.aspect = width / height;
+      this.camera.updateProjectionMatrix();
+      this.renderer.render(this.scene, this.camera);
+      return this.renderer.domElement.toDataURL('image/png');
+    } finally {
+      this.camera.position.copy(cameraPos);
+      this.camera.quaternion.copy(cameraQuat);
+      this.camera.aspect = prevAspect;
+      this.camera.updateProjectionMatrix();
+      this.scene.background = previousBackground;
+      this.renderer.setClearColor(previousClearColor, previousClearAlpha);
+      groups.forEach((g,i) => {g.visible = previousGroups[i];});
+      children.forEach(({child,visible}) => {child.visible = visible;});
+      this._resize();
+    }
   }
 
   _startLoop() {

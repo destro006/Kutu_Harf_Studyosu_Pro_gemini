@@ -21,7 +21,7 @@ import {
 } from './core/projectSerializer.js';
 import { FontManager } from './geometry/FontManager.js';
 import { generateCutoutPreview, parseSvgLogo, traceRasterLogo } from './geometry/LogoTracer.js';
-import { SignEngine } from './render/SignEngine.js';
+import { SignEngine, QUALITY_PROFILES } from './render/SignEngine.js';
 import { ACRYLIC_PALETTE, MATERIAL_PRESETS, PAINT_PALETTE } from './render/MaterialLibrary.js';
 import { RAL_COLORS, RAL_GROUPS } from './render/RalColors.js';
 import { ENVIRONMENT_PRESETS } from './render/EnvironmentManager.js';
@@ -29,6 +29,8 @@ import { LIGHT_COLOR_PRESETS, LIGHTING_MODES } from './render/LightingSystem.js'
 import { BACKGROUND_SCENES } from './photomontage/BackgroundLibrary.js';
 import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js';
 import { renderNestingSvg } from './ui/NestingView.js';
+import { applySurfaceMaterialPreset, getDisplayedSurfaceMaterial } from './core/MaterialActions.js';
+import { getExportSelection } from './export/ExportScope.js';
 import {
   assignMaterialToSelected,
   deleteSelectedLayers,
@@ -308,6 +310,16 @@ function updateStageChrome(state) {
     warnEl.classList.remove('hidden');
   } else {
     warnEl.classList.add('hidden');
+  }
+
+  const qualitySelect = document.getElementById('qualitySelect');
+  if (qualitySelect) qualitySelect.value = state.quality || 'high';
+  const qStatus = document.getElementById('qualityStatus');
+  if (qStatus) {
+    const qualityLabels = {performance:'Performans',balanced:'Dengeli',high:'Yüksek',ultra:'Ultra'};
+    const info = signEngine?.getQualityInfo?.();
+    qStatus.textContent = '3D: ' + (qualityLabels[state.quality] || 'Yüksek') + (info ? ' · ' + info.pixelRatio.toFixed(2) + '×' : '');
+    qStatus.title = info ? 'Gerçek render ölçeği: ' + info.pixelRatio.toFixed(2) + '×; gölge dokusu: ' + info.shadowSize + ' px' : '3D render kullanılamıyor';
   }
 
   // Day/Night & Light buttons
@@ -1123,7 +1135,8 @@ function applyRalCoating(s, hex, part = 'face', ralCode = '') {
   s.materialOverrides.roughness = null;
   const current = getSelectedOrFirst(s);
   const fileli = (current?.constructionType || s.constructionType) === 'fileli';
-  const eligible = (s.objects || []).filter(o => s.selectedIds.includes(o.id) && !o.locked);
+  const ids = new Set(s.selectedIds || []);
+  const eligible = (s.objects || []).filter(o => !o.locked && (!ids.size || ids.has(o.id)));
   if (part === 'side') {
     s.materials.sideFollowsFace = false;
     s.materials.sideId = paintId;
@@ -1155,12 +1168,12 @@ function applyRalCoating(s, hex, part = 'face', ralCode = '') {
 }
 
 function renderMaterialsWs(state) {
-  const obj = getSelectedOrFirst(state);
+  const obj = state.objects.find(o => (state.selectedIds || []).includes(o.id)) || null;
   const faceId = obj?.faceMaterial || state.materials.faceId;
   const sideId = obj?.sideMaterial || state.materials.sideId;
   const fileId = obj?.fileMaterial || state.fileli.fileMaterial;
   const isFileli = (obj?.constructionType || state.constructionType) === 'fileli';
-  const displayedMetalId = isFileli ? fileId : faceId;
+  const displayedMetalId = getDisplayedSurfaceMaterial(state);
   const facePreset = MATERIAL_PRESETS[displayedMetalId] || MATERIAL_PRESETS.aynaAltin;
   const sideFollows = obj?.sideFollowsFace ?? state.materials.sideFollowsFace;
   const ralPaintActive = displayedMetalId === 'boyaliAluminyum' && Boolean(obj?.ralCode || state.materials.ralCode);
@@ -1168,10 +1181,11 @@ function renderMaterialsWs(state) {
   return `
     <section class="sec">
       <h3 class="sec-title">Ön Yüzey / File Materyali</h3>
-      ${ralPaintActive ? `<div class="ral-active-notice">✓ RAL boya aktif ${escapeHtml(obj?.ralCode || state.materials.ralCode || '')} · Krom, altın ve metal yansımaları kapalı.<button type="button" class="sec-btn" data-surface-metal="1">↩ Metal malzemelere dön</button></div>` : ''}
-      <div class="mat-grid ${ralPaintActive ? 'finish-presets-inactive' : ''}">
+      <div class="material-selection-status" aria-live="polite">✓ ${escapeHtml(facePreset.shortLabel || facePreset.label || displayedMetalId)} · ${(state.selectedIds || []).length ? (state.selectedIds || []).length + ' seçili nesne' : 'Seçim yok: tüm kilitsiz nesneler'}</div>
+      ${ralPaintActive ? `<div class="ral-active-notice">RAL boya aktif ${escapeHtml(obj?.ralCode || state.materials.ralCode || '')}. Metal seçerek RAL modundan çıkabilirsiniz.</div>` : ''}
+      <div class="mat-grid">
         ${Object.values(MATERIAL_PRESETS).filter(m => !isFileli || m.kind !== 'acrylic').map(m => `
-          <button type="button" class="mat-btn ${!ralPaintActive && displayedMetalId === m.id ? 'on' : ''}" data-face-mat="${m.id}" ${ralPaintActive ? 'disabled title="RAL boya seçili. Metal malzemelere dön düğmesine basın."' : ''}>
+          <button type="button" class="mat-btn ${!ralPaintActive && displayedMetalId === m.id ? 'on' : ''}" data-face-mat="${m.id}" aria-pressed="${!ralPaintActive && displayedMetalId === m.id}" title="${escapeHtml(m.label)} materyalini uygula">
             <i style="background:${m.swatch}"></i>
             <span>${m.shortLabel}</span>
           </button>
@@ -1708,30 +1722,10 @@ function bindWorkspaceEvents(ws, root) {
     root.querySelector('#logoFileInput')?.addEventListener('change', e => handleLogoUpload(e.target.files?.[0]));
   } else if (ws === 'materials') {
     root.querySelectorAll('[data-face-mat]').forEach(b => b.onclick = () => {
-      const id = b.dataset.faceMat;
-      const preset = MATERIAL_PRESETS[id];
-      mutate('Yüz materyali', s => {
-        s.materials.faceId = id;
-        s.materials.faceColor = preset.color;
-        s.materials.ralCode = '';
-        s.materialOverrides.metalness = null;
-        s.materialOverrides.roughness = null;
-        assignMaterialToSelected(s, { faceMaterial: id, faceColor: preset.color, ralCode: '' });
-        if ((getSelectedOrFirst(s)?.constructionType || s.constructionType) === 'fileli' && preset.kind !== 'acrylic') {
-          syncSelectedFileliMetal(s, { id, color: preset.color });
-        }
-      });
+      if (!MATERIAL_PRESETS[b.dataset.faceMat]) return;
+      mutate('Yüz materyali', s => applySurfaceMaterialPreset(s,b.dataset.faceMat));
     });
-    root.querySelector('[data-surface-metal]')?.addEventListener('click', () => mutate('Metal yüzeye geç', s => {
-      const id = 'aynaKrom';
-      s.materials.ralCode = '';
-      s.materials.faceId = id; s.materials.faceColor = MATERIAL_PRESETS[id].color;
-      s.materialOverrides.metalness = null; s.materialOverrides.roughness = null;
-      assignMaterialToSelected(s, { faceMaterial: id, faceColor: MATERIAL_PRESETS[id].color, ralCode: '' });
-      if ((getSelectedOrFirst(s)?.constructionType || s.constructionType) === 'fileli') {
-        syncSelectedFileliMetal(s, { id, color: MATERIAL_PRESETS[id].color });
-      }
-    }));
+    root.querySelector('[data-surface-metal]')?.addEventListener('click', () => mutate('Metal yüzeye geç', s => applySurfaceMaterialPreset(s,'aynaKrom')));
     root.querySelector('#faceColorPicker')?.addEventListener('input', e => {
       mutate('Yüz rengi', s => {
         s.materials.faceColor = e.target.value;
@@ -2970,6 +2964,83 @@ function resetMaterialDefaults() {
     });
 }
 
+
+/**
+ * Export panel routes all formats through one consistent scope.
+ * Selected-only exports preserve the editing document and its global state.
+ */
+function studioExport(format, selectedOnly = false, resolution = '2400x1500') {
+  const state = store.get();
+  const scope = getExportSelection(state, lastSceneResult?.metricsList || [], selectedOnly);
+  if (selectedOnly && !scope.objectCount) throw new Error('Önce en az bir görünür nesne seçin.');
+  const baseName = String(state.projectName || 'tabela').replace(/[\\/:*?"<>|]/g, '_');
+  const base = baseName + (selectedOnly ? '_secili' : '');
+  if (format === 'png' || format === 'transparentPng') {
+    if (!signEngine || signEngine.isDisposed) throw new Error('PNG için 3D WebGL görünümü etkin olmalıdır.');
+    const parts = resolution.split('x').map(Number);
+    const w = Number.isFinite(parts[0]) && parts[0] > 0 ? parts[0] : 2400;
+    const h = Number.isFinite(parts[1]) && parts[1] > 0 ? parts[1] : 1500;
+    const image = signEngine.capturePng(w, h, {transparent:format === 'transparentPng' || selectedOnly,selectedIds:scope.ids});
+    downloadDataUrl(base + (format === 'transparentPng' ? '_seffaf' : '') + '.png', image);
+  } else if (format === 'svg') {
+    if (!scope.metrics.length) throw new Error('SVG için çizilebilir nesne bulunamadı.');
+    downloadBlob(base + '.svg', generateManufacturingSvg(scope.metrics), 'image/svg+xml');
+  } else if (format === 'dxf') {
+    if (!scope.metrics.length) throw new Error('DXF için çizilebilir nesne bulunamadı.');
+    const {dxfText,cncWarning} = generateManufacturingDxf(scope.metrics);
+    downloadBlob(base + '.dxf', dxfText, 'application/dxf');
+    if (cncWarning) {
+      const warning = document.getElementById('stageWarning');
+      if (warning) {warning.textContent = cncWarning;warning.classList.remove('hidden');}
+    }
+  } else if (format === 'json') {
+    downloadBlob(base + '.khs.json', serializeProject(scope.state), 'application/json');
+  } else throw new Error('Desteklenmeyen dışa aktarma biçimi: ' + format);
+  return true;
+}
+
+function openExportDialog() {
+  const modal=document.getElementById('exportDialog');
+  if (!modal) return;
+  const count=(store.get().objects||[]).filter(o => (store.get().selectedIds||[]).includes(o.id) && o.visible!==false).length;
+  const selection=document.getElementById('exportSelectionCount');
+  if (selection) selection.textContent='Seçili nesne: '+count;
+  const message=document.getElementById('exportDialogMessage');
+  if (message) message.textContent='';
+  modal.classList.remove('hidden');
+  document.getElementById('exportFormat')?.focus();
+}
+function closeExportDialog() {
+  document.getElementById('exportDialog')?.classList.add('hidden');
+}
+function bindExportDialog() {
+  const modal=document.getElementById('exportDialog');
+  if (!modal) return;
+  document.getElementById('btnOpenExport')?.addEventListener('click',openExportDialog);
+  document.getElementById('btnCloseExport')?.addEventListener('click',closeExportDialog);
+  document.getElementById('btnCancelExport')?.addEventListener('click',closeExportDialog);
+  modal.addEventListener('click',e=>{if(e.target===modal)closeExportDialog();});
+  document.getElementById('exportFormat')?.addEventListener('change',e=>{
+    document.getElementById('exportResolutionRow')?.classList.toggle('hidden', !['png','transparentPng'].includes(e.target.value));
+  });
+  document.getElementById('btnRunExport')?.addEventListener('click',()=>{
+    const message=document.getElementById('exportDialogMessage');
+    try {
+      const format=document.getElementById('exportFormat').value;
+      const selected=document.getElementById('exportOnlySelected').checked;
+      const size=document.getElementById('exportResolution').value;
+      studioExport(format,selected,size);
+      closeExportDialog();
+    }catch(error){if(message)message.textContent=error.message||'Dışa aktarma başarısız.';}
+  });
+  // Dialog Escape does not reset the CAD selection/tool.
+  window.addEventListener('keydown',e=>{
+    if (e.key==='Escape' && !modal.classList.contains('hidden')) {
+      e.preventDefault();e.stopImmediatePropagation();closeExportDialog();
+    }
+  },true);
+}
+
 /* ---------------- Bootstrap ---------------- */
 function init() {
   if (!autosaved) applyDefaultPriceTemplate();
@@ -3234,7 +3305,10 @@ function init() {
 
   // Project Name & Quality
   if (document.getElementById('projectNameInput')) document.getElementById('projectNameInput').onchange = (e) => store.update(s => { s.projectName = e.target.value; });
-  document.getElementById('qualitySelect').onchange = (e) => mutate('Kalite ayarı', s => { s.quality = e.target.value; }, false);
+  document.getElementById('qualitySelect').onchange = (e) => {
+    if (!QUALITY_PROFILES[e.target.value]) return;
+    mutate('Gerçek render kalitesi', s => { s.quality = e.target.value; }, false);
+  };
 
   // Undo / Redo
   document.getElementById('btnUndo').onclick = () => {
@@ -3246,32 +3320,13 @@ function init() {
     if (next) { store.set(next); scheduleRebuild(true); renderActiveWorkspace(); updateUndoRedoButtons(); }
   };
 
-  // Exports
-  document.getElementById('btnExportPng').onclick = () => {
-    downloadDataUrl(`${store.get().projectName || 'tabela'}.png`, signEngine.capturePng(2400, 1500));
-  };
-  document.getElementById('btnExportTransparentPng').onclick = () => {
-    const s = store.get();
-    s.scene.transparentBg = true;
-    signEngine.updateScene(s, fontMap);
-    const url = signEngine.capturePng(2400, 1500);
-    s.scene.transparentBg = false;
-    signEngine.updateScene(s, fontMap);
-    downloadDataUrl(`${s.projectName || 'tabela'}_seffaf.png`, url);
-  };
-  document.getElementById('btnExportSvg').onclick = () => {
-    downloadBlob(`${store.get().projectName || 'tabela'}.svg`, generateManufacturingSvg(lastSceneResult.metricsList), 'image/svg+xml');
-  };
-  document.getElementById('btnExportDxf').onclick = () => {
-    const { dxfText, cncWarning } = generateManufacturingDxf(lastSceneResult.metricsList);
-    downloadBlob(`${store.get().projectName || 'tabela'}.dxf`, dxfText, 'application/dxf');
-    const warnEl = document.getElementById('stageWarning');
-    warnEl.textContent = cncWarning;
-    warnEl.classList.remove('hidden');
-  };
-  document.getElementById('btnSaveJson').onclick = () => {
-    downloadBlob(`${store.get().projectName || 'tabela'}.khs.json`, serializeProject(store.get()), 'application/json');
-  };
+  // Every toolbar/menu export uses the same non-destructive scope engine.
+  document.getElementById('btnExportPng').onclick = () => studioExport('png');
+  document.getElementById('btnExportTransparentPng').onclick = () => studioExport('transparentPng');
+  document.getElementById('btnExportSvg').onclick = () => studioExport('svg');
+  document.getElementById('btnExportDxf').onclick = () => studioExport('dxf');
+  document.getElementById('btnSaveJson').onclick = () => studioExport('json');
+  bindExportDialog();
 
   // Shortcuts Help Modal (Categorized CorelDRAW + CAD Reference)
   const modal = document.getElementById('shortcutsModal');
@@ -3396,6 +3451,7 @@ function init() {
     onBreakApart: () => runCadAction('breakApart'),
     onCombine: () => runCadAction('combine'),
     onNewDoc: () => document.getElementById('btnNewDocTab')?.click(),
+    onExport: openExportDialog,
     onCenterOnPage: () => mutate('Sayfaya ortala', s => {
       const o = getSelectedOrFirst(s);
       if (o && !o.locked) { o.xMm = 0; o.yMm = 0; }
@@ -3569,6 +3625,7 @@ function init() {
     openJson: () => { setMainWorkspace('model3d'); store.update(s => { s.activeWorkspace = 'projects'; }); renderActiveWorkspace(); },
     saveDoc: () => document.getElementById('btnQuickSaveDoc')?.click(),
     saveJsonFile: () => document.getElementById('btnSaveJson')?.click(),
+    openExport: openExportDialog,
     exportPng: () => document.getElementById('btnExportPng')?.click(),
     exportSvg: () => document.getElementById('btnExportSvg')?.click(),
     exportDxf: () => document.getElementById('btnExportDxf')?.click(),
