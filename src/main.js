@@ -853,7 +853,7 @@ function detachWorkspaceToFloat(wsId, x = 320, y = 110) {
   saveWsLayout();
   document.activeElement?.blur?.();
   const root=document.getElementById('workspaceContent');if(root)root.dataset.layoutKey='';
-  renderActiveWorkspace();renderFloatingWindows(store.get());
+  renderActiveWorkspace();
 }
 
 function dockWorkspaceUnder(childId, hostId) {
@@ -1632,7 +1632,7 @@ function renderBackgroundWs(state) {
       <div class="background-preset-grid">
         ${BACKGROUND_SCENES.map(b => `
           <button type="button" class="background-preset ${state.scene.wallId === b.id ? 'on' : ''}" data-bg-wall="${b.id}" title="${b.label}">
-            <span class="background-preview background-preview-${b.id}"></span>
+            <span class="background-preview background-preview-${b.id}" style="background-image:url(./public/wall-previews/${b.id}.png)"></span>
             <span>${b.label}</span>
             ${state.scene.wallId === b.id ? '<b>✓ Seçili</b>' : ''}
           </button>
@@ -3668,7 +3668,7 @@ function init() {
   sideWorkspace='layers';ribbonSuppressed='layers';
   store.updateScoped([],s=>{s.activeWorkspace='layers';});
   bindRibbon();
-  document.getElementById('globalLogoImport')?.addEventListener('change',e=>{const file=e.target.files?.[0];e.target.value='';if(file)handleLogoUpload(file);});
+  document.getElementById('globalLogoImport')?.addEventListener('change',e=>{const file=e.target.files?.[0];e.target.value='';if(file){if(/\.(svg|png|jpe?g|webp)$/i.test(file.name))handleLogoUpload(file);else{openNestingVectorImport(false);importNestingVectorFiles([file],document.getElementById('nestingCenterWrap'));}}});
   const menuToggle=document.getElementById('mobileMenuToggle'),railToggle=document.getElementById('mobileRailToggle');
   menuToggle?.addEventListener('click',()=>{const on=document.getElementById('mainMenuBar').classList.toggle('mobile-menu-open');menuToggle.setAttribute('aria-expanded',String(on));});
   railToggle?.addEventListener('click',()=>{const on=document.getElementById('studioBody').classList.toggle('mobile-rail-open');railToggle.setAttribute('aria-expanded',String(on));});
@@ -4037,7 +4037,7 @@ function init() {
   // Keyboard Shortcuts
   attachShortcuts({
     onTool: activateTool,
-    onFitCamera: () => signEngine?.setCameraPreset('fit'),
+    onFitCamera: () => store.get().mainWorkspace==='design2d'?vector2D?.fitAll(store.get()):signEngine?.setCameraPreset('fit'),
     onToCurves: () => runCadAction('toCurves'),
     onBreakApart: () => runCadAction('breakApart'),
     onCombine: () => runCadAction('combine'),
