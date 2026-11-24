@@ -1,6 +1,6 @@
 import { renderDetailedCostCenter } from './CostCenterView.js';
 import { ringLength, SHEET_PRESETS } from '../manufacturing/NestingEngine.js';
-import { renderNestingSvg } from './NestingView.js';
+import { renderNestingSvg } from './NestingView.js?v=pro3-multi4';
 import { renderNestingSourceTabs, renderNestingImportPane } from './NestingImportView.js';
 import { MACHINE_PROFILES, validateNestedProduction } from '../export/CncGcodeExporter.js';
 import { formatMoney } from '../manufacturing/CostEngine.js';
@@ -23,6 +23,8 @@ export function renderNestingCenter(state, ctx) {
   const sheets = n.sheets || [];
   const activeIdx = Math.min(Math.max(0, ctx.activeSheetIdx || 0), Math.max(0, sheets.length - 1));
   const activeSheet = sheets[activeIdx] || null;
+  const selectedIds=new Set(ctx.selectedPlacementIds??(ctx.selectedPlacementId?[ctx.selectedPlacementId]:[]));
+  const removableCount=(activeSheet?.placements||[]).filter(p=>selectedIds.has(p.id)&&!p.locked).length;
   const displayedSheet = activeSheet || {
     widthMm: n.sheetWidthMm || 3000, heightMm: n.sheetHeightMm || 1500,
     marginLeftMm: n.marginLeftMm ?? n.marginMm ?? 15,
@@ -41,14 +43,16 @@ export function renderNestingCenter(state, ctx) {
     <div class="center-ws-grid">
       <!-- Left: Part List & Material Groups -->
       <div class="cws-side">
-        <h3 class="sec-title">İmalat Parçaları (${totalParts})</h3>
+        <h3 class="sec-title">İmalat Parçaları (${totalParts}) <small id="nestingSelectedCount">${selectedIds.size?selectedIds.size+' seçili':''}</small></h3>
         ${(n.importedTabs||[]).find(t=>t.id===n.activeTabId)?.warnings?.length?`<details class="nesting-import-converters"><summary>İçe aktarma notları</summary>${(n.importedTabs.find(t=>t.id===n.activeTabId).warnings||[]).map(x=>`<p>${escapeHtml(x)}</p>`).join('')}</details>`:''}
         ${!sheets.length ? '<p style="font-size:12px;color:var(--muted)">Parça listesi için "Otomatik Yerleştir"e tıklayın.</p>' : `
           <div style="display:flex;flex-direction:column;gap:4px">
             ${(activeSheet?.placements || []).map(p => `
-              <div class="layer-item ${ctx.selectedPlacementId === p.id ? 'on' : ''}" data-cws-pid="${p.id}">
+              <div class="layer-item nesting-part-row ${selectedIds.has(p.id) ? 'on' : ''}" data-cws-pid="${escapeHtml(p.id)}" aria-selected="${selectedIds.has(p.id)}">
+                <input type="checkbox" data-cws-check aria-label="${escapeHtml(p.label)} seç" ${selectedIds.has(p.id)?'checked':''}>
                 <span class="layer-name">${p.locked ? '🔒 ' : ''}${escapeHtml(p.label)}</span>
-                <small style="color:var(--muted)">${Math.round(p.bounds?.width || 0)}×${Math.round(p.bounds?.height || 0)}</small>
+                <small class="nesting-part-size">${Math.round(p.bounds?.width || 0)}×${Math.round(p.bounds?.height || 0)}</small>
+                <button type="button" class="nesting-part-delete" data-cws-delete aria-label="${escapeHtml(p.label)} sil" title="${p.locked?'Kilitli parça':'Parçayı sil'}" ${p.locked?'disabled':''}>×</button>
               </div>
             `).join('')}
           </div>
@@ -75,11 +79,11 @@ export function renderNestingCenter(state, ctx) {
           <div style="display:flex;gap:6px">
             <button type="button" id="cwsRunNesting" class="cta-btn" style="padding:5px 12px" title="İçe aktarmadan sonra hassas true-shape optimizasyonu; işlem sürerken tekrar tıklayarak iptal edin">Otomatik Yerleştir</button>
             <button type="button" id="cwsReoptUnlocked" class="sec-btn">Kilitsizleri Optimize Et</button>
-            <button type="button" id="cwsDeletePart" class="sec-btn" ${ctx.selectedPlacementId?'':'disabled'} title="Seçili parçayı yalnızca bu nesting işinden sil">Parçayı Sil</button>
+            <button type="button" id="cwsDeletePart" class="sec-btn" ${removableCount?'':'disabled'} title="Seçilen parçaları yalnızca bu nesting işinden sil">${removableCount>1?'Seçilenleri Sil ('+removableCount+')':'Parçayı Sil'}</button>
           </div>
         </div>
         <div id="cwsNestSvgBox" class="nesting-sheet-fit">
-          ${renderNestingSvg(displayedSheet, ctx.selectedPlacementId, n.previewColors)}
+          ${renderNestingSvg(displayedSheet, selectedIds, n.previewColors)}
           <span class="nesting-sheet-dimensions">${displayedSheet.widthMm} × ${displayedSheet.heightMm} mm</span>
           ${!activeSheet ? '<span class="nesting-sheet-empty-note">Parçaları yerleştirmek için Otomatik Yerleştir seçin</span>' : ''}
         </div>
