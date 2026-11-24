@@ -1,3 +1,4 @@
+import {resolveObjectLighting,selectedLightingObjects,setLightingValue} from './core/ObjectLighting.js';
 import {editableTextObject,applyTextEdit} from './cad/TextEditing.js';
 import THREE from './vendor/three.js';
 import { buildChannelComponent } from './geometry/ChannelLetterGeometry.js';
@@ -435,11 +436,24 @@ function updateStageChrome(state) {
   }else photomontageOverlay?.container.classList.add('hidden');
 }
 
+function editLighting(key,value){
+  const state=store.get(),selected=selectedLightingObjects(state);
+  if(selected.length&&selected.every(o=>o.locked))return;
+  const appearance=['frontColor','backColor','frontIntensity','backIntensity'].includes(key);
+  if(!appearance){mutate('Aydınlatma ayarı',s=>setLightingValue(s,key,value));return;}
+  history.push(state,'Işık ayarı');
+  store.updateScoped(selected.length?['objects']:['lighting'],s=>setLightingValue(s,key,value));
+  docManager.markDirty();updateUndoRedoButtons();
+  const next=store.get();
+  if(is3DWorkspace(next)&&signEngine?.updateLightAppearance(next)){updateNumericBar(next);renderActiveWorkspace();writeAutosave(next);}
+  else scheduleRebuild(true);
+}
 function updateNumericBar(state) {
   renderPropertyBar(state, {
     activeSheetIdx,
     selectedPlacementId: selectedNestingId,
     fonts: fontManager.getAllFontMetas(),
+    onLightingEdit:editLighting,
     getObjectSize: objectPhysicalSize,
     onEditSelected: (fn) => mutate('Özellik düzenlendi', s => {
       const o = getSelectedOrFirst(s);
@@ -1007,7 +1021,7 @@ function renderActiveWorkspace() {
   // focus leaves it. Replacing DOM during pointerdown closes the dropdown.
   const layoutKey = [ws, stackMode ? 'stack' : 'tabs',
     wsLayout.floating.map(f => f.id).join(','),
-    JSON.stringify(wsLayout.dockedUnder)].join('|');
+    JSON.stringify(wsLayout.dockedUnder),ws==='lighting'?state.selectedIds.join(',')+'|'+resolveObjectLighting(selectedLightingObjects(state)[0],state).mode:''].join('|');
   if (!root._focusPreservationBound) {
     root._focusPreservationBound = true;
     root.addEventListener('focusout', () => setTimeout(() => {
@@ -1457,11 +1471,10 @@ function renderMaterialsWs(state) {
 }
 
 function renderLightingWs(state) {
-  const obj = getSelectedOrFirst(state);
-  const mode = obj?.lightingMode || state.lighting.mode;
-  const enabled = state.lighting.enabled;
-  const hasFront = enabled && (mode === 'front' || mode === 'both');
-  const hasHalo = enabled && (mode === 'halo' || mode === 'both');
+  const selection=selectedLightingObjects(state),obj=selection[0],light=resolveObjectLighting(obj,state);
+  const mode=light.mode,enabled=light.enabled;
+  const hasFront=mode==='front'||mode==='both',hasHalo=mode==='halo'||mode==='both';
+  const colorControls=(key,label)=>`<div class="field-row"><label>${label}</label><input type="color" data-light-color="${key}" value="${light[key]}" aria-label="${label}"></div><div class="swatches">${LIGHT_COLOR_PRESETS.map(c=>`<button type="button" class="sw ${light[key]===c.hex?'on':''}" style="--c:${c.hex}" data-light-key="${key}" data-lhex="${c.hex}" title="${c.label}"></button>`).join('')}</div>`;
 
   return `
     <section class="sec">
@@ -1477,27 +1490,15 @@ function renderLightingWs(state) {
       </div>
     </section>
 
-    ${(hasFront || hasHalo) ? `
-    <section class="sec">
-      <h3 class="sec-title">Işık Rengi &amp; Renk Sıcaklığı</h3>
-      <div class="swatches">
-        ${LIGHT_COLOR_PRESETS.map(c => `
-          <button type="button" class="sw ${state.lighting.colorHex.toLowerCase() === c.hex ? 'on' : ''}" style="--c:${c.hex}" data-lhex="${c.hex}" title="${c.label}"></button>
-        `).join('')}
-        <label class="sw custom" title="Özel RGB LED">
-          <input id="customLightHex" type="color" value="${state.lighting.colorHex}">
-        </label>
-      </div>
-    </section>
-    ` : `<section class="sec"><p style="font-size:12px;color:var(--muted);margin:0">Işıksız mod seçili. Aydınlatma ayarlarını görmek için Önden, Arkadan (Halo) veya Çift mod seçin.</p></section>`}
-
+    <section class="sec"><p style="font-size:12px;color:var(--muted);margin:0">${selection.length?selection.length+' seçili nesne · bağımsız ışık ayarı':'Nesne seçilmedi · proje varsayılanları'}${!enabled?' · Genel ışık kapalı':''}</p></section>
+    ${hasFront||hasHalo?`<section class="sec"><h3 class="sec-title">Işık Rengi &amp; Renk Sıcaklığı</h3>${hasFront?colorControls('frontColor','Ön ışık rengi'):''}${hasHalo?colorControls('backColor','Arka (Halo) rengi'):''}</section>`:''}
     ${hasFront ? `
     <section class="sec">
       <h3 class="sec-title">Ön Yüzey Işık Ayarları</h3>
       <div class="field-row">
         <label>Ön Yüz Işık Şiddeti</label>
-        <input id="lFrontIntRange" type="range" min="0" max="3" step="0.1" value="${state.lighting.frontIntensity}">
-        <input id="lFrontInt" type="number" min="0" max="3" step="0.1" value="${state.lighting.frontIntensity}" style="width:62px">
+        <input id="lFrontIntRange" type="range" min="0" max="3" step="0.1" value="${light.frontIntensity}">
+        <input id="lFrontInt" type="number" min="0" max="3" step="0.1" value="${light.frontIntensity}" style="width:62px">
       </div>
     </section>
     ` : ''}
@@ -1507,21 +1508,21 @@ function renderLightingWs(state) {
       <h3 class="sec-title">Arka (Halo) Duvar Işığı Ayarları</h3>
       <div class="field-row">
         <label>Arka Halo Şiddeti</label>
-        <input id="lBackIntRange" type="range" min="0" max="3" step="0.1" value="${state.lighting.backIntensity}">
-        <input id="lBackInt" type="number" min="0" max="3" step="0.1" value="${state.lighting.backIntensity}" style="width:62px">
+        <input id="lBackIntRange" type="range" min="0" max="3" step="0.1" value="${light.backIntensity}">
+        <input id="lBackInt" type="number" min="0" max="3" step="0.1" value="${light.backIntensity}" style="width:62px">
       </div>
       <div class="field-row">
         <label>Duvardan Uzaklık (mm)</label>
-        <input id="lWallDistRange" type="range" min="5" max="150" step="5" value="${state.lighting.wallDistanceMm}">
-        <input id="lWallDist" type="number" min="5" max="150" step="5" value="${state.lighting.wallDistanceMm}" style="width:62px">
+        <input id="lWallDistRange" type="range" min="5" max="150" step="5" value="${light.wallDistanceMm}">
+        <input id="lWallDist" type="number" min="5" max="150" step="5" value="${light.wallDistanceMm}" style="width:62px">
       </div>
       <div class="field-row">
         <label>Halo Yayılımı</label>
-        <input id="lHaloSpread" type="number" min="0.3" max="2.5" step="0.1" value="${state.lighting.haloSpread}">
+        <input id="lHaloSpread" type="number" min="0.3" max="2.5" step="0.1" value="${light.haloSpread}">
       </div>
       <div class="field-row">
         <label>Işık Sönümlemesi (Falloff)</label>
-        <input id="lFalloff" type="number" min="0.3" max="2.5" step="0.1" value="${state.lighting.falloff}">
+        <input id="lFalloff" type="number" min="0.3" max="2.5" step="0.1" value="${light.falloff}">
       </div>
     </section>
     ` : ''}
@@ -1986,32 +1987,14 @@ function bindWorkspaceEvents(ws, root) {
       mutate('Özel yansıma ortamı', s => { s.render.useCustomEnv = true; });
     });
   } else if (ws === 'lighting') {
-    root.querySelectorAll('[data-lmode]').forEach(b => b.onclick = () => {
-      mutate('Aydınlatma modu', s => {
-        s.lighting.mode = b.dataset.lmode;
-        const o = getSelectedOrFirst(s);
-        if (o && !o.locked) o.lightingMode = b.dataset.lmode;
-      });
-    });
-    root.querySelector('#chkLightEnabled')?.addEventListener('change', e => {
-      mutate('Işık durumu', s => { s.lighting.enabled = e.target.checked; });
-    });
-    root.querySelectorAll('[data-lhex]').forEach(b => b.onclick = () => {
-      mutate('Işık rengi', s => { s.lighting.colorHex = b.dataset.lhex; s.lighting.ledKind = 'mono'; });
-    });
-    root.querySelector('#customLightHex')?.addEventListener('input', e => {
-      mutate('RGB ışık rengi', s => { s.lighting.colorHex = e.target.value; s.lighting.ledKind = 'rgb'; }, false);
-    });
-    const bindL = (id, key, mirrorId = null) => {
-      const el = root.querySelector('#' + id);
-      if (!el) return;
-      el.addEventListener('input', e => {
-        const val = Number(e.target.value);
-        if (mirrorId) { const m = root.querySelector('#' + mirrorId); if (m) m.value = val; }
-        store.update(s => { s.lighting[key] = val; });
-        scheduleRebuild(false);
-      });
-      el.addEventListener('change', e => mutate('Işık ayarı', s => { s.lighting[key] = Number(e.target.value); }, false));
+    root.querySelectorAll('[data-lmode]').forEach(b=>b.onclick=()=>editLighting('mode',b.dataset.lmode));
+    root.querySelector('#chkLightEnabled')?.addEventListener('change',e=>mutate('Işık durumu',s=>{s.lighting.enabled=e.target.checked;}));
+    root.querySelectorAll('[data-lhex]').forEach(b=>b.onclick=()=>editLighting(b.dataset.lightKey,b.dataset.lhex));
+    root.querySelectorAll('[data-light-color]').forEach(el=>el.addEventListener('change',e=>editLighting(el.dataset.lightColor,e.target.value)));
+    const bindL=(id,key,mirrorId=null)=>{
+      const el=root.querySelector('#'+id);if(!el)return;
+      el.addEventListener('input',e=>{const mirror=mirrorId&&root.querySelector('#'+mirrorId);if(mirror)mirror.value=e.target.value;});
+      el.addEventListener('change',e=>editLighting(key,Number(e.target.value)));
     };
     bindL('lFrontInt', 'frontIntensity', 'lFrontIntRange');
     bindL('lFrontIntRange', 'frontIntensity', 'lFrontInt');
@@ -3641,7 +3624,7 @@ function init() {
       signEngine.updateSelectionBox(store.get());
       updateStageChrome(store.get());
       updateNumericBar(store.get());
-      if (store.get().activeWorkspace === 'layers') renderActiveWorkspace();
+      if (['layers','lighting'].includes(store.get().activeWorkspace)) renderActiveWorkspace();
     },
     onSelectObjects: (ids, additive) => {
       const candidates = new Set(ids);

@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {resolveObjectLighting,setLightingValue} from '../src/core/ObjectLighting.js';
+import {SignEngine} from '../src/render/SignEngine.js';
+import {createDefaultState,structuredCloneSafe} from '../src/core/state.js';
+const s=createDefaultState(),a=s.objects[0],b={...structuredCloneSafe(a),id:'other'};s.objects.push(b);s.selectedIds=[a.id];
+assert(setLightingValue(s,'backColor','#ff0000'));assert(setLightingValue(s,'backIntensity',0));assert.equal(resolveObjectLighting(a,s).backColor,'#ff0000');assert.equal(resolveObjectLighting(a,s).backIntensity,0);assert.notEqual(resolveObjectLighting(b,s).backColor,'#ff0000');
+assert(setLightingValue(s,'frontColor','#00ff00'));assert.equal(resolveObjectLighting(a,s).frontColor,'#00ff00');assert.equal(resolveObjectLighting(a,s).backColor,'#ff0000');
+a.locked=true;assert(!setLightingValue(s,'backColor','#0000ff'));a.locked=false;
+s.selectedIds=[a.id,b.id];assert(setLightingValue(s,'backIntensity',2));assert.equal(resolveObjectLighting(b,s).backIntensity,2);
+const color={set(v){this.value=v;return this},multiplyScalar(v){this.gain=v;return this}};
+let front;const refs={front:[{userData:{updateLed:(c,i)=>front=[c,i]}}],halo:{material:{color}},points:[{color:{set(v){this.value=v}}}],height:.4,night:true};
+SignEngine.prototype.applyObjectLightAppearance.call({},refs,resolveObjectLighting(a,s));assert.equal(refs.halo.material.color.value,'#ff0000');assert.deepEqual(front,['#00ff00',1]);assert(refs.points[0].intensity>0);
+setLightingValue(s,'backIntensity',0);SignEngine.prototype.applyObjectLightAppearance.call({},refs,resolveObjectLighting(a,s));assert.equal(refs.halo.visible,false);assert.equal(refs.points[0].intensity,0);
+console.log('✓ Per-object front and halo colors/intensity, locked objects, multi-selection, material-only updates and zero intensity');

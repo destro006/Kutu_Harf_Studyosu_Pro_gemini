@@ -1,3 +1,4 @@
+import {resolveObjectLighting} from '../core/ObjectLighting.js';
 import { nominalSize, roundMm, resizeObjectToMm } from '../core/ObjectDimensions.js';
 import { DISPLAY_UNITS, PAGE_SIZE_PRESETS, normalizeDisplayUnit, displayUnitLabel, mmToDisplay, displayToMm, formatMmAsUnit } from '../core/units.js';
 const CONSTRUCTION_TYPES = [
@@ -22,11 +23,12 @@ export function renderPropertyBar(state, ctx = {}) {
   const mainWs = state.mainWorkspace || 'model3d';
   const selObjs = (state.objects || []).filter(o => (state.selectedIds || []).includes(o.id));
   const sel = selObjs[0] || null;
+  const light=resolveObjectLighting(sel,state);
 
   // Preserve the actual DOM node of an open select or active numeric input.
   // Replacing innerHTML on a scene update closes native menus, loses typed
   // numbers and can swallow the click that was about to commit a selection.
-  const contextKey = [mainWs, normalizeDisplayUnit(state.pageLayout?.displayUnit), ...selObjs.map(o => o.id), mainWs === 'nesting' ? (ctx.selectedPlacementId || '') : ''].join('|');
+  const contextKey = [mainWs, normalizeDisplayUnit(state.pageLayout?.displayUnit), ...selObjs.map(o => o.id), light.mode, mainWs === 'nesting' ? (ctx.selectedPlacementId || '') : ''].join('|');
   // The minimal DOM stubs used by unit tests omit focus APIs; the production
   // HTMLElement always provides dataset, contains and addEventListener.
   if (!bar.dataset) bar.dataset = {};
@@ -167,6 +169,7 @@ export function renderPropertyBar(state, ctx = {}) {
         <label>Işık</label>
         <select id="pbLmode" class="prop-select">${Object.values(LIGHTING_MODES).map(m => `<option value="${m.id}" ${(sel.lightingMode || state.lighting.mode) === m.id ? 'selected' : ''}>${m.label}</option>`).join('')}</select>
       </div>
+      ${quickLightFields(light,sel.locked)}
       <button type="button" id="btnCenterOnPage" class="tb-btn" title="Sayfaya Ortala (P)">⌖ Ortala</button>
     `;
   } else if (sel.kind === 'text') {
@@ -253,7 +256,15 @@ function bindNestingPartBar(bar, ctx, unit) {
   });
 }
 
+function quickLightFields(light,disabled=false){
+ const d=disabled?'disabled':'';
+ const fields=(prefix,label)=>`<div class="prop-field quick-light-field"><label for="pb${prefix}Color">${label}</label><input id="pb${prefix}Color" type="color" value="${light[prefix.toLowerCase()+'Color']}" title="${label} ışık rengi" aria-label="${label} ışık rengi" ${d}><input id="pb${prefix}Intensity" type="number" min="0" max="3" step="0.1" value="${light[prefix.toLowerCase()+'Intensity']}" title="${label} ışık yoğunluğu (0–3)" aria-label="${label} ışık yoğunluğu" ${d}></div>`;
+ return (['front','both'].includes(light.mode)?fields('Front','Ön ışık'):'')+(['halo','both'].includes(light.mode)?fields('Back','Arka ışık'):'');
+}
 function bindObjectBarEvents(bar, sel, ctx, unit) {
+  for(const [id,key] of [['pbFrontColor','frontColor'],['pbBackColor','backColor'],['pbFrontIntensity','frontIntensity'],['pbBackIntensity','backIntensity']]){
+    bar.querySelector('#'+id)?.addEventListener('change',e=>ctx.onLightingEdit?.(key,key.endsWith('Intensity')?Number(e.target.value):e.target.value));
+  }
   bindUnitControl(bar, ctx);
   const dimensionIds = new Set(['numX','numY','numW','numH','numD','numSpacing','pbFileW','pbCornerR','pbRectW']);
   const num = (id, fn) => bar.querySelector('#' + id)?.addEventListener('change', e => {
@@ -286,7 +297,7 @@ function bindObjectBarEvents(bar, sel, ctx, unit) {
   bar.querySelector('#btnCenterOnPage')?.addEventListener('click', () => ctx.onEditSelected?.(o => { o.xMm = 0; o.yMm = 0; }));
   bar.querySelector('#pbFont')?.addEventListener('change', e => ctx.onEditSelected?.(o => { o.fontId = e.target.value; }));
   bar.querySelector('#pbCtype')?.addEventListener('change', e => ctx.onEditSelected?.(o => { o.constructionType = e.target.value; }));
-  bar.querySelector('#pbLmode')?.addEventListener('change', e => ctx.onEditSelected?.(o => { o.lightingMode = e.target.value; }));
+  bar.querySelector('#pbLmode')?.addEventListener('change', e => {if(ctx.onLightingEdit)ctx.onLightingEdit('mode',e.target.value);else ctx.onEditSelected?.(o=>{o.lightingMode=e.target.value;});});
   bar.querySelectorAll('[data-pb-act]').forEach(b => b.onclick = () => ctx.onCadAction?.(b.dataset.pbAct));
   bar.querySelectorAll('[data-pb-tool]').forEach(b => b.onclick = () => ctx.onTool?.(b.dataset.pbTool));
 }

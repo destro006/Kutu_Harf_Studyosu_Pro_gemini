@@ -1,5 +1,6 @@
 import THREE from '../vendor/three.js';
 import { restoreLogoShape } from '../geometry/LogoTracer.js';
+import { resolveObjectLighting } from '../core/ObjectLighting.js';
 import { createSignMaterial } from './MaterialLibrary.js';
 import { resolveChannelMaterialBinding } from './ChannelMaterialBinding.js';
 import { EnvironmentManager, ENVIRONMENT_PRESETS } from './EnvironmentManager.js';
@@ -546,7 +547,8 @@ export class SignEngine {
     this._clearGroup(this.signGroup);
     const metricsList = [];
     const warnings = [];
-    const allShapesMForHalo = [];
+    this._objectLightRefs=new Map();
+    const haloJobs=[];
 
     let minXM = Infinity, maxXM = -Infinity, minYM = Infinity, maxYM = -Infinity;
 
@@ -557,12 +559,13 @@ export class SignEngine {
       objGroup.userData.layerId = obj.id;
       objGroup.userData.locked=!!obj.locked;
 
-      const lightOn = state.lighting?.enabled ?? true;
-      const mode = lightOn ? (obj.lightingMode || state.lighting?.mode || 'halo') : 'none';
+      const light=resolveObjectLighting(obj,state);
+      const mode=light.enabled?light.mode:'none';
+      const objectHaloShapes=[];
       const hasFront = mode === 'front' || mode === 'both';
       const hasHalo = mode === 'halo' || mode === 'both';
 
-      const wallDistMm = hasHalo ? (state.lighting?.wallDistanceMm ?? 35) : 4;
+      const wallDistMm = hasHalo ? light.wallDistanceMm : 4;
       const zOffsetM = wallDistMm * 0.001;
 
       const matOverrides = {
@@ -577,8 +580,8 @@ export class SignEngine {
         acrylicTransmission: state.materialOverrides?.acrylicTransmission,
       };
 
-      const glowHex = state.lighting?.colorHex || '#ffc982';
-      const frontInt = state.lighting?.frontIntensity ?? 1.0;
+      const glowHex=light.frontColor;
+      const frontInt=light.frontIntensity;
 
       const faceMat = createSignMaterial(
         obj.faceMaterial || state.materials.faceId,
@@ -605,6 +608,7 @@ export class SignEngine {
         { lit: hasFront, night, glowHex, lightIntensity: frontInt }
       );
 
+      this._objectLightRefs.set(obj.id,{front:[faceMat,acrylicMat].filter(mat=>typeof mat.userData?.updateLed==='function'),halo:null,points:[],night,mode});
       let shapesMmGroups = [];
 
       if (obj.kind === 'text') {
@@ -747,7 +751,7 @@ export class SignEngine {
         }
 
         // Collect world-space shapes for halo plane
-        if (hasHalo || hasFront) {
+        if (hasHalo) {
           for (const poly of built.polygonsMm) {
             const sh = new THREE.Shape();
             poly.outer.forEach((p, idx) => {
@@ -768,7 +772,7 @@ export class SignEngine {
               hp.closePath();
               sh.holes.push(hp);
             }
-            allShapesMForHalo.push(sh);
+            objectHaloShapes.push(sh);
           }
         }
       }
@@ -783,6 +787,7 @@ export class SignEngine {
       }
 
       this.signGroup.add(objGroup);
+      if(hasHalo&&objectHaloShapes.length&&!transparentBg)haloJobs.push({obj,light,shapes:objectHaloShapes});
     }
 
     const sizeM = {
@@ -791,56 +796,25 @@ export class SignEngine {
     };
     this.lastSizeM = sizeM;
 
-    // Halo / wall illumination glow plane
-    const lightOn = state.lighting?.enabled ?? true;
-    const anyHalo = lightOn && state.objects.some(o => o.visible && ((o.lightingMode || state.lighting?.mode) === 'halo' || (o.lightingMode || state.lighting?.mode) === 'both'));
-    const anyFront = lightOn && state.objects.some(o => o.visible && ((o.lightingMode || state.lighting?.mode) === 'front' || (o.lightingMode || state.lighting?.mode) === 'both'));
-
-    if (anyHalo && allShapesMForHalo.length && !transparentBg) {
-      const backInt = Math.max(0, state.lighting?.backIntensity ?? 1.0);
-      if (backInt > 0.01) {
-        const boundsM = { minX: minXM, maxX: maxXM, minY: minYM, maxY: maxYM };
-        const halo = createHaloTexture(allShapesMForHalo, boundsM, {
-          wallDistanceMm: state.lighting?.wallDistanceMm ?? 35,
-          haloSpread: state.lighting?.haloSpread ?? 1.0,
-          falloff: state.lighting?.falloff ?? 1.0,
-          letterHeightM: sizeM.h,
-        });
-        halo.texture._disposeOnClear = true;
-        const glowHex = state.lighting?.colorHex || '#ffc982';
-        // Preserve vivid hue without clipping RGB channels to white; scale intensity visibly across 0..3
-        const normInt = Math.max(0.05, Math.min(3.5, backInt));
-        const haloOpacity = Math.min(0.98, (night ? 0.34 : 0.22) * normInt + 0.08);
-        const colorGain = (night ? 0.55 : 0.42) + normInt * 0.45;
-
-        const haloMesh = new THREE.Mesh(
-          new THREE.PlaneGeometry(halo.widthM, halo.heightM),
-          new THREE.MeshBasicMaterial({
-            map: halo.texture,
-            color: new THREE.Color(glowHex).multiplyScalar(colorGain),
-            transparent: true,
-            opacity: haloOpacity,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-            toneMapped: true,
-          })
-        );
-        haloMesh.position.set(halo.cxM, halo.cyM, 0.002);
-        haloMesh.renderOrder = 2;
-        this.signGroup.add(haloMesh);
-
-        // Real colored wall-wash PointLights behind the letters so backIntensity visibly illuminates the wall texture
-        const lightCount = Math.min(5, Math.max(1, Math.round(sizeM.w / 0.7)));
-        const spanW = Math.max(0.1, sizeM.w * 0.78);
-        const perLightInt = (night ? 0.55 : 0.25) * normInt * Math.max(0.6, sizeM.h * 2.2) / Math.sqrt(lightCount);
-        const lightDist = Math.max(0.6, sizeM.h * 2.4 * (state.lighting?.haloSpread ?? 1));
-        for (let li = 0; li < lightCount; li++) {
-          const t = lightCount === 1 ? 0 : (li / (lightCount - 1) - 0.5);
-          const pl = new THREE.PointLight(glowHex, perLightInt, lightDist, 1.8);
-          pl.position.set(halo.cxM + t * spanW, halo.cyM, 0.018);
-          this.signGroup.add(pl);
+    // Independent halo masks and bounded wall-wash lights.
+    for(const [index,job] of haloJobs.entries()){
+      const refs=this._objectLightRefs.get(job.obj.id),box=new THREE.Box2();
+      for(const shape of job.shapes)for(const pt of shape.getPoints(6))box.expandByPoint(pt);
+      if(box.isEmpty())continue;
+      const width=Math.max(.05,box.max.x-box.min.x),height=Math.max(.05,box.max.y-box.min.y);
+      const halo=createHaloTexture(job.shapes,{minX:box.min.x,maxX:box.max.x,minY:box.min.y,maxY:box.max.y},{wallDistanceMm:job.light.wallDistanceMm,haloSpread:job.light.haloSpread,falloff:job.light.falloff,letterHeightM:height});
+      halo.texture._disposeOnClear=true;
+      const mesh=new THREE.Mesh(new THREE.PlaneGeometry(halo.widthM,halo.heightM),new THREE.MeshBasicMaterial({map:halo.texture,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:true}));
+      mesh.position.set(halo.cxM,halo.cyM,.002);mesh.renderOrder=2;mesh.raycast=()=>{};this.signGroup.add(mesh);refs.halo=mesh;
+      if(index<5){
+        const count=Math.min(Math.max(1,Math.floor(5/Math.min(5,haloJobs.length))),Math.max(1,Math.round(width/.7)));
+        for(let i=0;i<count;i++){
+          const offset=count===1?0:(i/(count-1)-.5)*width*.78;
+          const pl=new THREE.PointLight(job.light.backColor,0,Math.max(.6,height*2.4*job.light.haloSpread),1.8);
+          pl.position.set(halo.cxM+offset,halo.cyM,.018);this.signGroup.add(pl);refs.points.push(pl);
         }
       }
+      refs.height=height;this.applyObjectLightAppearance(refs,job.light);
     }
 
     // The wall is loaded independently; geometry and controls remain responsive.
@@ -1055,6 +1029,25 @@ export class SignEngine {
     }
   }
 
+  applyObjectLightAppearance(refs,light){
+    for(const mat of refs.front)mat.userData.updateLed(light.frontColor,light.frontIntensity);
+    const intensity=light.backIntensity,night=refs.night;
+    if(refs.halo){
+      refs.halo.visible=intensity>0;
+      refs.halo.material.color.set(light.backColor).multiplyScalar((night ? .55 : .42)+intensity*.45);
+      refs.halo.material.opacity=intensity>0?Math.min(.98,(night ? .34 : .22)*intensity+.08):0;
+    }
+    for(const pl of refs.points){pl.color.set(light.backColor);pl.intensity=(night ? .55 : .25)*intensity*Math.max(.6,(refs.height||.4)*2.2)/Math.sqrt(refs.points.length);}
+  }
+  updateLightAppearance(state){
+    if(this.isDisposed||this._paused||!this._objectLightRefs)return false;
+    for(const obj of state.objects.filter(o=>o.visible)){
+      const refs=this._objectLightRefs.get(obj.id),light=resolveObjectLighting(obj,state);
+      if(!refs||refs.mode!==(light.enabled?light.mode:'none'))return false;
+    }
+    for(const obj of state.objects.filter(o=>o.visible))this.applyObjectLightAppearance(this._objectLightRefs.get(obj.id),resolveObjectLighting(obj,state));
+    this.invalidate();return true;
+  }
   cancelWallLoad(){
     this._wallRequest?.controller.abort();
     this._wallRequest=null;

@@ -418,12 +418,12 @@ export function createSignMaterial(presetId, overrides = {}, lightContext = {}) 
   });
 
   if (lit) {
-    const emissiveHex = isOpal ? glowHex : mixHex(colorHex, glowHex, 0.55);
-    // Tint diffuse face toward the LED color so colored light (red, blue, green, etc.) stays rich & saturated
-    mat.color = new THREE.Color(isOpal ? mixHex('#ffffff', glowHex, 0.75) : mixHex(colorHex, glowHex, 0.45));
-    mat.emissive = new THREE.Color(emissiveHex);
-    const baseEmissive = isOpal ? (night ? 0.92 : 0.52) : (night ? 0.82 : 0.42);
-    mat.emissiveIntensity = baseEmissive * Math.max(0.1, lightIntensity);
+    const baseEmissive=isOpal?(night ? .92 : .52):(night ? .82 : .42);
+    mat.userData.updateLed=(hex,intensity)=>{
+      mat.color.set(intensity<=0?colorHex:isOpal?mixHex('#ffffff',hex,.75):mixHex(colorHex,hex,.45));
+      mat.emissive.set(isOpal?hex:mixHex(colorHex,hex,.55));mat.emissiveIntensity=baseEmissive*Math.max(0,intensity);
+    };
+    mat.userData.updateLed(glowHex,lightIntensity);
   }
 
   return mat;
