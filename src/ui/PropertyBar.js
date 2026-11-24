@@ -26,7 +26,7 @@ export function renderPropertyBar(state, ctx = {}) {
   // Preserve the actual DOM node of an open select or active numeric input.
   // Replacing innerHTML on a scene update closes native menus, loses typed
   // numbers and can swallow the click that was about to commit a selection.
-  const contextKey = [mainWs, ...selObjs.map(o => o.id), mainWs === 'nesting' ? (ctx.selectedPlacementId || '') : ''].join('|');
+  const contextKey = [mainWs, normalizeDisplayUnit(state.pageLayout?.displayUnit), ...selObjs.map(o => o.id), mainWs === 'nesting' ? (ctx.selectedPlacementId || '') : ''].join('|');
   // The minimal DOM stubs used by unit tests omit focus APIs; the production
   // HTMLElement always provides dataset, contains and addEventListener.
   if (!bar.dataset) bar.dataset = {};

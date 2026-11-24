@@ -354,7 +354,7 @@ function updateStageChrome(state) {
   const fileBadge = document.getElementById('dimFileBadge');
   const isFileli = (selObj?.constructionType || state.constructionType) === 'fileli';
   fileBadge.classList.toggle('hidden', !isFileli);
-  document.getElementById('dimFile').textContent = `${selObj?.fileWidthMm ?? state.fileli.fileWidthMm} mm`;
+  document.getElementById('dimFile').textContent = `${show(selObj?.fileWidthMm ?? state.fileli.fileWidthMm)} ${unit}`;
 
   document.getElementById('headerTotalBadge').textContent = formatMoney(lastCosts.grandTotal, lastCosts.currency);
   const pni = document.getElementById('projectNameInput'); if (pni) pni.value = state.projectName;
@@ -2100,11 +2100,8 @@ function bindWorkspaceEvents(ws, root) {
       if (!lastNesting?.sheets?.length) return;
       downloadBlob(`${store.get().projectName || 'nesting'}_parcalar.csv`, generateNestedCsv(lastNesting.sheets), 'text/csv');
     });
-    root.querySelector('#btnRunNesting')?.addEventListener('click', () => {
-      const s = store.get();
-      const items = extractNestingItems(lastSceneResult.metricsList, s);
-      lastNesting = runTrueShapeNesting(items, s.nesting);
-      selectedNestingId = null;
+    root.querySelector('#btnRunNesting')?.addEventListener('click', async () => {
+      await runAutoNesting();
       renderActiveWorkspace();
       root.querySelector('#nestingResultsSec')?.scrollIntoView({ behavior: 'smooth' });
     });
@@ -2663,7 +2660,7 @@ async function repackNestingSettings(label,updateNesting,quickImport=true){
     if(items.length){const out=await runVectorImportJob({jobId:Date.now(),operation:'nest',imported:{items},nesting:{...Object.fromEntries(Object.entries(next).filter(([key])=>!['sheets','unplaced','importedTabs','designTabSnapshot'].includes(key))),quickImport}},{signal:controller.signal});result=out.nesting;}
     if(controller.signal.aborted||(store.get().nesting.activeTabId||'design')!==tab)return;
     lastNesting=result;activeSheetIdx=0;selectedNestingId=null;
-    mutate(label,st=>{st.nesting={...next,sheets:result.sheets,unplaced:result.unplaced};},false);
+    mutate(label,st=>{const {importedTabs,designTabSnapshot,activeTabId,...settings}=next;st.nesting={...st.nesting,...settings,sheets:result.sheets,unplaced:result.unplaced};},false);
     updateCenterWorkspaces(store.get());
   }catch(err){if(!controller.signal.aborted){const warning=document.getElementById('stageWarning');if(warning){warning.textContent=String(err.message||err);warning.classList.remove('hidden');}}}
   finally{if(nestingRepackController===controller){nestingRepackController=null;const btn=document.getElementById('cwsRunNesting');if(btn)btn.textContent='Otomatik Yerleştir';}}
@@ -2776,6 +2773,7 @@ async function importNestingVectorFiles(fileList, root) {
 
 function bindNestingCenterEvents(root) {
   root.querySelectorAll('[data-nest-tab]').forEach(b => b.onclick = () => {
+    nestingRepackController?.abort();currentNestingImportController?.abort();
     mutate('Nesting iş sekmesi', s => switchNestingTab(s.nesting,b.dataset.nestTab), false);
     activeSheetIdx=0;selectedNestingId=null;
     updateCenterWorkspaces(store.get());
