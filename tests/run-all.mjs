@@ -110,8 +110,14 @@ test('Test F: Gerçek Şekil Nesting E-harflerini iç içe geçirerek yerleştir
 
 // 3. Test G — Turkish characters ŞİĞÜÇÖ ALİ DEVA
 test('Test G: Türkçe karakterler (ŞİĞÜÇÖ ALİ DEVA) geometri, metraj ve DXF/SVG çıktısı', () => {
-  const latin = parseFont(fs.readFileSync(path.join(ROOT, 'public/fonts/montserrat-latin-800-normal-C3dfDxXV.woff')).buffer);
-  const ext = parseFont(fs.readFileSync(path.join(ROOT, 'public/fonts/montserrat-latin-ext-800-normal-Wjq_OapB.woff')).buffer);
+  // Node Buffer may share a larger ArrayBuffer; slicing the exact byte range
+  // is mandatory before handing a font to opentype.js.
+  const parseWoff = filename => {
+    const bytes = fs.readFileSync(path.join(ROOT, 'public/fonts', filename));
+    return parseFont(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+  };
+  const latin = parseWoff('montserrat-latin-800-normal-C3dfDxXV.woff');
+  const ext = parseWoff('montserrat-latin-ext-800-normal-Wjq_OapB.woff');
   const layout = layoutTextMm([latin, ext], 'ŞİĞÜÇÖ ALİ DEVA', 300, 8);
 
   // 13 non-space characters
