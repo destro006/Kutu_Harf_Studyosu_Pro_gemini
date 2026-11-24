@@ -18,7 +18,7 @@ const area=r=>Math.abs(r.reduce((sum,p,i)=>{const q=r[(i+1)%r.length];return sum
 export function pdfOperatorRings(list, OPS, opts={}) {
  const toleranceMm=Math.max(.05,Number(opts.tolerance)||.5);
  const warnings=new Set();
- const completed=[];
+ const completed=[],groups=[];
  let currentMatrix=ID,stack=[],subpaths=[],points=[],start=null,cur=null,closed=false;
  let totalPoints=0,hasText=false,hasImages=false;
  const pathOp={moveTo:OPS.moveTo,lineTo:OPS.lineTo,curveTo:OPS.curveTo,
@@ -30,23 +30,31 @@ export function pdfOperatorRings(list, OPS, opts={}) {
  const curve=(c1,c2,end)=>{
   const a=cur||end;
   const len=Math.hypot(a.x-c1.x,a.y-c1.y)+Math.hypot(c1.x-c2.x,c1.y-c2.y)+Math.hypot(c2.x-end.x,c2.y-end.y);
-  const count=Math.min(1024,Math.max(5,Math.ceil(len*POINT_TO_MM/toleranceMm)));
-  for(let i=1;i<=count;i++){
-   const t=i/count,s=1-t;
-   append({x:s*s*s*a.x+3*s*s*t*c1.x+3*s*t*t*c2.x+t*t*t*end.x,
-           y:s*s*s*a.y+3*s*s*t*c1.y+3*s*t*t*c2.y+t*t*t*end.y});
-  }
+  // Adaptive De Casteljau subdivision: flatness, not path length.
+  const midpoint=(p,q)=>({x:(p.x+q.x)/2,y:(p.y+q.y)/2});
+  const dist=(p,a,b)=>{const dx=b.x-a.x,dy=b.y-a.y,l=dx*dx+dy*dy;
+    if(!l)return Math.hypot(p.x-a.x,p.y-a.y);
+    const t=Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.y-a.y)*dy)/l));
+    return Math.hypot(p.x-a.x-t*dx,p.y-a.y-t*dy);};
+  const flatten=(a,b,c,d,depth)=>{
+    if(depth>=18||Math.max(dist(b,a,d),dist(c,a,d))*POINT_TO_MM<=toleranceMm){append(d);return;}
+    const ab=midpoint(a,b),bc=midpoint(b,c),cd=midpoint(c,d),abc=midpoint(ab,bc),bcd=midpoint(bc,cd),mid=midpoint(abc,bcd);
+    flatten(a,ab,abc,mid,depth+1);flatten(mid,bcd,cd,d,depth+1);
+  };
+  flatten(a,c1,c2,end,0);
  };
  const discard=()=>{subpaths=[];points=[];start=cur=null;closed=false;};
  const flush=(fill)=>{
   if(points.length)close();
+  const group=[];
   for(const sub of subpaths){
    if(sub.points.length<3||(!fill&&!sub.closed))continue;
    const pts=sub.points.slice();
    if(pts.length>2&&closeEnough(pts[0],pts.at(-1)))pts.pop();
    const scaled=pts.map(p=>({x:p.x*POINT_TO_MM,y:p.y*POINT_TO_MM}));
-   if(scaled.length>=3&&area(scaled)>.0001)completed.push(scaled);
+   if(scaled.length>=3&&area(scaled)>.0001){completed.push(scaled);group.push(scaled);}
   }
+  if(group.length)groups.push(group);
   discard();
  };
  const finishOps=new Set([OPS.stroke,OPS.closeStroke,OPS.fill,OPS.eoFill,OPS.fillStroke,OPS.eoFillStroke,OPS.closeFillStroke,OPS.closeEOFillStroke]);
@@ -79,10 +87,10 @@ export function pdfOperatorRings(list, OPS, opts={}) {
  }
  if(hasText)warnings.add('PDF contains live text. Convert all text to outlines before manufacturing; text is not converted automatically.');
  if(hasImages)warnings.add('PDF contains raster images. Images are not CNC cut contours.');
- return {rings:completed,warnings:[...warnings]};
+ return {rings:completed,groups,warnings:[...warnings]};
 }
 
-export async function importPdfFile(file, options={}, progress=()=>{}){
+export async function importPdfFile(file, options={}, progress=()=>{},signal){
  const lib=globalThis.pdfjsLib;
  if(!lib?.getDocument)throw Error('Yerel PDF motoru yüklenemedi. PDF.js paketini kontrol edin.');
  lib.GlobalWorkerOptions.workerSrc = new URL('../../public/vendor/pdfjs/pdf.worker.min.js',import.meta.url).href;
@@ -90,19 +98,18 @@ export async function importPdfFile(file, options={}, progress=()=>{}){
  progress('PDF sayfaları çözülüyor…');
  const task=lib.getDocument({data,isEvalSupported:false,disableFontFace:true});
  const pdf=await task.promise;
- const warnings=[],rings=[];
+ const warnings=[],pages=[];
+ const abort=()=>{task.destroy().catch(()=>{});};signal?.addEventListener('abort',abort,{once:true});
  try{
   for(let p=1;p<=pdf.numPages;p++){
    progress(`PDF vektörleri okunuyor: ${p}/${pdf.numPages}`);
    const page=await pdf.getPage(p);
    const opList=await page.getOperatorList();
-   const result=pdfOperatorRings(opList,lib.OPS,options);
-   rings.push(...result.rings);
-   warnings.push(...result.warnings.map(w=>`Sayfa ${p}: ${w}`));
+   if(signal?.aborted)throw new DOMException('PDF içe aktarma iptal edildi.','AbortError');
+   pages.push({fnArray:opList.fnArray,argsArray:opList.argsArray});
    page.cleanup();
    await new Promise(r=>setTimeout(r,0));
   }
- }finally{await task.destroy();}
- if(!rings.length)throw Error('PDF içinde kapalı vektör kesim konturu bulunamadı. Taranmış görüntü veya canlı yazı olabilir.');
- return {filename:file.name,format:'pdf',rings,warnings:[...new Set(warnings)]};
+ }finally{signal?.removeEventListener('abort',abort);await task.destroy();}
+ return {filename:file.name,format:'pdf',pages,ops:lib.OPS,warnings};
 }

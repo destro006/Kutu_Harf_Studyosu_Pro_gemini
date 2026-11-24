@@ -197,6 +197,8 @@ export function validateSheetLayout(sheet, minSep = 5) {
 
     for (let j = i + 1; j < sheet.placements.length; j++) {
       const b = sheet.placements[j];
+      const ab=a.bounds,bb=b.bounds;
+      if(ab.maxX+minSep<=bb.minX+1e-5||bb.maxX+minSep<=ab.minX+1e-5||ab.maxY+minSep<=bb.minY+1e-5||bb.maxY+minSep<=ab.minY+1e-5)continue;
       const insideAHole = a.holes?.some(h => fitsInsideHole(b.outer, h, minSep));
       const insideBHole = b.holes?.some(h => fitsInsideHole(a.outer, h, minSep));
       if (insideAHole || insideBHole) continue;
@@ -235,6 +237,7 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
     grainDirection = 'none',
     allowHoleNesting = true,
     groupByMaterial = true,
+    quickImport = false,
   } = config;
 
   const mL = marginLeftMm ?? marginMm;
@@ -333,6 +336,7 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
       return true;
     };
 
+    const choose=(sheet,variants)=>quickImport?findQuickPlacement(sheet,variants,mL,mB,sheetWidthMm-mR,sheetHeightMm-mT,minSep):findBestPlacementOnSheet(sheet,variants,mL,mB,sheetWidthMm-mR,sheetHeightMm-mT,allowHoleNesting,fitsOnSheet,minSep,placementStrategy);
     for (const item of sorted) {
       if (lockedIds.has(item.id)) continue;
 
@@ -354,7 +358,7 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
 
       let placedOk = false;
       for (const sheet of batchSheets) {
-        const best = findBestPlacementOnSheet(sheet, variants, mL, mB, sheetWidthMm - mR, sheetHeightMm - mT, allowHoleNesting, fitsOnSheet, minSep, placementStrategy);
+        const best = choose(sheet,variants);
         if (best) {
           sheet.placements.push(makePlacement(item, best));
           sheet.usedAreaMm2 += item.areaMm2;
@@ -377,7 +381,7 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
           placements: [],
           usedAreaMm2: 0,
         };
-        const best = findBestPlacementOnSheet(newSheet, variants, mL, mB, sheetWidthMm - mR, sheetHeightMm - mT, allowHoleNesting, fitsOnSheet, minSep, placementStrategy);
+        const best = choose(newSheet,variants);
         if (best) {
           newSheet.placements.push(makePlacement(item, best));
           newSheet.usedAreaMm2 += item.areaMm2;
@@ -447,6 +451,28 @@ function makePlacement(item, best) {
   };
 }
 
+// Fast initial placement uses conservative non-overlapping bounding-box shelves.
+ // Original paths are preserved; the explicit optimize action can run true-shape nesting later.
+function findQuickPlacement(sheet,variants,minX,minY,maxX,maxY,sep){
+ let best=null,bestScore=Infinity;
+ const xs=new Set([minX]),ys=new Set([minY]);
+ for(const p of sheet.placements){xs.add(p.bounds.maxX+sep+.001);ys.add(p.bounds.maxY+sep+.001);}
+ const placements=sheet.placements;
+ for(const y of [...ys].sort((a,b)=>a-b)){
+   for(const x of [...xs].sort((a,b)=>a-b)){
+     for(const v of variants){
+       const w=v.bounds.width,h=v.bounds.height;
+       if(x+w>maxX+1e-6||y+h>maxY+1e-6)continue;
+       const score=(y-minY)*(maxX-minX+1)+(x-minX);
+       if(score>=bestScore)continue;
+       if(placements.some(p=>!(x+w+sep<=p.bounds.minX+1e-6||p.bounds.maxX+sep<=x+1e-6||y+h+sep<=p.bounds.minY+1e-6||p.bounds.maxY+sep<=y+1e-6)))continue;
+       bestScore=score;best={angleDeg:v.ang,xMm:x,yMm:y,outer:translatePolygon(v.outer,x,y),holes:v.holes.map(r=>translatePolygon(r,x,y)),bounds:{minX:x,minY:y,maxX:x+w,maxY:y+h,width:w,height:h}};
+     }
+     if(best&&best.yMm===y)return best;
+   }
+ }
+ return best;
+}
 function findBestPlacementOnSheet(sheet, variants, minX, minY, maxX, maxY, allowHoleNesting, fitsOnSheet, minSep = 5, strategy = 'compact') {
   let best = null, bestScore = Infinity;
   const occupiedX = Math.max(minX, ...sheet.placements.map(p => p.bounds.maxX));

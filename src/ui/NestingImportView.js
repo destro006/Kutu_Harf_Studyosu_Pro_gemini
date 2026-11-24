@@ -15,7 +15,7 @@ export function renderNestingSourceTabs(n={}) {
 export function renderNestingImportPane() {
  return `<div class="nesting-import-panel">
    <div class="nesting-import-hero"><div class="nesting-import-mark">▧</div>
-     <div><h2>Vektör Dosyası İçe Aktar</h2><p>SVG, PDF, AutoCAD ASCII DXF ve HPGL/PLT dosyalarını cihazında aç. Büyük dosyalar ayrı iş parçacığında işlenir.</p></div>
+     <div><h2>Vektör Dosyası İçe Aktar</h2><p>SVG, PDF, AutoCAD ASCII DXF ve HPGL/PLT dosyalarını cihazında aç. Büyük dosyalar ayrı iş parçacığında işlenir. Önce hızlı güvenli yerleşim, sonra isteğe bağlı optimizasyon.</p></div>
    </div>
    <div class="nesting-import-controls">
      <label>Dosya ölçek birimi<select id="nestImportUnit"><option value="auto">Otomatik · dosyadan oku</option><option value="mm">Milimetre (mm)</option><option value="cm">Santimetre (cm)</option><option value="m">Metre (m)</option><option value="in">İnç (in)</option><option value="px">Piksel · 96 DPI</option></select></label>

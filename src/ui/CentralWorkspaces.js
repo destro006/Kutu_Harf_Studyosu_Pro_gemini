@@ -40,6 +40,7 @@ export function renderNestingCenter(state, ctx) {
       <!-- Left: Part List & Material Groups -->
       <div class="cws-side">
         <h3 class="sec-title">İmalat Parçaları (${totalParts})</h3>
+        ${(n.importedTabs||[]).find(t=>t.id===n.activeTabId)?.warnings?.length?`<details class="nesting-import-converters"><summary>İçe aktarma notları</summary>${(n.importedTabs.find(t=>t.id===n.activeTabId).warnings||[]).map(x=>`<p>${escapeHtml(x)}</p>`).join('')}</details>`:''}
         ${!sheets.length ? '<p style="font-size:12px;color:var(--muted)">Parça listesi için "Otomatik Yerleştir"e tıklayın.</p>' : `
           <div style="display:flex;flex-direction:column;gap:4px">
             ${(activeSheet?.placements || []).map(p => `

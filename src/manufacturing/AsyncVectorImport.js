@@ -7,8 +7,7 @@ import { runNestingImportJob } from './NestingImportWorker.js';
 export async function runVectorImportJob(job,{signal,onStatus=()=>{}}={}){
  if(signal?.aborted)throw new DOMException('İçe aktarma iptal edildi.','AbortError');
  if(typeof Worker==='undefined'){
-  onStatus('Uyumluluk modunda işleniyor…');
-  return runNestingImportJob(job);
+  throw Error('Bu tarayıcı Web Worker desteklemiyor. Donmayı önlemek için içe aktarma durduruldu. Güncel Chrome/Edge kullanın.');
  }
  const worker = new Worker(new URL('./NestingImportWorker.js',import.meta.url),{type:'module'});
  return new Promise((resolve,reject)=>{
@@ -23,6 +22,7 @@ export async function runVectorImportJob(job,{signal,onStatus=()=>{}}={}){
    if(e.data?.jobId!==job.jobId)return;
    complete(e.data?.error?new Error(e.data.error):null,e.data?.result);
   };
+  worker.onmessageerror=()=>complete(new Error('Nesting motorundan gelen veri okunamadı.'));
   worker.onerror=e=>complete(new Error('Nesting işlem motoru: '+(e.message||'beklenmeyen hata')));
   signal?.addEventListener('abort',abort,{once:true});
   onStatus('Yerel vektörler çözümleniyor ve levhaya yerleştiriliyor…');

@@ -109,8 +109,9 @@ export function groupRings(input,fileName,format,unitFactor,warnings=[]){
    }
  }
  const root=candidates.filter(x=>x.depth%2===0);
- const items=[];
- for(const c of root){const holes=candidates.filter(x=>x.parent===c && x.depth===c.depth+1).map(h=>h.ring);
+ const items=[],holesByParent=new Map();
+ for(const c of candidates)if(c.parent){const list=holesByParent.get(c.parent)||[];list.push(c.ring);holesByParent.set(c.parent,list);}
+ for(const c of root){const holes=holesByParent.get(c)||[];
   const b=bounds(c.ring),shift=p=>({x:round(p.x-b.minX),y:round(p.y-b.minY)});
   const outer=c.ring.map(shift),hh=holes.map(h=>h.map(shift));
   const area=Math.abs(signedArea(c.ring))-holes.reduce((sum,h)=>sum+Math.abs(signedArea(h)),0);

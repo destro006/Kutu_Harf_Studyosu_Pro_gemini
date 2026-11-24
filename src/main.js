@@ -6,7 +6,7 @@ import { Vector2DCanvas } from './cad/Vector2DCanvas.js';
 import { ContextMenu } from './ui/ContextMenu.js';
 import { renderPropertyBar } from './ui/PropertyBar.js';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
-import { PAGE_SIZE_PRESETS, normalizeDisplayUnit } from './core/units.js';
+import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js';
 import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js';
 import { generateNestedGcode, generateNestedHpgl } from './export/CncGcodeExporter.js';
@@ -336,17 +336,18 @@ function objectPhysicalSize(o){
   return size&&size.widthMm>0&&size.heightMm>0?size:nominalSize(o);
 }
 function syncInspectorDimensions(state){
-  const size=objectPhysicalSize(getSelectedOrFirst(state));
-  for(const [id,value] of [['wsHeightMm',size?.heightMm??state.dimensions.heightMm],['wsWidthMm',size?.widthMm]]){
-    for(const el of document.querySelectorAll('#'+id))if(value!=null&&document.activeElement!==el)el.value=roundMm(value);
+  const obj=getSelectedOrFirst(state),size=objectPhysicalSize(obj),unit=normalizeDisplayUnit(state.pageLayout?.displayUnit);
+  for(const [id,value] of [['wsHeightMm',size?.heightMm??state.dimensions.heightMm],['wsWidthMm',size?.widthMm],['wsDepthMm',obj?.depthMm??state.dimensions.depthMm],['wsSpacingMm',obj?.letterSpacingMm??state.dimensions.letterSpacingMm]]){
+    for(const el of document.querySelectorAll('#'+id))if(value!=null&&document.activeElement!==el)el.value=formatMmAsUnit(roundMm(value),unit);
   }
 }
 function updateStageChrome(state) {
   const selObj = state.objects.find(o => state.selectedIds.includes(o.id)) || state.objects[0];
   const selected=state.objects.filter(o=>state.selectedIds.includes(o.id));
   const size=selected.length===1?objectPhysicalSize(selected[0]):null;
-  document.getElementById('dimHeight').textContent=size?`${roundMm(size.heightMm)} mm`:'—';
-  document.getElementById('dimTotal').textContent=size?`${roundMm(size.widthMm)} × ${roundMm(size.heightMm)} mm`:`${lastMetrics.totalWidthMm} × ${lastMetrics.totalHeightMm} mm`;
+  const unit=normalizeDisplayUnit(state.pageLayout?.displayUnit),show=mm=>formatMmAsUnit(roundMm(mm),unit);
+  document.getElementById('dimHeight').textContent=size?`${show(size.heightMm)} ${unit}`:'—';
+  document.getElementById('dimTotal').textContent=size?`${show(size.widthMm)} × ${show(size.heightMm)} ${unit}`:`${show(lastMetrics.totalWidthMm)} × ${show(lastMetrics.totalHeightMm)} ${unit}`;
   document.getElementById('dimTotal').title=size?'Seçili nesnenin gerçek ebatı':'Projenin toplam ebatı';
   syncInspectorDimensions(state);
 
@@ -424,7 +425,9 @@ function updateNumericBar(state) {
       const safeUnit = normalizeDisplayUnit(unit);
       store.update(s => { s.pageLayout.displayUnit = safeUnit; });
       // Unit switching only changes the presentation of dimensions; the model remains in mm.
+      updateStageChrome(store.get());
       updateNumericBar(store.get());
+      renderActiveWorkspace();
       if (store.get().mainWorkspace === 'design2d') vector2D?.render(store.get(), fontMap);
       writeAutosave(store.get());
     },
@@ -1066,6 +1069,7 @@ function getSelectedOrFirst(state) {
 }
 
 function renderDesignWs(state) {
+  const unit=normalizeDisplayUnit(state.pageLayout?.displayUnit),show=mm=>formatMmAsUnit(roundMm(mm),unit);
   const obj = getSelectedOrFirst(state);
   const cType = obj?.constructionType || state.constructionType;
   const fonts = fontManager.getAllFontMetas().filter(f =>
@@ -1126,19 +1130,19 @@ function renderDesignWs(state) {
     </section>`}
 
     <section class="sec">
-      <h3 class="sec-title">3. Ölçüler (mm)</h3>
+      <h3 class="sec-title">3. Ölçüler (${unit})</h3>
       <div class="field-row">
-        <label>Nesne Yüksekliği (mm)</label>
-        <input id="wsHeightMm" type="number" min="0.01" step="any" value="${roundMm(objectPhysicalSize(obj)?.heightMm??state.dimensions.heightMm)}">
+        <label>Nesne Yüksekliği (${unit})</label>
+        <input id="wsHeightMm" type="number" step="any" value="${show(objectPhysicalSize(obj)?.heightMm??state.dimensions.heightMm)}">
       </div>
-      ${obj?`<div class="field-row"><label>Nesne Genişliği (mm)</label><input id="wsWidthMm" type="number" min="0.01" step="any" value="${roundMm(objectPhysicalSize(obj).widthMm)}"></div>`:''}
+      ${obj?`<div class="field-row"><label>Nesne Genişliği (${unit})</label><input id="wsWidthMm" type="number" step="any" value="${show(objectPhysicalSize(obj).widthMm)}"></div>`:''}
       <div class="field-row">
-        <label>Kenar Çıta Ebatı (mm)</label>
-        <input id="wsDepthMm" type="number" min="15" max="300" step="5" value="${Math.round(obj?.depthMm || state.dimensions.depthMm)}">
+        <label>Kenar Çıta Ebatı (${unit})</label>
+        <input id="wsDepthMm" type="number" step="any" value="${show(obj?.depthMm || state.dimensions.depthMm)}">
       </div>
       <div class="field-row">
-        <label>Harf Aralığı (mm)</label>
-        <input id="wsSpacingMm" type="number" min="-20" max="150" step="1" value="${Math.round(obj?.letterSpacingMm ?? state.dimensions.letterSpacingMm)}">
+        <label>Harf Aralığı (${unit})</label>
+        <input id="wsSpacingMm" type="number" step="any" value="${show(obj?.letterSpacingMm ?? state.dimensions.letterSpacingMm)}">
       </div>
     </section>
 
@@ -1782,7 +1786,11 @@ function bindWorkspaceEvents(ws, root) {
       }
     });
 
-    const bindNum = (id, fn) => root.querySelector('#' + id)?.addEventListener('change', e => mutate('Ölçü değiştirildi', s => fn(s, Number(e.target.value))));
+    const bindNum = (id, fn) => root.querySelector('#' + id)?.addEventListener('change', e => {
+      const units=['wsHeightMm','wsWidthMm','wsDepthMm','wsSpacingMm'];
+      const value=units.includes(id)?displayToMm(e.target.value,store.get().pageLayout?.displayUnit):Number(e.target.value);
+      if(Number.isFinite(value))mutate('Ölçü değiştirildi',s=>fn(s,value));
+    });
     bindNum('wsHeightMm', (s, v) => {
       if(!Number.isFinite(v)||v<=0)return;
       const o=getSelectedOrFirst(s);
@@ -2278,6 +2286,7 @@ function renderCanvasTransformHud(state) {
     return;
   }
   const currentKey = tool + '|' + sel.id;
+  const displayUnit=normalizeDisplayUnit(state.pageLayout?.displayUnit);
   if (hud.dataset.dismissedKey === currentKey) {
     hud.classList.add('hidden');
     return;
@@ -2291,7 +2300,7 @@ function renderCanvasTransformHud(state) {
       }
     }, 0));
   }
-  if (hud.dataset.hudTool === tool && hud.dataset.hudSel === sel.id &&
+  if (hud.dataset.hudTool === tool && hud.dataset.hudSel === sel.id && hud.dataset.displayUnit===displayUnit &&
       hud.contains(document.activeElement) &&
       /^(INPUT|SELECT|TEXTAREA)$/i.test(document.activeElement?.tagName || '')) {
     hud.dataset.pendingRefresh = '1';
@@ -2299,6 +2308,7 @@ function renderCanvasTransformHud(state) {
     return;
   }
   hud.dataset.pendingRefresh = '0';
+  hud.dataset.displayUnit=displayUnit;
   if (!['select', 'scale', 'rotate', 'move'].includes(tool)) {
     const tips = {
       pan: '✋ Sahneyi sürükleyerek kaydırın • Çıkış: Esc',
@@ -2316,8 +2326,9 @@ function renderCanvasTransformHud(state) {
     return;
   }
 
+  const unit=normalizeDisplayUnit(state.pageLayout?.displayUnit),show=mm=>formatMmAsUnit(roundMm(mm),unit);
   const actualSize=objectPhysicalSize(sel);
-  const curW=roundMm(actualSize.widthMm),curH=roundMm(actualSize.heightMm);
+  const curW=show(actualSize.widthMm),curH=show(actualSize.heightMm);
   const locked = sel.proportionalLock !== false;
 
   // Avoid clobbering active input focus unless tool/selection changed
@@ -2328,14 +2339,14 @@ function renderCanvasTransformHud(state) {
   if (tool === 'scale') {
     hud.innerHTML = `
       <div class="hud-head">
-        <span>⤢ Ölçek &amp; Ebat (mm)</span>
+        <span>⤢ Ölçek &amp; Ebat (${unit})</span>
         <button type="button" id="hudScaleLock" class="hud-lock-btn ${locked ? 'on' : ''}" title="Oranı Kilitle / Serbest Bırak">
           ${locked ? '🔒 Oran Kilitli' : '🔓 Serbest Ebat'}
         </button>
       </div>
       <div class="hud-row">
-        <label class="hud-field"><span>G (mm)</span><input id="hudScaleW" type="number" min="10" max="10000" step="5" value="${curW}"></label>
-        <label class="hud-field"><span>Y (mm)</span><input id="hudScaleH" type="number" min="10" max="10000" step="5" value="${curH}"></label>
+        <label class="hud-field"><span>G (${unit})</span><input id="hudScaleW" type="number" min="0" step="any" value="${curW}"></label>
+        <label class="hud-field"><span>Y (${unit})</span><input id="hudScaleH" type="number" min="0" step="any" value="${curH}"></label>
       </div>
       <div class="hud-chips">
         <button type="button" class="hud-chip" data-hud-sf="0.5">%50</button>
@@ -2353,8 +2364,8 @@ function renderCanvasTransformHud(state) {
 
     const applyDim = (axis,newMm) => {mutate('Ebat ölçekleme',s=>{const o=s.objects.find(x=>x.id===sel.id);if(o)resizeObjectToMm(o,axis,newMm,objectPhysicalSize(o));});};
 
-    hud.querySelector('#hudScaleW').onchange = (e) => applyDim('w', e.target.value);
-    hud.querySelector('#hudScaleH').onchange = (e) => applyDim('h', e.target.value);
+    hud.querySelector('#hudScaleW').onchange = (e) => applyDim('w', displayToMm(e.target.value,unit));
+    hud.querySelector('#hudScaleH').onchange = (e) => applyDim('h', displayToMm(e.target.value,unit));
     hud.querySelectorAll('[data-hud-sf]').forEach(b => b.onclick = () => {
       const f = Number(b.dataset.hudSf);
       mutate('Hızlı ölçek', s => {
@@ -2405,19 +2416,19 @@ function renderCanvasTransformHud(state) {
   } else if (tool === 'move' || tool === 'select') {
     hud.innerHTML = `
       <div class="hud-head">
-        <span>✥ Konum &amp; Ebat (mm)</span>
+        <span>✥ Konum &amp; Ebat (${unit})</span>
         <button type="button" id="hudScaleLock" class="hud-lock-btn ${locked ? 'on' : ''}" title="Oranı Kilitle / Serbest Bırak">
           ${locked ? '🔒 Oran Kilitli' : '🔓 Serbest'}
         </button>
       </div>
       <div class="hud-row">
-        <label class="hud-field"><span>G</span><input id="hudScaleW" type="number" min="10" max="10000" step="5" value="${curW}"></label>
-        <label class="hud-field"><span>Y</span><input id="hudScaleH" type="number" min="10" max="10000" step="5" value="${curH}"></label>
-        <label class="hud-field"><span>Çıta</span><input id="hudDepthMm" type="number" min="10" max="400" step="5" value="${Math.round(sel.depthMm || 80)}"></label>
+        <label class="hud-field"><span>G (${unit})</span><input id="hudScaleW" type="number" min="0" step="any" value="${curW}"></label>
+        <label class="hud-field"><span>Y (${unit})</span><input id="hudScaleH" type="number" min="0" step="any" value="${curH}"></label>
+        <label class="hud-field"><span>Çıta (${unit})</span><input id="hudDepthMm" type="number" min="0" step="any" value="${show(sel.depthMm || 80)}"></label>
       </div>
       <div class="hud-row">
-        <label class="hud-field"><span>X</span><input id="hudMoveX" type="number" step="10" value="${Math.round(sel.xMm || 0)}"></label>
-        <label class="hud-field"><span>Y</span><input id="hudMoveY" type="number" step="10" value="${Math.round(sel.yMm || 0)}"></label>
+        <label class="hud-field"><span>X (${unit})</span><input id="hudMoveX" type="number" step="any" value="${show(sel.xMm || 0)}"></label>
+        <label class="hud-field"><span>Y (${unit})</span><input id="hudMoveY" type="number" step="any" value="${show(sel.yMm || 0)}"></label>
         <button type="button" id="hudMoveCenter" class="hud-chip">⌖ Ortala</button>
       </div>
     `;
@@ -2426,19 +2437,19 @@ function renderCanvasTransformHud(state) {
       if (o) o.proportionalLock = !(o.proportionalLock !== false);
     });
     const applyDim2 = (axis,newMm) => {mutate('Ebat ölçekleme',s=>{const o=s.objects.find(x=>x.id===sel.id);if(o)resizeObjectToMm(o,axis,newMm,objectPhysicalSize(o));});};
-    hud.querySelector('#hudScaleW').onchange = (e) => applyDim2('w', e.target.value);
-    hud.querySelector('#hudScaleH').onchange = (e) => applyDim2('h', e.target.value);
+    hud.querySelector('#hudScaleW').onchange = (e) => applyDim2('w', displayToMm(e.target.value,unit));
+    hud.querySelector('#hudScaleH').onchange = (e) => applyDim2('h', displayToMm(e.target.value,unit));
     hud.querySelector('#hudDepthMm').onchange = (e) => mutate('Kenar çıta ebatı', s => {
       const o = s.objects.find(x => x.id === sel.id);
-      if (o && !o.locked) o.depthMm = Math.max(10, Number(e.target.value) || 80);
+      if (o && !o.locked) o.depthMm = Math.max(10, displayToMm(e.target.value,unit) || 80);
     });
     hud.querySelector('#hudMoveX').onchange = (e) => mutate('X konumu', s => {
       const o = s.objects.find(x => x.id === sel.id);
-      if (o && !o.locked) o.xMm = Number(e.target.value) || 0;
+      if (o && !o.locked) o.xMm = displayToMm(e.target.value,unit) || 0;
     });
     hud.querySelector('#hudMoveY').onchange = (e) => mutate('Y konumu', s => {
       const o = s.objects.find(x => x.id === sel.id);
-      if (o && !o.locked) o.yMm = Number(e.target.value) || 0;
+      if (o && !o.locked) o.yMm = displayToMm(e.target.value,unit) || 0;
     });
     hud.querySelector('#hudMoveCenter').onclick = () => mutate('Sayfaya ortala', s => {
       const o = s.objects.find(x => x.id === sel.id);
@@ -2637,20 +2648,24 @@ function updateCenterWorkspaces(state) {
 
 // All geometry-affecting settings repack in one undoable operation, keeping
 // the physical sheet, stored placements, DXF and preview synchronized.
-function repackNestingSettings(label, updateNesting) {
-  const previous = store.get();
-  const next = structuredCloneSafe(previous.nesting);
-  updateNesting(next);
-  const importedItems = getActiveNestingImportedItems(next);
-  const items = importedItems ?? extractNestingItems(lastSceneResult.metricsList || [], { ...previous, nesting: next });
-  const result = runTrueShapeNesting(items, next);
-  lastNesting = result;
-  activeSheetIdx = 0;
-  selectedNestingId = null;
-  mutate(label, st => {
-    st.nesting = { ...next, sheets: result.sheets, unplaced: result.unplaced };
-  }, false);
-  updateCenterWorkspaces(store.get());
+let nestingRepackController=null;
+async function repackNestingSettings(label,updateNesting,quickImport=true){
+  nestingRepackController?.abort();
+  const controller=new AbortController();nestingRepackController=controller;
+  const previous=store.get(),tab=previous.nesting.activeTabId||'design';
+  const next=structuredCloneSafe(previous.nesting);updateNesting(next);
+  const items=getActiveNestingImportedItems(next)??extractNestingItems(lastSceneResult.metricsList||[],{...previous,nesting:next});
+  const button=document.getElementById('cwsAutoNest');
+  if(button)button.textContent='İşleniyor… (tekrar tıkla: iptal)';
+  try{
+    let result={sheets:[],unplaced:[]};
+    if(items.length){const out=await runVectorImportJob({jobId:Date.now(),operation:'nest',imported:{items},nesting:{...next,quickImport}},{signal:controller.signal});result=out.nesting;}
+    if(controller.signal.aborted||(store.get().nesting.activeTabId||'design')!==tab)return;
+    lastNesting=result;activeSheetIdx=0;selectedNestingId=null;
+    mutate(label,st=>{st.nesting={...next,sheets:result.sheets,unplaced:result.unplaced};},false);
+    updateCenterWorkspaces(store.get());
+  }catch(err){if(!controller.signal.aborted){const warning=document.getElementById('stageWarning');if(warning){warning.textContent=String(err.message||err);warning.classList.remove('hidden');}}}
+  finally{if(nestingRepackController===controller){nestingRepackController=null;const btn=document.getElementById('cwsAutoNest');if(btn)btn.textContent='Otomatik Yerleştir';}}
 }
 
 function applyNestingSheetSize(width, height, presetId = 'custom') {
@@ -2663,20 +2678,9 @@ function applyNestingSheetSize(width, height, presetId = 'custom') {
   });
 }
 
-function runAutoNesting() {
-  const s = store.get();
-  // The extractor requires the *complete state*, not the objects array.
-  const importedItems = getActiveNestingImportedItems(s.nesting);
-  const items = importedItems ?? extractNestingItems(lastSceneResult.metricsList || [], s);
-  const res = runTrueShapeNesting(items, s.nesting);
-  lastNesting = res;
-  activeSheetIdx = 0;
-  selectedNestingId = null;
-  mutate('Otomatik Nesting', st => {
-    st.nesting.sheets = res.sheets;
-    st.nesting.unplaced = res.unplaced;
-  }, false);
-  updateCenterWorkspaces(store.get());
+function runAutoNesting(){
+  if(nestingRepackController){nestingRepackController.abort();return;}
+  return repackNestingSettings('Otomatik Nesting',()=>{},false);
 }
 
 function openNestingVectorImport(openPicker = false) {
@@ -2714,11 +2718,11 @@ async function importNestingVectorFiles(fileList, root) {
       say((j+1)+'/'+files.length+' · '+file.name+' okunuyor…');
       try {
         let job,filename=file.name;
-        const options={unit,scale,tolerance},nesting={...store.get().nesting};
+        const options={unit,scale,tolerance},nesting=Object.fromEntries(Object.entries(store.get().nesting).filter(([key])=>!['sheets','unplaced','importedTabs','designTabSnapshot'].includes(key)));
         if(ext==='pdf'||(ext==='ai'&&(await file.slice(0,12).text()).startsWith('%PDF-'))){
-          const output=await importPdfFile(file,options,text=>say(file.name+': '+text));
+          const output=await importPdfFile(file,options,text=>say(file.name+': '+text),controller.signal);
           if(controller.signal.aborted)break;
-          job={jobId:j,operation:'importPdfRings',rings:output.rings,warnings:output.warnings,
+          job={jobId:j,operation:'importPdfPages',pages:output.pages,ops:output.ops,warnings:output.warnings,
                filename:file.name,options,nesting};
         }else{
           let text;
@@ -2733,7 +2737,7 @@ async function importNestingVectorFiles(fileList, root) {
         const output=await runVectorImportJob(job,{
           signal:controller.signal,onStatus:msg=>say(file.name+': '+msg)});
         ready.push(output);
-        say(file.name+': '+output.imported.items.length+' parça çözümlendi; levha yerleşimi hazır.');
+        say(file.name+': '+output.imported.items.length+' parça çözümlendi; hızlı levha yerleşimi hazır.');
         await new Promise(resolve=>setTimeout(resolve,0));
       }catch(error){
         if(controller.signal.aborted)break;
