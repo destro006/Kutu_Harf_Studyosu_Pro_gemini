@@ -76,3 +76,5 @@ console.log('✓ 2 taraflı malzeme fiyatı, müşteri teklifindeki gizlilik, 2 
 const directEdit = renderCostCenter(state, metrics, extra, {tab:'summary'});
 assert.ok(directEdit.includes('data-rate-key="face:aynaAltin"') && directEdit.includes('data-rate-path="buy.value"') && directEdit.includes('data-rate-path="sell.value"'));
 assert.ok(directEdit.includes('Kalem bazında maliyet'));
+
+assert.match(summary, /value="0\.2" selected>%20/);
