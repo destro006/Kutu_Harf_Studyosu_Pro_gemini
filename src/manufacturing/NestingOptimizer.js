@@ -1,5 +1,6 @@
 import {runTrueShapeNesting,validateSheetLayout} from './NestingEngine.js';
 import {nfpCandidates} from './NfpGeometry.js';
+import {runProNesting} from './NestingEnginePro.js';
 // Compact mode optimizes occupied envelope before reusable strip; vertical
 // mode instead prefers keeping one continuous full-width reusable offcut.
 export function nestingScore(result,strategy='compact'){
@@ -17,14 +18,27 @@ export function betterNesting(a,b,strategy='compact'){
 export function optimizeNesting(items,config={},locked=[],onProgress=()=>{}){
  const start=performance.now(),budget=Math.max(500,Math.min(120000,Number(config.optimizationBudgetMs)||7000)),end=start+budget;
  const strategy=config.placementStrategy||'compact';
- let best=null,attempts=0,nfpAttempts=0;
+ let best=null,attempts=0,nfpAttempts=0,proAttempts=0,proCompleted=0,selectedEngine='baseline';
  const sep=Math.max(.5,(config.clearanceMm??5)+(config.kerfMm??.4));
- const accept=result=>{if(result.sheets.every(s=>validateSheetLayout(s,sep,config.allowHoleNesting!==false).valid)&&betterNesting(result,best,strategy))best=result;};
+ const accept=(result,engine)=>{if(result.sheets.every(s=>validateSheetLayout(s,sep,config.allowHoleNesting!==false).valid)&&betterNesting(result,best,strategy)){best=result;selectedEngine=engine;}};
  const run=options=>{
   const out=runTrueShapeNesting(items,{...config,...options},locked);attempts++;if(options.nfpSearch)nfpAttempts++;
-  accept(out);onProgress({attempts,score:best?nestingScore(best,strategy):null,elapsedMs:Math.round(performance.now()-start),budgetMs:budget});
+  accept(out,options.nfpSearch?'clipper-nfp':'baseline');onProgress({attempts,score:best?nestingScore(best,strategy):null,elapsedMs:Math.round(performance.now()-start),budgetMs:budget});
  };
  run({itemOrder:'area',quickImport:true,deadline:Infinity});
+ // The supplied v3 Pro solver is the primary detailed candidate. Keep the
+ // already validated quick layout as a safety floor, and compare the previous
+ // Clipper NFP search so no existing project loses packing quality.
+ if(performance.now()<end){
+  const remaining=end-performance.now(),proBudget=Math.max(40,Math.min(remaining*.6,Math.max(250,budget*.6)));
+  proAttempts++;attempts++;
+  try{
+   const out=runProNesting(items,{...config,placementStrategy:strategy,timeBudgetMs:proBudget,deadline:Math.min(end,performance.now()+proBudget)},locked);
+   proCompleted++;accept(out,'v3-pro');
+  }catch(error){if(!['PRO_BUDGET','PRO_INVALID_LAYOUT'].includes(error?.message))console.warn('Nesting v3 Pro:',error);}
+  onProgress({attempts,score:best?nestingScore(best,strategy):null,elapsedMs:Math.round(performance.now()-start),budgetMs:budget});
+ }
+
  // No unconditional 160-part cutoff. Large jobs use bounded searches.
  // The fast baseline is always retained; a partial search may finish remaining
  // parts using safe shelves without discarding the good poses it found.
@@ -46,5 +60,5 @@ export function optimizeNesting(items,config={},locked=[],onProgress=()=>{}){
   run({quickImport:false,nfpSearch:nfpCandidates,orderIds:new Map(order.map((id,i)=>[id,i])),anglePreferences,placementStrategy:strategy,deadline:Math.min(end,performance.now()+Math.max(150,budget/5))});
  }
  if(!best)throw Error('Geçerli yerleşim bulunamadı. Kilitli parçaları ve levha ölçülerini kontrol edin.');
- return {...best,optimization:{attempts,nfpAttempts,elapsedMs:Math.round(performance.now()-start),method:'Clipper NFP + multi-start contour search',score:nestingScore(best,strategy)}};
+ return {...best,optimization:{attempts,nfpAttempts,elapsedMs:Math.round(performance.now()-start),method:'Nesting v3 Pro + validated Clipper NFP fallback',proAttempts,proCompleted,selectedEngine,score:nestingScore(best,strategy)}};
 }
