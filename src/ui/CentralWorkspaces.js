@@ -1,5 +1,5 @@
 import {normalizeDisplayUnit,formatMmAsUnit,formatDimensions,formatPresetLabel} from '../core/units.js';
-import { renderDetailedCostCenter } from './CostCenterView.js?v=units6';
+import { renderDetailedCostCenter } from './CostCenterView.js?v=qa8';
 import { ringLength, SHEET_PRESETS } from '../manufacturing/NestingEngine.js';
 import { renderNestingSvg } from './NestingView.js?v=units6';
 import { renderNestingSourceTabs, renderNestingImportPane } from './NestingImportView.js?v=units6';
@@ -53,7 +53,7 @@ export function renderNestingCenter(state, ctx) {
               <div class="layer-item nesting-part-row ${selectedIds.has(p.id) ? 'on' : ''}" data-cws-pid="${escapeHtml(p.id)}" aria-selected="${selectedIds.has(p.id)}">
                 <input type="checkbox" data-cws-check aria-label="${escapeHtml(p.label)} seç" ${selectedIds.has(p.id)?'checked':''}>
                 <span class="layer-name">${p.locked ? '🔒 ' : ''}${escapeHtml(p.label)}</span>
-                <small class="nesting-part-size">${show(p.bounds?.width || 0)}×${show(p.bounds?.height || 0)} ${unit}</small>
+                <small class="nesting-part-size">${formatMmAsUnit(p.bounds?.width||0,unit,2)}×${formatMmAsUnit(p.bounds?.height||0,unit,2)} ${unit}</small>
                 <button type="button" class="nesting-part-delete" data-cws-delete aria-label="${escapeHtml(p.label)} sil" title="${p.locked?'Kilitli parça':'Parçayı sil'}" ${p.locked?'disabled':''}>×</button>
               </div>
             `).join('')}
@@ -73,7 +73,7 @@ export function renderNestingCenter(state, ctx) {
           <div class="sheet-tabs">
             ${sheets.map((sh, idx) => `
               <button type="button" class="sheet-tab ${idx === activeIdx ? 'on' : ''}" data-cws-sheet="${idx}">
-                ${escapeHtml(sh.name || `Levha ${idx + 1}`)} • ${escapeHtml(sh.materialLabel)} (${sh.placements.length})
+                ${escapeHtml(sh.name || `Levha ${idx + 1}`)} • ${escapeHtml(sh.materialLabel||sh.materialGroup||"Genel")} (${sh.placements.length})
               </button>
             `).join('')}
             <button type="button" id="cwsAddSheet" class="sheet-tab">+ Yeni Levha</button>
@@ -138,9 +138,9 @@ export function renderNestingCenter(state, ctx) {
         ${renderNestedCncPanel(state,activeSheet)}
         <h3 class="sec-title" style="margin-top:12px">Nesting Dışa Aktar</h3>
         <div style="display:flex;flex-direction:column;gap:6px">
-          <button type="button" id="cwsExpSvg" class="sec-btn">Aktif Levhayı SVG İndir</button>
-          <button type="button" id="cwsExpDxf" class="sec-btn">Tüm Levhaları DXF (1:1 mm) İndir</button>
-          <button type="button" id="cwsExpCsv" class="sec-btn">Parça Listesi (CSV) İndir</button>
+          <button type="button" id="cwsExpSvg" class="sec-btn" ${activeSheet?.placements?.length?'':'disabled'}>Aktif Levhayı SVG İndir</button>
+          <button type="button" id="cwsExpDxf" class="sec-btn" ${totalParts?'':'disabled'}>Tüm Levhaları DXF (1:1 mm) İndir</button>
+          <button type="button" id="cwsExpCsv" class="sec-btn" ${totalParts?'':'disabled'}>Parça Listesi (CSV) İndir</button>
         </div>
       </div>
 
