@@ -27,10 +27,17 @@ function card(title,value,meta,kind='') {return `<div class="cst-kpi ${kind}"><s
 const TH = '<thead><tr><th>İmalat Kalemi</th><th class="number">Miktar</th><th class="number">Alış / Birim</th><th class="number">Gerçek Maliyet</th><th class="number">Satış / Birim</th><th class="number">Müşteri Tutarı</th></tr></thead>';
 function ledger(state, cost){
  const cur=cost.currency;
- const rows=cost.lines.map(l=>`<tr><td><b>${esc(l.label)}</b><small>${esc(l.group||'Malzeme')}</small></td>
- <td class="number">${dec(l.quantity)} ${esc(l.unit)}</td><td class="number">${money(l.buyUnit,cur)}</td>
+ const rows=cost.lines.map(l=>{
+  const extra=l.key.startsWith('extra:');
+  const exchangeNotice=(l.buyRate?.currency!==cur||l.sellRate?.currency!==cur)
+    ? `<small>Kur ile: ${esc(cur)}</small>`:'';
+  const buy=extra?money(l.buyUnit,cur):`<label class="cst-inline-rate"><input aria-label="${esc(l.label)} alış birim fiyatı" data-rate-key="${esc(l.key)}" data-rate-path="buy.value" type="number" min="0" step="0.01" value="${dec(l.buyRate?.value)}"><small>${esc(l.buyRate?.currency||cur)}</small></label>`;
+  const sell=extra?money(l.saleUnit,cur):`<label class="cst-inline-rate"><input aria-label="${esc(l.label)} müşteri birim satış fiyatı" data-rate-key="${esc(l.key)}" data-rate-path="sell.value" type="number" min="0" step="0.01" value="${dec(l.sellRate?.value)}"><small>${esc(l.sellRate?.currency||cur)}</small></label>`;
+  return `<tr><td><b>${esc(l.label)}</b><small>${esc(l.group||'Malzeme')}</small></td>
+ <td class="number">${dec(l.quantity)} ${esc(l.unit)}</td><td class="number">${buy}</td>
  <td class="number cst-cost-num">${money(l.costAmount,cur)}</td>
- <td class="number">${money(l.saleUnit,cur)}</td><td class="number cst-sale-num">${money(l.sellAmount,cur)}</td></tr>`).join('');
+ <td class="number">${sell}${exchangeNotice}</td><td class="number cst-sale-num">${money(l.sellAmount,cur)}</td></tr>`;
+ }).join('');
  return `<div class="cst-table-scroller"><table class="cst-price-table">${TH}<tbody>${rows||'<tr><td colspan="6">Metraj hesaplanınca kalemler burada görünecek.</td></tr>'}</tbody></table></div>`;
 }
 function summary(state,metrics,cost){
@@ -68,7 +75,7 @@ function summary(state,metrics,cost){
    </div><p class="cst-help">Kalem bazlı modda her malzemenin alış ve satış fiyatı bağımsızdır. Diğer iki modda toplam maliyete genel kâr formülü uygulanır. Döviz kurlarını kendiniz güncelleyin; canlı kur bağlantısı yoktur.</p>
   </section>
  </div>
- <section class="cst-card"><div class="cst-heading"><div><small>İÇ HESAP · MÜŞTERİYE GÖSTERİLMEZ</small><h3>Kalem bazında maliyet / satış karşılaştırması</h3></div>
+ <section class="cst-card"><div class="cst-heading"><div><small>İÇ HESAP · MÜŞTERİYE GÖSTERİLMEZ</small><h3>Kalem bazında maliyet / satış karşılaştırması</h3><p class="cst-help">Alış ve müşteri birim fiyatını doğrudan satırdan değiştirin. Özel işler İşçilik &amp; Ek Kalemler bölümünden düzenlenir.</p></div>
  <button type="button" id="costExportInternalCsv" class="cst-button secondary">Excel İçin CSV</button></div>
  ${ledger(state,cost)}
  <div class="cst-totals"><span>Malzeme / İşçilik ${money(cost.directCost,cur)}</span><span>Genel Gider ${money(cost.overheadAmount,cur)}</span><span>İndirim −${money(cost.discountAmount,cur)}</span><b>Gerçek Kâr ${money(cost.profitAmount,cur)}</b></div></section>

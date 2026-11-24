@@ -72,3 +72,7 @@ assert.equal(restored.quote.companyLogoDataUrl,state.quote.companyLogoDataUrl);
 assert.equal(restored.costConfig.priceBook['face:aynaAltin'].sell.value,7000);
 assert.equal(restored.costConfig.extraItems[0].label,'Vinç');
 console.log('✓ 2 taraflı malzeme fiyatı, müşteri teklifindeki gizlilik, 2 logo, özel kalem ve proje kaydı');
+
+const directEdit = renderCostCenter(state, metrics, extra, {tab:'summary'});
+assert.ok(directEdit.includes('data-rate-key="face:aynaAltin"') && directEdit.includes('data-rate-path="buy.value"') && directEdit.includes('data-rate-path="sell.value"'));
+assert.ok(directEdit.includes('Kalem bazında maliyet'));
