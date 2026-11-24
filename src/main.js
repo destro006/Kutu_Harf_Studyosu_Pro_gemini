@@ -63,13 +63,13 @@ import {
 import { SHORTCUT_LIST, SHORTCUT_GROUPS, attachShortcuts } from './cad/Shortcuts.js';
 import { captureObjectClipboard, pasteObjectClipboard } from './core/ObjectClipboard.js';
 import { calculateManufacturingMetrics } from './manufacturing/MetricsCalculator.js';
-import { SHEET_PRESETS, extractNestingItems, runTrueShapeNesting, validateSheetLayout, editNestingPlacement } from './manufacturing/NestingEngine.js';
+import { SHEET_PRESETS, extractNestingItems, runTrueShapeNesting, validateSheetLayout, editNestingPlacement, refreshNestingSheet } from './manufacturing/NestingEngine.js';
 import { importVectorText } from './manufacturing/VectorFileImport.js';
 import { importPdfFile } from './manufacturing/PdfVectorImport.js';
 import { runVectorImportJob } from './manufacturing/AsyncVectorImport.js';
 import {
   createNestingImportedTab, getActiveNestingImportedItems, openNestingImportTab,
-  switchNestingTab, closeNestingImportedTab, syncActiveNestingTab,
+  switchNestingTab, closeNestingImportedTab, syncActiveNestingTab, applyNestingPartOverrides,
 } from './manufacturing/NestingTabs.js';
 import { calculateProjectCosts, formatMoney, getPriceCard, listPriceCatalog, changeRateCurrency } from './manufacturing/CostEngine.js';
 import { buildQuoteHtml } from './manufacturing/QuoteGenerator.js';
@@ -148,6 +148,9 @@ const fontMap = new Map();
 window.__khsFontMap = fontMap;
 
 let signEngine = null;
+let ensureSignEngine=()=>signEngine;
+const is3DWorkspace=state=>['model3d','materials'].includes(state.mainWorkspace||'model3d');
+let sceneDataKey=null;
 let photomontageOverlay = null;
 let lastSceneResult = { sizeM: { w: 2, h: 0.4 }, metricsList: [], warnings: [] };
 let lastMetrics = calculateManufacturingMetrics([], store.get());
@@ -165,6 +168,7 @@ function setDocumentClipboardStatus(message) {
   if (el) el.textContent = message;
 }
 function copySelectionToClipboard(includeLocked = true) {
+  if(store.get().mainWorkspace==='nesting')return false;
   const next = captureObjectClipboard(store.get(), { includeLocked, sourceDocumentId: docManager.activeDocId });
   if (!next) {
     setDocumentClipboardStatus('Önce bir nesne seçin');
@@ -178,6 +182,7 @@ function cutSelectionToClipboard() {
   if (copySelectionToClipboard(false)) mutate('Kes', s => deleteSelectedLayers(s));
 }
 function pasteSelectionFromClipboard() {
+  if(store.get().mainWorkspace==='nesting')return;
   if (!objectClipboard) {
     setDocumentClipboardStatus('Panoda nesne yok');
     return;
@@ -212,9 +217,9 @@ let rebuildRevision = 0;
  * inspector or the manufacturing model. Derive metrics from the same vector
  * outlines, independent of Three.js's renderer.
  */
-function computeSceneWithoutWebGL(state, loadedFonts) {
+function computeSceneWithoutWebGL(state, loadedFonts, intentional=false) {
   const metricsList = [];
-  const warnings = ['3D WebGL başlatılamadı. 2D Tasarım, nesting ve diğer kontur işlemleri kullanılabilir. Tarayıcının donanım hızlandırmasını kontrol edin.'];
+  const warnings = intentional?[]:['3D WebGL başlatılamadı. 2D Tasarım, nesting ve diğer kontur işlemleri kullanılabilir. Tarayıcının donanım hızlandırmasını kontrol edin.'];
   if (!vector2D) return { metricsList, warnings, sizeM: { w: 1.6, h: 0.4 } };
   for (const object of state.objects || []) {
     if (!object.visible) continue;
@@ -285,9 +290,17 @@ function scheduleRebuild(immediate = false) {
     if (revision !== rebuildRevision) return;
     state=store.get(); // keep intervening view/price changes during async font loading
     try {
-      lastSceneResult = (signEngine && !signEngine.isDisposed)
-        ? signEngine.updateScene(state, fontMap)
-        : computeSceneWithoutWebGL(state, fontMap);
+      // Outside 3D, calculate only the CPU manufacturing data when needed.
+      if(is3DWorkspace(state)){
+        const engine=ensureSignEngine();
+        lastSceneResult=engine&&!engine.isDisposed?engine.updateScene(state,fontMap):computeSceneWithoutWebGL(state,fontMap);
+        sceneDataKey=null;
+      }else{
+        const key=[docManager.activeDocId,state.activePageId,state.objects,state.dimensions,state.fileli,state.materialOverrides,state.lighting,state.constructionType];
+        if(!sceneDataKey||key.some((v,i)=>v!==sceneDataKey[i])){
+          lastSceneResult=computeSceneWithoutWebGL(state,fontMap,true);sceneDataKey=key;
+        }
+      }
       if (!lastSceneResult?.metricsList) throw new Error('Geçerli sahne verisi oluşturulamadı.');
     } catch (error) {
       console.error('Kutu Harf Stüdyosu: 3D sahne güncellenemedi', error);
@@ -412,7 +425,7 @@ function updateStageChrome(state) {
   });
 
   // Photomontage preview sync
-  if(state.activeWorkspace==='background'&&state.photomontage.photoUrl&&signEngine&&!signEngine.isDisposed){
+  if(is3DWorkspace(state)&&state.activeWorkspace==='background'&&state.photomontage.photoUrl&&signEngine&&!signEngine.isDisposed){
     if(!dragBeforeState&&lastPhotomontageScene!==lastSceneResult){
       lastPhotomontageUrl=signEngine.capturePng(900,560,{transparent:true});lastPhotomontageScene=lastSceneResult;
     }
@@ -488,7 +501,7 @@ function updateNumericBar(state) {
         const sPart = sSh?.placements?.find(p => p.id === selectedNestingId);
         if (!sPart) return;
         if (action === 'toggleLock') sPart.locked = !sPart.locked;
-        else if(!sPart.locked&&['x','y','rot'].includes(action))editNestingPlacement(sPart,action,val);
+        else if(!sPart.locked&&['x','y','rot','width','height','scale'].includes(action))applyNestingEdit(s.nesting,sPart,action,val);
         else if(action==='moveSheet'&&!sPart.locked){
           const targetSh=s.nesting.sheets[val];
           if(targetSh&&targetSh!==sSh&&(!targetSh.materialGroup||targetSh.materialGroup===sPart.materialGroup)){
@@ -500,7 +513,7 @@ function updateNumericBar(state) {
             }
           }
         }
-        for(const sh of s.nesting.sheets){validateSheetLayout(sh,(s.nesting.clearanceMm??5)+(s.nesting.kerfMm??.4));if(sh.usableAreaMm2)sh.utilizationPct=(sh.usedAreaMm2||0)/sh.usableAreaMm2*100;}
+        for(const sh of s.nesting.sheets)refreshNestingSheet(sh,nestingSeparation(s.nesting));
       });
     },
   });
@@ -1951,7 +1964,7 @@ function bindWorkspaceEvents(ws, root) {
     root.querySelector('#ovrCardScale')?.addEventListener('change', e => {
       const val = Math.max(0.3, Math.min(2.5, Number(e.target.value) || 1.0));
       store.update(st => { st.render.customCardScale = val; });
-      if (store.get().render.useCustomEnv) signEngine.envManager.rebuildCustomCardEnvironment({ areaScale: val });
+      if (store.get().render.useCustomEnv && is3DWorkspace(store.get())) ensureSignEngine()?.envManager?.rebuildCustomCardEnvironment({ areaScale: val });
       scheduleRebuild(true);
     });
 
@@ -1964,7 +1977,8 @@ function bindWorkspaceEvents(ws, root) {
     root.querySelector('#customEnvUpload')?.addEventListener('change', async e => {
       const f = e.target.files?.[0];
       if (!f) return;
-      await signEngine.envManager.loadCustomEnvironment(f);
+      if(!is3DWorkspace(store.get()))setMainWorkspace('materials');
+      await ensureSignEngine()?.envManager?.loadCustomEnvironment(f);
       mutate('Özel yansıma ortamı', s => { s.render.useCustomEnv = true; });
     });
   } else if (ws === 'lighting') {
@@ -2184,7 +2198,7 @@ function bindWorkspaceEvents(ws, root) {
       try { await navigator.clipboard.writeText(text); } catch {}
     });
     root.querySelector('#btnPrintQuote')?.addEventListener('click', () => {
-      const previewUrl = signEngine.capturePng(1200, 750);
+      const previewUrl = is3DWorkspace(store.get())&&signEngine&&!signEngine.isDisposed?signEngine.capturePng(1200,750):null;
       const html = buildQuoteHtml(store.get(), lastMetrics, lastCosts, previewUrl);
       const win = window.open('', '_blank');
       if (win) {
@@ -2569,8 +2583,9 @@ function renderPageTabs() {
 }
 
 function setMainWorkspace(ws) {
+  const previous=store.get().mainWorkspace;
+  if(previous!==ws){nestingGesture?.cancel?.();nestingGesture=null;}
   store.updateScoped([],s => { s.mainWorkspace = ws; });
-  signEngine?.invalidate?.();
   document.querySelectorAll('#mainWorkspaceTabs button').forEach(b => b.classList.toggle('on', b.dataset.mainWs === ws));
 
   const is3D = ws === 'model3d' || ws === 'materials';
@@ -2581,6 +2596,9 @@ function setMainWorkspace(ws) {
   document.getElementById('nestingCenterWrap')?.classList.toggle('hidden', ws !== 'nesting');
   document.getElementById('cncCenterWrap')?.classList.toggle('hidden', ws !== 'cnc');
   document.getElementById('costCenterWrap')?.classList.toggle('hidden', ws !== 'cost');
+  if(is3D){const engine=ensureSignEngine();engine?.setActive?.(true);if(previous!==ws)scheduleRebuild(true);}
+  else signEngine?.setActive?.(false);
+  syncWorkspaceRail(ws);
 
   if (ws === 'materials') {
     store.update(s => { s.activeWorkspace = 'materials'; });
@@ -2605,6 +2623,7 @@ function syncNestingSettingsControls(sidebar, nesting) {
     cwsNestMg: nesting.marginLeftMm,
     cwsNestRot: nesting.rotationStepDeg ?? 90,
     cwsNestStrategy: nesting.placementStrategy || 'compact',
+    cwsNestBudget: nesting.optimizationBudgetMs||7000,
     cwsNestBodyColor: nesting.previewColors?.body || '#c89343',
     cwsNestHoleColor: nesting.previewColors?.holes || '#c89343',
     cwsNestHoles: nesting.allowHoleNesting,
@@ -2627,6 +2646,7 @@ function updateCenterWorkspaces(state) {
       const currentTabId = el.querySelector('.nesting-workspace[data-nesting-tab]')?.getAttribute('data-nesting-tab');
       const targetTabId = state.nesting.activeTabId || 'design';
       if(currentNestingImportController&&targetTabId==='import'&&currentTabId==='import')return;
+      if(nestingGesture?.active)return;
       const html=renderNestingCenter(state,{activeSheetIdx,selectedPlacementId:selectedNestingId});
       if(el._lastHtml===html)return;
       el._lastHtml=html;
@@ -2673,7 +2693,7 @@ async function repackNestingSettings(label,updateNesting,quickImport=true){
   const controller=new AbortController();nestingRepackController=controller;
   const previous=store.get(),tab=previous.nesting.activeTabId||'design',docId=docManager.activeDocId,pageId=previous.activePageId;
   const next=structuredCloneSafe(previous.nesting);updateNesting(next);
-  const items=getActiveNestingImportedItems(next)??extractNestingItems(lastSceneResult.metricsList||[],{...previous,nesting:next});
+  const items=applyNestingPartOverrides(getActiveNestingImportedItems(next)??extractNestingItems(lastSceneResult.metricsList||[],{...previous,nesting:next}),next);
   const button=document.getElementById('cwsRunNesting');
   if(button)button.textContent='İşleniyor… (tekrar tıkla: iptal)';
   try{
@@ -2681,6 +2701,7 @@ async function repackNestingSettings(label,updateNesting,quickImport=true){
     if(items.length){const out=await runVectorImportJob({jobId:Date.now(),operation:'nest',imported:{items},nesting:{...Object.fromEntries(Object.entries(next).filter(([key])=>!['sheets','unplaced','importedTabs','designTabSnapshot'].includes(key))),quickImport},lockedSheets:next.sheets?.filter(sh=>sh.placements.some(p=>p.locked))||[]},{signal:controller.signal});result=out.nesting;}
     if(controller.signal.aborted||docManager.activeDocId!==docId||store.get().activePageId!==pageId||(store.get().nesting.activeTabId||'design')!==tab)return;
     lastNesting=result;activeSheetIdx=0;selectedNestingId=null;
+    next.optimizationInfo=result.optimization||null;
     mutateData(label,st=>{const {importedTabs,designTabSnapshot,activeTabId,...settings}=next;st.nesting={...st.nesting,...settings,sheets:result.sheets,unplaced:result.unplaced};},false);
     updateCenterWorkspaces(store.get());
   }catch(err){if(!controller.signal.aborted){const warning=document.getElementById('stageWarning');if(warning){warning.textContent=String(err.message||err);warning.classList.remove('hidden');}}}
@@ -2793,7 +2814,109 @@ async function importNestingVectorFiles(fileList, root) {
   }
 }
 
+let nestingTool='select',nestingGesture=null;
+function nestingSeparation(n){return Math.max(.5,(n.clearanceMm??5)+(n.kerfMm??.4));}
+function getNestingSelection(){return store.get().nesting.sheets?.[activeSheetIdx]?.placements.find(p=>p.id===selectedNestingId);}
+function applyNestingEdit(n,p,action,value){
+  if(p.locked)return false;
+  if(['width','height','scale'].includes(action)){
+    const factor=action==='width'?value/p.bounds.width:action==='height'?value/p.bounds.height:value;
+    if(!Number.isFinite(factor)||factor<=0||factor>100)return false;
+    if(!editNestingPlacement(p,'scale',factor))return false;
+    n.partOverrides||={};const old=n.partOverrides[p.id]||{};
+    n.partOverrides[p.id]={...old,scale:(old.scale||1)*factor};
+    return true;
+  }
+  if(action==='rot'&&n.enforceGrainDirection&&Math.abs(value%180)>1e-6)return false;
+  return editNestingPlacement(p,action,value);
+}
+function editSelectedNesting(action,value){
+  const current=getNestingSelection();if(!current||current.locked&&action!=='toggleLock')return;
+  nestingRepackController?.abort();
+  const id=current.id;
+  mutateData('Nesting parça '+action,s=>{
+    const n=s.nesting,sh=n.sheets[activeSheetIdx],p=sh?.placements.find(x=>x.id===id);
+    if(!p)return;
+    if(action==='delete'){
+      n.partOverrides||={};n.partOverrides[id]={...(n.partOverrides[id]||{}),deleted:true};
+      sh.placements=sh.placements.filter(x=>x.id!==id);
+      n.unplaced=(n.unplaced||[]).filter(x=>(x.item?.id||x.id)!==id);
+      selectedNestingId=null;
+    }else if(action==='toggleLock')p.locked=!p.locked;
+    else if(action==='move'){applyNestingEdit(n,p,'x',value.x);applyNestingEdit(n,p,'y',value.y);}
+    else applyNestingEdit(n,p,action,value);
+    refreshNestingSheet(sh,nestingSeparation(n));
+  },false);
+}
+function syncWorkspaceRail(ws){
+  const isNest=ws==='nesting',supported=new Set(['select','move','scale','rotate','logo']);
+  for(const b of document.querySelectorAll('.cad-rail [data-tool]')){
+    b.disabled=isNest&&!supported.has(b.dataset.tool);
+    b.classList.toggle('active',b.dataset.tool===(isNest?nestingTool:store.get().activeTool));
+  }
+  for(const b of document.querySelectorAll('.cad-rail [data-action]'))b.disabled=isNest&&b.dataset.action!=='delete';
+}
+function selectNestingPart(id){
+  selectedNestingId=id;
+  // Do not replace the SVG during a captured pointer gesture.
+  const root=document.getElementById('nestingCenterWrap');
+  if(nestingGesture?.active){
+    root?.querySelectorAll('[data-pid]').forEach(g=>g.classList.toggle('nest-picked',g.dataset.pid===id));
+    updateNumericBar(store.get());return;
+  }
+  updateCenterWorkspaces(store.get());updateNumericBar(store.get());
+}
+function bindNestingGestures(root){
+  const svg=root.querySelector('.nesting-sheet-svg');if(!svg||svg._gestureBound)return;
+  svg._gestureBound=true;svg.style.touchAction='none';
+  const point=e=>{const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;return pt.matrixTransform(svg.getScreenCTM().inverse());};
+  let drag=null;
+  const cancel=()=>{if(!drag)return;drag.group?.removeAttribute('transform');drag=null;if(nestingGesture)nestingGesture.active=false;};
+  nestingGesture={active:false,cancel};
+  svg.addEventListener('pointerdown',e=>{
+    if(e.button!==0||!['select','move','rotate','scale'].includes(nestingTool))return;
+    const group=e.target.closest('[data-pid]');if(!group){selectNestingPart(null);return;}
+    e.preventDefault();e.stopPropagation();
+    const part=store.get().nesting.sheets?.[activeSheetIdx]?.placements.find(p=>p.id===group.dataset.pid);
+    if(!part)return;
+    const start=point(e),h=store.get().nesting.sheets[activeSheetIdx].heightMm;
+    const center={x:(part.bounds.minX+part.bounds.maxX)/2,y:h-(part.bounds.minY+part.bounds.maxY)/2};
+    drag={part,group,start,center,h,tool:nestingTool==='select'?'move':nestingTool,pointer:e.pointerId,moved:false,dx:0,dy:0,factor:1,angle:0};
+    nestingGesture.active=true;selectNestingPart(part.id);svg.setPointerCapture?.(e.pointerId);
+  });
+  svg.addEventListener('pointermove',e=>{
+    if(!drag||drag.pointer!==e.pointerId||drag.part.locked)return;
+    const p=point(e),d=drag;d.dx=p.x-d.start.x;d.dy=p.y-d.start.y;
+    if(Math.hypot(d.dx,d.dy)<.5&&!d.moved)return;
+    d.moved=true;
+    if(d.tool==='move')d.group.setAttribute('transform','translate('+d.dx+' '+d.dy+')');
+    if(d.tool==='rotate'){
+      let a=(Math.atan2(p.y-d.center.y,p.x-d.center.x)-Math.atan2(d.start.y-d.center.y,d.start.x-d.center.x))*180/Math.PI;
+      if(e.shiftKey)a=Math.round(a/15)*15;
+      if(store.get().nesting.enforceGrainDirection)a=Math.round(a/180)*180;
+      d.angle=a;d.group.setAttribute('transform','rotate('+a+' '+d.center.x+' '+d.center.y+')');
+    }
+    if(d.tool==='scale'){
+      const anchor={x:d.part.bounds.minX,y:d.h-d.part.bounds.minY};
+      const original=Math.max(1,Math.hypot(d.start.x-anchor.x,d.start.y-anchor.y));
+      d.factor=Math.max(.02,Math.min(100,Math.hypot(p.x-anchor.x,p.y-anchor.y)/original));
+      d.group.setAttribute('transform','translate('+anchor.x+' '+anchor.y+') scale('+d.factor+') translate('+(-anchor.x)+' '+(-anchor.y)+')');
+    }
+  });
+  svg.addEventListener('pointerup',e=>{
+    if(!drag||drag.pointer!==e.pointerId)return;
+    const d=drag;cancel();
+    if(d.moved&&!d.part.locked){
+      if(d.tool==='move')editSelectedNesting('move',{x:d.part.xMm+d.dx,y:d.part.yMm-d.dy});
+      else if(d.tool==='rotate')editSelectedNesting('rot',(d.part.angleDeg||0)-d.angle);
+      else if(d.tool==='scale')editSelectedNesting('scale',d.factor);
+    }else selectNestingPart(d.part.id);
+  });
+  svg.addEventListener('pointercancel',()=>{cancel();updateCenterWorkspaces(store.get());});
+  svg.addEventListener('lostpointercapture',()=>{cancel();});
+}
 function bindNestingCenterEvents(root) {
+  bindNestingGestures(root);
   root.querySelectorAll('[data-nest-tab]').forEach(b => b.onclick = () => {
     nestingRepackController?.abort();currentNestingImportController?.abort();
     mutateData('Nesting iş sekmesi', s => switchNestingTab(s.nesting,b.dataset.nestTab), false);
@@ -2829,11 +2952,7 @@ function bindNestingCenterEvents(root) {
     updateNumericBar(store.get());
   });
   root.querySelectorAll('#cwsNestSvgBox [data-pid]').forEach(g => {
-    g.onclick = () => {
-      selectedNestingId = g.getAttribute('data-pid');
-      updateCenterWorkspaces(store.get());
-      updateNumericBar(store.get());
-    };
+    g.onclick = e=>{e.stopPropagation();};
     g.oncontextmenu = (e) => {
       e.preventDefault();
       selectedNestingId = g.getAttribute('data-pid');
@@ -2869,6 +2988,7 @@ function bindNestingCenterEvents(root) {
       activeSheetIdx = s.nesting.sheets.length - 1;
     });
   });
+  root.querySelector('#cwsDeletePart')?.addEventListener('click',()=>editSelectedNesting('delete'));
   root.querySelector('#cwsRunNesting')?.addEventListener('click', () => runAutoNesting());
   root.querySelector('#cwsReoptUnlocked')?.addEventListener('click', () => runAutoNesting());
   // Settings are mounted once and persist across sheet/selection redraws.
@@ -2898,6 +3018,7 @@ function bindNestingCenterEvents(root) {
     repackNestingSettings('Fırça yönü kısıtı', n => { n.enforceGrainDirection = e.target.checked; }));
   root.querySelector('#cwsNestRot')?.addEventListener('change', e =>
     repackNestingSettings('Dönüş adımı', n => { n.rotationStepDeg = Number(e.target.value); }));
+  root.querySelector('#cwsNestBudget')?.addEventListener('change',e=>mutateData('Optimizasyon süresi',s=>{s.nesting.optimizationBudgetMs=Number(e.target.value);},false));
   root.querySelector('#cwsNestStrategy')?.addEventListener('change', e =>
     repackNestingSettings('Nesting yönü', n => { n.placementStrategy = e.target.value; }));
   const setNestingPreviewColor = (field, value) => {
@@ -2978,7 +3099,7 @@ function applyDefaultPriceTemplate() {
 
 function openCustomerQuote(print = false) {
   const state = store.get();
-  const preview = signEngine && !signEngine.isDisposed ? signEngine.capturePng(1200, 750) : null;
+  const preview = is3DWorkspace(state)&&signEngine&&!signEngine.isDisposed ? signEngine.capturePng(1200, 750) : null;
   const html = buildQuoteHtml(state, lastMetrics, lastCosts, preview);
   const w = window.open('', '_blank', 'width=1050,height=850');
   if (!w) {
@@ -3183,6 +3304,7 @@ function showNestingPartContextMenu(e, pid) {
   contextMenu.show(e.clientX, e.clientY, [
     { label: '90° Döndür', action: () => mutateData('Parça döndür', s => { const p = s.nesting.sheets[activeSheetIdx]?.placements?.find(x => x.id === pid); if(p){editNestingPlacement(p,'rot',((p.angleDeg||0)+90)%360);validateSheetLayout(s.nesting.sheets[activeSheetIdx],(s.nesting.clearanceMm??5)+(s.nesting.kerfMm??.4));} }) },
     { label: 'Kilitle / Kilidi Aç', action: () => mutateData('Parça kilidi', s => { const p = s.nesting.sheets[activeSheetIdx]?.placements?.find(x => x.id === pid); if (p) p.locked = !p.locked; }) },
+    { label: 'Parçayı Sil',kbd:'Del',danger:true,action:()=>{selectedNestingId=pid;editSelectedNesting('delete');} },
     { label: 'Kilitsizleri Yeniden Optimize Et', action: () => runAutoNesting() },
   ]);
 }
@@ -3384,7 +3506,9 @@ function init() {
     document.querySelector('.app-shell')?.classList.toggle('stage-fullscreen');
   });
   const threeContainer = document.getElementById('threeContainer');
-  signEngine = new SignEngine(threeContainer, {
+  ensureSignEngine=()=>{
+    if(signEngine)return signEngine;
+    signEngine = new SignEngine(threeContainer, {
     onTransformStart: () => {
       dragBeforeState = structuredCloneSafe(store.get());
     },
@@ -3477,6 +3601,8 @@ function init() {
       updateNumericBar(store.get());
     },
   });
+    return signEngine;
+  };
 
   photomontageOverlay = new PhotomontageOverlay(document.getElementById('photomontageLayer'), (corners) => {
     store.update(s => { s.photomontage.cornersNorm = corners; });
@@ -3573,7 +3699,7 @@ function init() {
   document.querySelectorAll('.stage-views button').forEach(b => b.onclick = () => {
     document.querySelectorAll('.stage-views button').forEach(x => x.classList.remove('on'));
     b.classList.add('on');
-    signEngine.setCameraPreset(b.dataset.view);
+    signEngine?.setCameraPreset(b.dataset.view);
   });
 
   // Day/Night & Light & Walls
@@ -3699,10 +3825,10 @@ function init() {
     onCombine: () => runCadAction('combine'),
     onNewDoc: () => document.getElementById('btnNewDocTab')?.click(),
     onExport: () => store.get().mainWorkspace === 'nesting' ? openNestingVectorImport(true) : openExportDialog(),
-    onCenterOnPage: () => mutate('Sayfaya ortala', s => {
+    onCenterOnPage: () => {if(store.get().mainWorkspace==='nesting')return;mutate('Sayfaya ortala', s => {
       const o = getSelectedOrFirst(s);
       if (o && !o.locked) { o.xMm = 0; o.yMm = 0; }
-    }),
+    });},
     onDuplicate: () => runCadAction('duplicate'),
     onUndo: () => document.getElementById('btnUndo').click(),
     onRedo: () => document.getElementById('btnRedo').click(),
@@ -3714,12 +3840,14 @@ function init() {
       saveProjectToBrowser(store.get().projectName, store.get());
     },
     onSelectAll: () => {
+      if(store.get().mainWorkspace==='nesting')return;
       store.update(s => { s.selectedIds = s.objects.map(o => o.id); });
       renderActiveWorkspace();
     },
-    onGroup: () => mutate('Grupla', s => groupSelectedLayers(s)),
-    onUngroup: () => mutate('Grubu çöz', s => ungroupSelectedLayers(s)),
+    onGroup: () => {if(store.get().mainWorkspace!=='nesting')mutate('Grupla', s => groupSelectedLayers(s));},
+    onUngroup: () => {if(store.get().mainWorkspace!=='nesting')mutate('Grubu çöz', s => ungroupSelectedLayers(s));},
     onEscape: () => {
+      if(store.get().mainWorkspace==='nesting'){nestingGesture?.cancel?.();nestingTool='select';syncWorkspaceRail('nesting');selectNestingPart(null);return;}
       if (signEngine?.cancelActiveDrag?.()) {
         // Reverted pre-drag state via onTransformCancel
       }
@@ -3733,6 +3861,7 @@ function init() {
       renderCanvasTransformHud(store.get());
     },
     onNudge: (dx, dy) => {
+      if(store.get().mainWorkspace==='nesting'){const p=getNestingSelection();if(p)editSelectedNesting('move',{x:p.xMm+dx,y:p.yMm+dy});return;}
       mutate('Taşı', s => {
         for (const o of s.objects) {
           if (s.selectedIds.includes(o.id) && !o.locked) {
@@ -3882,7 +4011,7 @@ function init() {
     copy: () => copySelectionToClipboard(),
     paste: () => runCadAction('paste'),
     duplicate: () => runCadAction('duplicate'),
-    selectAll: () => { store.update(s => { s.selectedIds = s.objects.map(o => o.id); }); scheduleRebuild(true); },
+    selectAll: () => { if(store.get().mainWorkspace==='nesting')return;store.update(s => { s.selectedIds = s.objects.map(o => o.id); }); scheduleRebuild(true); },
     del: () => runCadAction('delete'),
     setMainWs: (ws) => setMainWorkspace(ws),
     fitView: () => { if (store.get().mainWorkspace === 'design2d') vector2D?.fitAll(store.get()); else signEngine?.setCameraPreset('fit'); },
@@ -3890,8 +4019,8 @@ function init() {
     togglePageFrame: () => { store.update(s => { s.pageLayout.visible = !s.pageLayout.visible; }); scheduleRebuild(true); },
     toggleFullscreen: () => document.getElementById('btnFullscreen')?.click(),
     cadAction: (act) => runCadAction(act),
-    centerOnPage: () => mutate('Sayfaya ortala', s => { const o = getSelectedOrFirst(s); if (o && !o.locked) { o.xMm = 0; o.yMm = 0; } }),
-    toggleLockSelected: () => mutate('Kilit', s => { const o = getSelectedOrFirst(s); if (o) toggleLayerLock(s, o.id); }),
+    centerOnPage: () => {if(store.get().mainWorkspace==='nesting')return;mutate('Sayfaya ortala', s => { const o = getSelectedOrFirst(s); if (o && !o.locked) { o.xMm = 0; o.yMm = 0; } });},
+    toggleLockSelected: () => {if(store.get().mainWorkspace==='nesting')editSelectedNesting('toggleLock');else mutate('Kilit', s => { const o = getSelectedOrFirst(s); if (o) toggleLayerLock(s, o.id); });},
     addPage: () => document.getElementById('btnAddPage')?.click(),
     dupPage: () => document.getElementById('btnDupPage')?.click(),
     delPage: () => document.getElementById('btnDelPage')?.click(),
@@ -3993,6 +4122,12 @@ function startMousePlacement(tool) {
 }
 
 function activateTool(tool) {
+  if(store.get().mainWorkspace==='nesting'){
+    if(tool==='logo'){openNestingVectorImport(true);return;}
+    if(['select','move','rotate','scale'].includes(tool)){nestingTool=tool;syncWorkspaceRail('nesting');return;}
+    if(tool==='zoom'||tool==='pan')return;
+    return;
+  }
   document.querySelectorAll('.cad-rail [data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
   if (tool === 'rect' || tool === 'ellipse' || tool === 'text' || tool === 'polygon') {
     startMousePlacement(tool);
@@ -4004,7 +4139,7 @@ function activateTool(tool) {
     return;
   }
   if (tool === 'zoom') {
-    signEngine.zoomBy(0.85);
+    signEngine?.zoomBy(0.85);
     return;
   }
   if (signEngine) signEngine.activeTool = tool;
@@ -4020,6 +4155,7 @@ function activateTool(tool) {
 }
 
 function runCadAction(action) {
+  if(store.get().mainWorkspace==='nesting'){if(action==='delete')editSelectedNesting('delete');return;}
   if (action === 'duplicate') mutate('Çoğalt', s => duplicateSelectedLayers(s));
   else if (action === 'delete') mutate('Sil', s => deleteSelectedLayers(s));
   else if (action === 'mirrorX') mutate('Yatay aynala', s => mirrorSelectedObjects(s, 'x'));

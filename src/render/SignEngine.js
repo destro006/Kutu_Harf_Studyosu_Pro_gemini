@@ -1064,9 +1064,14 @@ export class SignEngine {
     }
   }
 
+  setActive(active){
+    if(this.isDisposed)return;
+    if(active&&this._paused){this._paused=false;this._resize(true);this.invalidate();this._startLoop();}
+    else if(!active&&!this._paused){this._paused=true;cancelAnimationFrame(this._raf);this.activePointers.clear();this.orbit.dragging=false;this.orbit.panning=false;this.draggingObjId=null;}
+  }
   _startLoop() {
     const tick=()=>{
-      if(this.isDisposed)return;
+      if(this.isDisposed||this._paused)return;
       this._raf=requestAnimationFrame(tick);
       if(document.hidden||!this.container.clientWidth||!this.container.clientHeight)return;
       const o=this.orbit;

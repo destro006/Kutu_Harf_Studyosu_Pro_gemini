@@ -140,6 +140,7 @@ export function renderNestingCenter(state, ctx) {
         <span><b>Fire Oranı:</b> %${sheets.length ? (100 - avgUtil).toFixed(1) : '0.0'}</span>
         <span><b>Tahmini Kesim Yolu:</b> ${(totalCutLenMm / 1000).toFixed(2)} m</span>
         <span><b>Yerleşmeyen:</b> ${(n.unplaced || []).length}</span>
+        ${n.optimizationInfo?`<span>Optimizasyon: ${n.optimizationInfo.attempts} geçerli deneme · ${(n.optimizationInfo.elapsedMs/1000).toFixed(1)} sn</span>`:''}
       </div>
     </div>
     </div>

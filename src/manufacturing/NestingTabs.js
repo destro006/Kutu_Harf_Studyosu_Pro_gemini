@@ -4,7 +4,7 @@ export const NESTING_TAB_FIELDS = [
   'sheetWidthMm','sheetHeightMm','marginMm','marginLeftMm','marginRightMm','marginTopMm','marginBottomMm',
   'clearanceMm','spacingMm','kerfMm','allowedAngles','fineAngleStep','rotationStepDeg',
   'placementStrategy','previewColors','copies','grainDirection','targetPart','allowHoleNesting',
-  'groupByMaterial','enforceGrainDirection','presetId','sheets','unplaced','partOverrides','optimizationBudgetMs',
+  'groupByMaterial','enforceGrainDirection','presetId','sheets','unplaced','partOverrides','optimizationBudgetMs','optimizationInfo',
 ];
 const clone = value => value == null ? value : structuredCloneSafe(value);
 const asName = value => String(value||'Dosya').slice(0,90);

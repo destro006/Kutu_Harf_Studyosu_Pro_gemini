@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {runTrueShapeNesting,editNestingPlacement,refreshNestingSheet} from '../src/manufacturing/NestingEngine.js';
+import {optimizeNesting,betterNesting,nestingScore} from '../src/manufacturing/NestingOptimizer.js';
+import {createDefaultState} from '../src/core/state.js';
+import {createNestingImportedTab,getActiveNestingImportedItems,applyNestingPartOverrides,syncActiveNestingTab,switchNestingTab} from '../src/manufacturing/NestingTabs.js';
+const rect=(id,w,h)=>({id,label:id,outer:[{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}],holes:[],areaMm2:w*h,materialGroup:'metal'});
+const items=[rect('background',2300,600),...Array.from({length:14},(_,i)=>rect('part'+i,90+i*8,180))];
+const state=createDefaultState(),n=state.nesting;const tab=createNestingImportedTab(n,{filename:'fixture.pdf',items});
+const config={sheetWidthMm:3000,sheetHeightMm:1500,clearanceMm:5,kerfMm:.4,optimizationBudgetMs:800};
+const baseline=runTrueShapeNesting(items,{...config,quickImport:true});
+const result=optimizeNesting(items,config);assert.equal(result.unplaced.length,0);assert(!betterNesting(baseline,result));
+n.sheets=result.sheets;n.partOverrides={background:{deleted:true},part0:{scale:2}};
+const edited=applyNestingPartOverrides(getActiveNestingImportedItems(n),n);assert.equal(edited.length,14);assert.equal(edited.find(x=>x.id==='part0').areaMm2,items[1].areaMm2*4);
+syncActiveNestingTab(n);switchNestingTab(n,'design');switchNestingTab(n,tab.id);assert(n.partOverrides.background.deleted);
+const a=n.sheets[0].placements.find(x=>x.id==='part0');const old=a.areaMm2;assert(editNestingPlacement(a,'scale',2));assert.equal(a.areaMm2,old*4);refreshNestingSheet(n.sheets[0],5.4);
+console.log('✓ Nesting independent edits persist through repack; optimization no worse than fast baseline; contour dimensions and statistics synchronized',nestingScore(result));
