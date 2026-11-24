@@ -11,7 +11,7 @@ import { renderPropertyBar } from './ui/PropertyBar.js';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=pro3-ui2';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=pro3-fast3';
 import { generateNestedGcode, generateNestedHpgl } from './export/CncGcodeExporter.js';
 import { HistoryManager } from './core/history.js';
 import {
@@ -70,7 +70,7 @@ import { calculateManufacturingMetrics } from './manufacturing/MetricsCalculator
 import { SHEET_PRESETS, extractNestingItems, runTrueShapeNesting, validateSheetLayout, editNestingPlacement, refreshNestingSheet } from './manufacturing/NestingEngine.js';
 import { importVectorText } from './manufacturing/VectorFileImport.js';
 import { importPdfFile } from './manufacturing/PdfVectorImport.js';
-import { runVectorImportJob } from './manufacturing/AsyncVectorImport.js?v=pro3-ui2';
+import { runVectorImportJob } from './manufacturing/AsyncVectorImport.js?v=pro3-fast3';
 import {
   createNestingImportedTab, getActiveNestingImportedItems, openNestingImportTab,
   switchNestingTab, closeNestingImportedTab, syncActiveNestingTab, applyNestingPartOverrides,
@@ -2688,7 +2688,6 @@ function syncNestingSettingsControls(sidebar, nesting) {
     cwsNestMg: nesting.marginLeftMm,
     cwsNestRot: nesting.rotationStepDeg ?? 90,
     cwsNestStrategy: nesting.placementStrategy || 'compact',
-    cwsNestBudget: nesting.optimizationBudgetMs||7000,
     cwsNestBodyColor: nesting.previewColors?.body || '#c89343',
     cwsNestHoleColor: nesting.previewColors?.holes || '#c89343',
     cwsNestHoles: nesting.allowHoleNesting,
@@ -3095,7 +3094,6 @@ function bindNestingCenterEvents(root) {
     repackNestingSettings('Fırça yönü kısıtı', n => { n.enforceGrainDirection = e.target.checked; }));
   root.querySelector('#cwsNestRot')?.addEventListener('change', e =>
     repackNestingSettings('Dönüş adımı', n => { n.rotationStepDeg = Number(e.target.value); }));
-  root.querySelector('#cwsNestBudget')?.addEventListener('change',e=>mutateData('Optimizasyon süresi',s=>{s.nesting.optimizationBudgetMs=Number(e.target.value);},false));
   root.querySelector('#cwsNestStrategy')?.addEventListener('change', e =>
     repackNestingSettings('Nesting yönü', n => { n.placementStrategy = e.target.value; }));
   const setNestingPreviewColor = (field, value) => {
