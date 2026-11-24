@@ -41,6 +41,15 @@ assert.ok(card.includes('id="cwsNestHoleColor"'));
 assert.ok(card.includes('value="#abc123"'));
 assert.ok(card.includes('value="#123abc"'));
 assert.ok(card.includes('id="cwsNestStrategy"'));
+assert.ok(card.includes('Nesting v3 Pro'));
+assert.ok(!card.includes('Sol araç çubuğu: Seç, Taşı, Ölçek, Döndür.'));
+assert.ok(!card.includes('Delete yalnızca seçili nesting parçasını siler.'));
+assert.ok(card.includes('henüz hesaplanmadı'));
+state.nesting.optimizationInfo={engineVersion:'3.0-pro',selectedEngine:'v3-pro',proAttempts:1,proCompleted:1,attempts:4,elapsedMs:1000};
+assert.ok(renderNestingCenter(state,{activeSheetIdx:0}).includes('<b>Son yerleşim:</b> v3 Pro'));
+state.nesting.optimizationInfo.selectedEngine='clipper-nfp';
+assert.ok(renderNestingCenter(state,{activeSheetIdx:0}).includes('Clipper NFP (daha iyi doğrulanmış sonuç)'));
+
 const holeShape=[{x:60,y:60},{x:60,y:170},{x:170,y:170},{x:170,y:60}];
 const sheet={widthMm:1000,heightMm:1000,placements:[
  ...parts.slice(0,2).map((item,i)=>({
