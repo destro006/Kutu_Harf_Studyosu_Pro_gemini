@@ -240,6 +240,15 @@
     </div>
   </div>
 
+  <dialog id="textEditDialog" class="text-edit-dialog" aria-labelledby="textEditTitle">
+    <form id="textEditForm">
+      <h2 id="textEditTitle">Metni Düzenle</h2>
+      <label for="textEditInput">Tabela yazısı</label>
+      <textarea id="textEditInput" rows="4" required spellcheck="false"></textarea>
+      <p>Enter: Uygula · Shift + Enter: Yeni satır · Esc: İptal</p>
+      <div class="text-edit-actions"><button type="button" id="textEditCancel" class="sec-btn">İptal</button><button type="submit" class="cta-btn">Uygula</button></div>
+    </form>
+  </dialog>
   <!-- Keyboard Shortcuts Help Modal -->
   <div id="shortcutsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle">
     <div class="modal-card">
@@ -298,6 +307,6 @@
 
   <div id="floatingWindowsLayer" class="floating-windows-layer"></div>
   <script defer src="./public/vendor/pdfjs/pdf.min.js"></script>
-  <script type="module" src="./src/main.js?v=20261124cadperf2"></script>
+  <script type="module" src="./src/main.js?v=20261124textedit1"></script>
 </body>
 </html>

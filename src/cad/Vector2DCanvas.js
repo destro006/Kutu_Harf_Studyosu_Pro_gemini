@@ -1,3 +1,4 @@
+import {isTextDoubleClick} from './TextEditing.js';
 import { restoreLogoShape } from '../geometry/LogoTracer.js';
 import { layoutTextMm } from '../geometry/FontManager.js';
 import { polygonBounds } from '../geometry/PolygonOffset.js';
@@ -307,6 +308,7 @@ export class Vector2DCanvas {
   }
 
   _bindEvents() {
+    let lastTextClick=null,pressedText=null;
     this.svg.addEventListener('wheel', (e) => {
       e.preventDefault();
       this.zoomBy(e.deltaY > 0 ? 0.88 : 1.14);
@@ -329,6 +331,17 @@ export class Vector2DCanvas {
     this.svg.addEventListener('pointerdown', (e) => {
       if (!this.lastState) return;
       const tool = this.lastState.activeTool;
+      const target=e.target.closest('[data-v2d-id]'),id=target?.getAttribute('data-v2d-id');
+      const textObj=this.lastState.objects.find(o=>o.id===id&&o.kind==='text'&&!o.locked&&o.visible!==false);
+      pressedText=null;
+      if(e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey&&['select','move','text'].includes(tool)&&textObj){
+        const click={id,x:e.clientX,y:e.clientY,time:performance.now()};
+        if(isTextDoubleClick(lastTextClick,click)){
+          lastTextClick=null;this.dragState=null;e.preventDefault();e.stopPropagation();
+          this.callbacks.onEditText?.(id);return;
+        }
+        pressedText=click;
+      }else lastTextClick=null;
       const pt = this._screenToMm(e.clientX, e.clientY);
 
       if (e.button === 1 || tool === 'pan' || e.shiftKey && e.button === 2) {
@@ -391,6 +404,7 @@ export class Vector2DCanvas {
     });
 
     window.addEventListener('pointermove', (e) => {
+      if(pressedText&&Math.hypot(e.clientX-pressedText.x,e.clientY-pressedText.y)>5){pressedText=null;lastTextClick=null;}
       if (!this.dragState || !this.lastState) return;
       const pt = this._screenToMm(e.clientX, e.clientY);
       if (this.dragState.type === 'marquee') {
@@ -400,6 +414,7 @@ export class Vector2DCanvas {
         this.view.cy = this.dragState.origCy + (e.clientY - this.dragState.startY) / this.view.zoom;
         this.render(this.lastState, this.lastFontMap);
       } else if (this.dragState.type === 'move') {
+        if(!this.dragState.moved&&Math.hypot(pt.sx-this.dragState.startMm.sx,pt.sy-this.dragState.startMm.sy)<5)return;
         const dx = pt.xMm - this.dragState.startMm.xMm;
         const dy = pt.yMm - this.dragState.startMm.yMm;
         const snapped = this._snapMm({ xMm: this.dragState.origX + dx, yMm: this.dragState.origY + dy }, this.lastState, this.dragState.objId);
@@ -420,7 +435,8 @@ export class Vector2DCanvas {
       }
     });
 
-    window.addEventListener('pointerup', () => {
+    window.addEventListener('pointerup', (e) => {
+      if(pressedText){lastTextClick=Math.hypot(e.clientX-pressedText.x,e.clientY-pressedText.y)<=5?{...pressedText,time:performance.now()}:null;pressedText=null;}
       if (!this.dragState) return;
       const ds = this.dragState;
       this.dragState = null;
@@ -436,7 +452,7 @@ export class Vector2DCanvas {
         this.freehandPts = [];
       } else if (ds.moved) {
         this.callbacks.onTransformCommit?.();
-      }
+      }else if(['move','scale','node'].includes(ds.type))this.callbacks.onTransformNoop?.();
     });
   }
 }

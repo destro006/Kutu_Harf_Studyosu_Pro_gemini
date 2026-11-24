@@ -1,3 +1,4 @@
+import {editableTextObject,applyTextEdit} from './cad/TextEditing.js';
 import THREE from './vendor/three.js';
 import { buildChannelComponent } from './geometry/ChannelLetterGeometry.js';
 import { StateStore, createDefaultState, createObjectId, structuredCloneSafe } from './core/state.js';
@@ -3297,6 +3298,40 @@ function bindCostCenterEvents(root) {
   root.querySelectorAll('#costExportInternalCsv').forEach(b=>b.addEventListener('click',exportInternalCostCsv));
 }
 
+let textEditTarget=null;
+function openTextEditor(id){
+ const state=store.get(),obj=editableTextObject(state,id);
+ const dialog=document.getElementById('textEditDialog'),input=document.getElementById('textEditInput');
+ if(!obj||!dialog||!input)return false;
+ if(dialog.open)return true;
+ textEditTarget={id,docId:docManager.activeDocId,pageId:state.activePageId};
+ store.updateScoped([],s=>{s.selectedIds=[id];});
+ if(is3DWorkspace(state))signEngine?.updateSelectionBox(store.get());
+ updateNumericBar(store.get());
+ input.value=obj.text||'';
+ dialog.showModal();input.focus();input.select();return true;
+}
+function bindTextEditor(){
+ const dialog=document.getElementById('textEditDialog'),input=document.getElementById('textEditInput'),form=document.getElementById('textEditForm');
+ if(!dialog||!input||!form)return;
+ const close=()=>{textEditTarget=null;dialog.close();};
+ document.getElementById('textEditCancel').onclick=close;
+ dialog.addEventListener('cancel',e=>{e.preventDefault();close();});
+ dialog.addEventListener('close',()=>{textEditTarget=null;});
+ dialog.addEventListener('keydown',e=>{
+   e.stopPropagation();
+   if(e.key==='Escape'){e.preventDefault();close();}
+   if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&e.target===input){e.preventDefault();form.requestSubmit();}
+ });
+ form.addEventListener('submit',e=>{
+   e.preventDefault();const target=textEditTarget,value=input.value,state=store.get();
+   if(!target||target.docId!==docManager.activeDocId||target.pageId!==state.activePageId||!editableTextObject(state,target.id)){close();return;}
+   if(!value.trim()){input.setCustomValidity('Metin boş olamaz.');input.reportValidity();return;}
+   if(editableTextObject(state,target.id).text!==value)mutate('Metin düzenlendi',s=>applyTextEdit(s,target.id,value));
+   close();
+ });
+ input.addEventListener('input',()=>input.setCustomValidity(''));
+}
 function showObjectContextMenu(e, objId) {
   if (!contextMenu) return;
   if (objId) {
@@ -3307,6 +3342,7 @@ function showObjectContextMenu(e, objId) {
   const hasSel = (store.get().selectedIds || []).length > 0;
   if (hasSel) {
     contextMenu.show(e.clientX, e.clientY, [
+      ...(editableTextObject(store.get(),objId||store.get().selectedIds[0])?[{label:'Metni Düzenle',action:()=>openTextEditor(objId||store.get().selectedIds[0])},{sep:true}]:[]),
       { label: 'Kes', kbd: 'Ctrl+X', action: cutSelectionToClipboard },
       { label: 'Kopyala', kbd: 'Ctrl+C', action: () => copySelectionToClipboard() },
       { label: 'Çoğalt', kbd: 'Ctrl+D', action: () => runCadAction('duplicate') },
@@ -3545,6 +3581,7 @@ function init() {
     if(signEngine)return signEngine;
     signEngine = new SignEngine(threeContainer, {
     onWallLoad: renderWallLoading,
+    onEditText:openTextEditor,
     onTransformStart: () => {
       dragBeforeState = structuredCloneSafe(store.get());
     },
@@ -3564,8 +3601,7 @@ function init() {
           docManager.markDirty();
         }
         dragBeforeState = null;
-        updateUndoRedoButtons();
-        scheduleRebuild(true);
+        if(delta?.moved){updateUndoRedoButtons();scheduleRebuild(true);}
         return;
       }
       store.updateObject(layerId,o=>{
@@ -3911,9 +3947,12 @@ function init() {
   });
 
   contextMenu = new ContextMenu();
+  bindTextEditor();
   const vecWrap = document.getElementById('vector2DWrap');
   if (vecWrap) {
     vector2D = new Vector2DCanvas(vecWrap, {
+      onEditText:openTextEditor,
+      onTransformNoop:()=>{dragBeforeState=null;},
       onSelectObjects: (ids, additive) => {
         store.update(s => {
           const existing = additive ? s.selectedIds : [];

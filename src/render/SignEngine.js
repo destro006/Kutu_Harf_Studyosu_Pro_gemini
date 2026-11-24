@@ -385,6 +385,18 @@ export class SignEngine {
       this.orbit.targetRadius = Math.max(minR, Math.min(maxR, this.orbit.targetRadius * factor));
     };
 
+    this._onDoubleClick=e=>{
+      if(this._paused||e.button!==0||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey||!['select','move','text'].includes(this.activeTool))return;
+      const rect=dom.getBoundingClientRect();
+      if(!rect.width||!rect.height)return;
+      this.pointer.set((e.clientX-rect.left)/rect.width*2-1,-(e.clientY-rect.top)/rect.height*2+1);
+      this.raycaster.setFromCamera(this.pointer,this.camera);
+      for(const hit of this.raycaster.intersectObjects(this.signGroup.children,true)){
+        let obj=hit.object;while(obj&&!obj.userData?.layerId&&obj.parent)obj=obj.parent;
+        if(obj?.userData?.layerId){if(!obj.userData.locked&&this.callbacks.onEditText?.(obj.userData.layerId)){e.preventDefault();e.stopPropagation();}break;}
+      }
+    };
+    dom.addEventListener('dblclick',this._onDoubleClick);
     this._onContextMenu = (e) => e.preventDefault();
     this._onMouseDown = (e) => { if (e.button === 1) e.preventDefault(); };
 
@@ -1114,6 +1126,7 @@ export class SignEngine {
     window.removeEventListener('pointercancel', this._onPointerUp);
     dom.removeEventListener('wheel', this._onWheel);
     dom.removeEventListener('contextmenu', this._onContextMenu);
+    dom.removeEventListener('dblclick',this._onDoubleClick);
     this._ro?.disconnect();
     this._clearGroup(this.signGroup);
     this._clearGroup(this.wallGroup);

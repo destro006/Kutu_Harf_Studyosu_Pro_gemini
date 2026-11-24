@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {isTextDoubleClick,editableTextObject,applyTextEdit} from '../src/cad/TextEditing.js';
+import {createDefaultState,StateStore} from '../src/core/state.js';
+import {HistoryManager} from '../src/core/history.js';
+const s=createDefaultState(),o=s.objects[0],id=o.id,original=o.text;
+const history=new HistoryManager(),store=new StateStore(s);history.push(s);
+assert(applyTextEdit(s,id,'Yeni tabela\nİkinci satır'));assert.equal(s.objects[0].text,'Yeni tabela\nİkinci satır');
+const prev=history.undo(s);assert.equal(prev.objects[0].text,original);assert.equal(history.redo(prev).objects[0].text,'Yeni tabela\nİkinci satır');
+for(const k of ['xMm','yMm','heightMm','faceMaterial','lightingMode','fontId','scaleX','rotationDeg'])assert.equal(s.objects[0][k],prev.objects[0][k]);
+o.locked=true;assert.equal(editableTextObject(s,id),null);assert(!applyTextEdit(s,id,'x'));o.locked=false;
+s.mainWorkspace='nesting';assert(!applyTextEdit(s,id,'x'));
+assert(isTextDoubleClick({id,x:10,y:10,time:100},{id,x:12,y:12,time:350}));
+assert(!isTextDoubleClick({id,x:10,y:10,time:100},{id,x:20,y:20,time:350}));
+assert(!isTextDoubleClick({id,x:10,y:10,time:100},{id:'other',x:10,y:10,time:200}));
+console.log('✓ Double-click text editing, multiline, locked objects, nesting isolation, undo/redo and preserved material/position');
