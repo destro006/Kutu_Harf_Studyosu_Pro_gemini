@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createDefaultState } from '../src/core/state.js';
-import { DISPLAY_UNITS, displayToMm, mmToDisplay, formatMmAsUnit, PAGE_SIZE_PRESETS } from '../src/core/units.js';
+import { DISPLAY_UNITS, displayToMm, mmToDisplay, formatMmAsUnit, PAGE_SIZE_PRESETS,formatPresetLabel,formatDimensions,formatAreaM2 } from '../src/core/units.js';
 import { renderPropertyBar } from '../src/ui/PropertyBar.js';
 
 function makeBar() {
@@ -56,3 +56,36 @@ assert.equal(typeof edit,'function');
 edit(state.objects[0]);
 assert.equal(state.objects[0].xMm,1300);
 console.log('✓ Corel tarzı ölçü birimleri, sayfa/nesne dönüşümü ve bar olayları doğrulandı.');
+
+import {renderNestingCenter,renderCncCenter} from '../src/ui/CentralWorkspaces.js';
+import {renderNestingSvg} from '../src/ui/NestingView.js';
+import {SHEET_PRESETS} from '../src/manufacturing/NestingEngine.js';
+const preset2=PAGE_SIZE_PRESETS.find(p=>p.id==='2000x1000');
+assert.equal(formatPresetLabel(preset2,'cm'),'Tabela · 200 × 100 cm');
+assert.equal(formatPresetLabel(preset2,'m'),'Tabela · 2 × 1 m');
+assert.equal(formatPresetLabel(PAGE_SIZE_PRESETS.find(p=>p.id==='A4'),'cm'),'A4 · 21 × 29.7 cm');
+assert.equal(formatAreaM2(1,'cm'),'10000 cm²');
+state.selectedIds=[];state.pageLayout.preset=preset2.id;
+state.pageLayout.displayUnit='cm';renderPropertyBar(state,ctx);
+assert.ok(bar.innerHTML.includes('Tabela · 200 × 100 cm'));
+assert.ok(!bar.innerHTML.includes('Tabela · 2000 × 1000 mm'));
+state.pageLayout.displayUnit='m';renderPropertyBar(state,ctx);
+assert.ok(bar.innerHTML.includes('Tabela · 2 × 1 m'));
+const n=state.nesting;n.sheetWidthMm=3000;n.sheetHeightMm=1500;n.clearanceMm=5;n.marginLeftMm=15;n.sheets=[];
+state.pageLayout.displayUnit='cm';
+const before=JSON.stringify(n);
+const nestHtml=renderNestingCenter(state,{activeSheetIdx:0});
+assert.ok(nestHtml.includes('300 × 150 cm'));
+assert.ok(nestHtml.includes('Levha Genişliği (cm)'));
+assert.match(nestHtml,/id="cwsNestW"[^>]*value="300"/);
+assert.match(nestHtml,/id="cwsNestSp"[^>]*value="0.5"/);
+assert.match(nestHtml,/viewBox="0 0 3000 1500"/);
+assert.equal(JSON.stringify(n),before);
+assert.equal(formatPresetLabel(SHEET_PRESETS.find(p=>p.id==='3000x1500'),'cm'),'300 × 150 cm (Yatay)');
+assert.ok(renderNestingSvg({widthMm:3000,heightMm:1500,placements:[]},null,{},'cm').includes('300 × 150 cm'));
+state.cnc={...state.cnc,kerfMm:.2,toolDiameterMm:3,leadInMm:3,curveTolMm:.1};
+const cncHtml=renderCncCenter(state);
+assert.ok(cncHtml.includes('Kesim Kerfi (cm)'));
+assert.match(cncHtml,/id="cncToolDia"[^>]*value="0.3"/);
+assert.equal(displayToMm('0.3','cm'),3);
+console.log('✓ Page and sheet presets, nesting input/preview, CNC units and unchanged geometry');
