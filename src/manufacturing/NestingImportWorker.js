@@ -24,7 +24,7 @@ function processJob(job){
       }
     }
     if(!items.length)throw Error('PDF içinde kapalı vektör konturu bulunamadı.');
-    warnings.push('PDF: bağımsız boyalı yollar ayrı kesim parçalarıdır. Zemin, ölçü çizgileri ve yazıları CNC öncesinde kontrol edin.');
+    warnings.push('PDF: bağımsız boyalı yollar ayrı kesim parçalarıdır. Açık ölçü çizgileri kesime alınmadı; zemin ve yazıları CNC öncesinde kontrol edin.');
     imported={filename:job.filename,format:'pdf',items,contourCount:count,widthMm:width,heightMm:height,warnings:[...new Set(warnings)]};
   } else if(job.operation==='importPdfRings'){
     const scale=Number(job.options?.scale??1);

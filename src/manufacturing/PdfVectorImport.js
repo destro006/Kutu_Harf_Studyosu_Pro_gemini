@@ -45,7 +45,7 @@ export function pdfOperatorRings(list, OPS, opts={}) {
  };
  const discard=()=>{subpaths=[];points=[];start=cur=null;closed=false;};
  const flush=(fill)=>{
-  if(points.length)close();
+  if(points.length){subpaths.push({points,closed});points=[];}
   const group=[];
   for(const sub of subpaths){
    if(sub.points.length<3||(!fill&&!sub.closed))continue;
@@ -92,15 +92,16 @@ export function pdfOperatorRings(list, OPS, opts={}) {
 
 export async function importPdfFile(file, options={}, progress=()=>{},signal){
  const lib=globalThis.pdfjsLib;
+ if(signal?.aborted)throw new DOMException('PDF içe aktarma iptal edildi.','AbortError');
  if(!lib?.getDocument)throw Error('Yerel PDF motoru yüklenemedi. PDF.js paketini kontrol edin.');
  lib.GlobalWorkerOptions.workerSrc = new URL('../../public/vendor/pdfjs/pdf.worker.min.js',import.meta.url).href;
  const data=new Uint8Array(await file.arrayBuffer());
  progress('PDF sayfaları çözülüyor…');
  const task=lib.getDocument({data,isEvalSupported:false,disableFontFace:true});
- const pdf=await task.promise;
  const warnings=[],pages=[];
  const abort=()=>{task.destroy().catch(()=>{});};signal?.addEventListener('abort',abort,{once:true});
  try{
+  const pdf=await task.promise;
   for(let p=1;p<=pdf.numPages;p++){
    progress(`PDF vektörleri okunuyor: ${p}/${pdf.numPages}`);
    const page=await pdf.getPage(p);

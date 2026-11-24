@@ -2609,8 +2609,9 @@ function updateCenterWorkspaces(state) {
     if (el) {
       const html = renderNestingCenter(state, { activeSheetIdx, selectedPlacementId: selectedNestingId });
       const grid = el.querySelector('.center-ws-grid');
-      const currentTabId = el.querySelector('[data-nesting-tab]')?.getAttribute('data-nesting-tab');
+      const currentTabId = el.querySelector('.nesting-workspace[data-nesting-tab]')?.getAttribute('data-nesting-tab');
       const targetTabId = state.nesting.activeTabId || 'design';
+      if(currentNestingImportController&&targetTabId==='import'&&currentTabId==='import')return;
       if (grid && currentTabId === targetTabId && grid.querySelector('.cws-side-r')) {
         // Replace only changing parts; preserve the exact right-panel DOM node.
         const template = document.createElement('template');
@@ -2655,17 +2656,17 @@ async function repackNestingSettings(label,updateNesting,quickImport=true){
   const previous=store.get(),tab=previous.nesting.activeTabId||'design';
   const next=structuredCloneSafe(previous.nesting);updateNesting(next);
   const items=getActiveNestingImportedItems(next)??extractNestingItems(lastSceneResult.metricsList||[],{...previous,nesting:next});
-  const button=document.getElementById('cwsAutoNest');
+  const button=document.getElementById('cwsRunNesting');
   if(button)button.textContent='İşleniyor… (tekrar tıkla: iptal)';
   try{
     let result={sheets:[],unplaced:[]};
-    if(items.length){const out=await runVectorImportJob({jobId:Date.now(),operation:'nest',imported:{items},nesting:{...next,quickImport}},{signal:controller.signal});result=out.nesting;}
+    if(items.length){const out=await runVectorImportJob({jobId:Date.now(),operation:'nest',imported:{items},nesting:{...Object.fromEntries(Object.entries(next).filter(([key])=>!['sheets','unplaced','importedTabs','designTabSnapshot'].includes(key))),quickImport}},{signal:controller.signal});result=out.nesting;}
     if(controller.signal.aborted||(store.get().nesting.activeTabId||'design')!==tab)return;
     lastNesting=result;activeSheetIdx=0;selectedNestingId=null;
     mutate(label,st=>{st.nesting={...next,sheets:result.sheets,unplaced:result.unplaced};},false);
     updateCenterWorkspaces(store.get());
   }catch(err){if(!controller.signal.aborted){const warning=document.getElementById('stageWarning');if(warning){warning.textContent=String(err.message||err);warning.classList.remove('hidden');}}}
-  finally{if(nestingRepackController===controller){nestingRepackController=null;const btn=document.getElementById('cwsAutoNest');if(btn)btn.textContent='Otomatik Yerleştir';}}
+  finally{if(nestingRepackController===controller){nestingRepackController=null;const btn=document.getElementById('cwsRunNesting');if(btn)btn.textContent='Otomatik Yerleştir';}}
 }
 
 function applyNestingSheetSize(width, height, presetId = 'custom') {
@@ -2763,7 +2764,7 @@ async function importNestingVectorFiles(fileList, root) {
     if(errors.length||controller.signal.aborted){
       const warning=document.getElementById('stageWarning');
       if(warning){warning.textContent=(controller.signal.aborted?'İşlem iptal edildi. ':'')+errors.join(' · ').slice(0,800);warning.classList.remove('hidden');}
-      else say(errors.join(' · '));
+      if(!ready.length)say((controller.signal.aborted?'İşlem iptal edildi. ':'')+errors.join(' · '));
     }else if(!ready.length)say('İçe aktarılacak kapalı kontur bulunamadı.');
   }finally{
     currentNestingImportController=null;
