@@ -283,7 +283,8 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
     // Preserve any locked placements for this materialGroup
     for (const ex of existingLockedSheets) {
       if (ex.materialGroup === materialGroup) {
-        const lockedPls = ex.placements.filter(p => p.locked);
+        const batchIds=new Set(batchItems.map(item=>item.id));
+        const lockedPls = ex.placements.filter(p=>p.locked).map(p=>batchIds.has(p.id)?p:{...p,id:String(p.id).replace(/_copy0$/,'')}).filter(p=>batchIds.has(p.id));
         if (lockedPls.length) {
           batchSheets.push({
             index: allSheets.length + batchSheets.length + 1,

@@ -1,4 +1,5 @@
 import THREE from '../vendor/three.js';
+import { restoreLogoShape } from '../geometry/LogoTracer.js';
 import { createSignMaterial } from './MaterialLibrary.js';
 import { resolveChannelMaterialBinding } from './ChannelMaterialBinding.js';
 import { EnvironmentManager, ENVIRONMENT_PRESETS } from './EnvironmentManager.js';
@@ -194,7 +195,7 @@ export class SignEngine {
 
       if (hitLayerId && this.activeTool === 'select') {
         this.callbacks.onSelectObject?.(hitLayerId, e.ctrlKey || e.metaKey || e.shiftKey);
-        if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !this.signGroup.children.find(c=>c.userData?.layerId===hitLayerId)?.userData?.locked) {
           this.activeTool = 'move';
           this.draggingObjId = hitLayerId;
           this.dragMode = 'move';
@@ -606,7 +607,8 @@ export class SignEngine {
         shapesMmGroups = obj.logoData.parts.map((part, idx) => ({
           label: part.partName || `Logo-${idx + 1}`,
           color: part.color,
-          shapes: part.shapes.map(s => {
+          shapes: part.shapes.map(raw => {
+            const s=restoreLogoShape(raw);
             const ns = new THREE.Shape(s.getPoints(12).map(p => p.clone().applyMatrix3(mat3)));
             ns.holes = (s.holes || []).map(h => new THREE.Path(h.getPoints(12).map(p => p.clone().applyMatrix3(mat3))));
             return ns;
@@ -1023,6 +1025,7 @@ export class SignEngine {
         this.renderer.setClearColor(0x000000, 0);
         for (const group of groups) group.visible = false;
       }
+      if(opts.transparent&&!selectedIds)for(const {child} of children)if(!child.userData?.layerId)child.visible=false;
       if (selectedIds) {
         const bounds = new THREE.Box3();
         for (const {child} of children) {

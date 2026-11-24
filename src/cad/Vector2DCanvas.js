@@ -1,3 +1,4 @@
+import { restoreLogoShape } from '../geometry/LogoTracer.js';
 import { layoutTextMm } from '../geometry/FontManager.js';
 import { polygonBounds } from '../geometry/PolygonOffset.js';
 
@@ -144,7 +145,8 @@ export class Vector2DCanvas {
     } else if (obj.kind === 'logo' && obj.logoData?.parts?.length) {
       const hMm = obj.heightMm || 500;
       for (const part of obj.logoData.parts) {
-        for (const s of part.shapes) {
+        for (const raw of part.shapes) {
+          const s=restoreLogoShape(raw);
           polys.push({
             outer: s.getPoints(6).map(p => xf(p.x * hMm, p.y * hMm)),
             holes: (s.holes || []).map(h => h.getPoints(6).map(p => xf(p.x * hMm, p.y * hMm))),

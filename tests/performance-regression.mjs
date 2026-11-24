@@ -3,6 +3,9 @@ import {createDefaultState,StateStore,structuredCloneSafe} from '../src/core/sta
 import {createNestingImportedTab,syncActiveNestingTab} from '../src/manufacturing/NestingTabs.js';
 import {runTrueShapeNesting,validateSheetLayout,editNestingPlacement} from '../src/manufacturing/NestingEngine.js';
 import {SignEngine} from '../src/render/SignEngine.js';
+import THREE from '../src/vendor/three.js';
+import {restoreLogoShape} from '../src/geometry/LogoTracer.js';
+import {getActiveNestingImportedItems} from '../src/manufacturing/NestingTabs.js';
 const outer=[{x:0,y:0},{x:20,y:0},{x:20,y:10},{x:0,y:10}];
 const items=Array.from({length:1500},(_,i)=>({id:'p'+i,label:'p'+i,outer,holes:[],areaMm2:200,materialGroup:'metal'}));
 const state=createDefaultState();const tab=createNestingImportedTab(state.nesting,{filename:'bulk.svg',items});syncActiveNestingTab(state.nesting);
@@ -22,4 +25,11 @@ const queue=[];globalThis.requestAnimationFrame=fn=>{queue.push(fn);return queue
 const engine={container:{clientWidth:800,clientHeight:600},orbit:{azimuth:0,polar:1,radius:2,targetAzimuth:0,targetPolar:1,targetRadius:2,target:{x:0,y:0,z:0}},camera:{position:{set(){}},lookAt(){}},renderer:{render(){renders++;}},callbacks:{},_renderDirty:true};
 SignEngine.prototype._startLoop.call(engine);for(let i=0;i<120;i++)queue.shift()();
 assert.equal(renders,1,'idle scene must not render 120 times');engine.container.clientWidth=0;engine._renderDirty=true;queue.shift()();assert.equal(renders,1,'hidden workspace must not render');
-console.log('✓ Scoped state edits, immutable import geometry, real nesting transforms, collision flags, idle GPU and hidden workspace');
+const shape=new THREE.Shape();shape.moveTo(0,0);shape.lineTo(2,0);shape.lineTo(2,1);shape.lineTo(0,1);shape.closePath();
+const restored=restoreLogoShape(JSON.parse(JSON.stringify(shape)));
+assert.deepEqual(restored.getPoints().map(p=>[p.x,p.y]),shape.getPoints().map(p=>[p.x,p.y]));
+const copyItems=getActiveNestingImportedItems(state.nesting);assert.equal(copyItems[0].id,items[0].id);
+const tiny=runTrueShapeNesting(items.slice(0,2),{quickImport:true});tiny.sheets[0].placements[0].locked=true;
+const locked=runTrueShapeNesting(items.slice(0,2),{quickImport:true},tiny.sheets);assert.equal(locked.sheets.reduce((a,s)=>a+s.placements.length,0),2);
+assert.equal(locked.sheets[0].placements.find(p=>p.id===items[0].id).locked,true);
+console.log('✓ Scoped state edits, immutable import geometry, real nesting transforms, collision flags, idle GPU, logo JSON restore and locked placement identity');

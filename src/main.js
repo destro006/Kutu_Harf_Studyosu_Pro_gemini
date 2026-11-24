@@ -268,7 +268,7 @@ function scheduleRebuild(immediate = false) {
   clearTimeout(rebuildTimer);
   const revision = ++rebuildRevision;
   const run = async () => {
-    const state = store.get();
+    let state = store.get();
     // Ensure all needed fonts are loaded
     const neededFonts = new Set(['cinzel', 'montserrat', ...state.objects.filter(o => o.kind === 'text').map(o => o.fontId || 'cinzel')]);
     for (const fid of neededFonts) {
@@ -283,6 +283,7 @@ function scheduleRebuild(immediate = false) {
 
     // A slower font load must not overwrite a newer edit or document switch.
     if (revision !== rebuildRevision) return;
+    state=store.get(); // keep intervening view/price changes during async font loading
     try {
       lastSceneResult = (signEngine && !signEngine.isDisposed)
         ? signEngine.updateScene(state, fontMap)

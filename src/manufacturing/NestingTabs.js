@@ -55,7 +55,7 @@ export function getActiveNestingImportedItems(n) {
   const tab=n.importedTabs?.find(t=>t.id===n.activeTabId);
   if(!tab)return null;
   const copies=Math.max(1,Math.min(500,Number(n.copies)||1));
-  return Array.from({length:copies},(_,i)=>tab.items.map(item=>({...item,id:item.id+'_copy'+i}))).flat();
+  return Array.from({length:copies},(_,i)=>tab.items.map(item=>({...item,id:i===0?item.id:item.id+'_copy'+i}))).flat();
 }
 export function closeNestingImportedTab(n,id) {
   const tab=n.importedTabs?.find(t=>t.id===id);

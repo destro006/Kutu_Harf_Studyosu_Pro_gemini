@@ -1,5 +1,6 @@
 import { createObjectId } from '../core/state.js';
 import { booleanPolygons, offsetRing, polygonBounds } from '../geometry/PolygonOffset.js';
+import { restoreLogoShape } from '../geometry/LogoTracer.js';
 import { layoutTextMm } from '../geometry/FontManager.js';
 
 /**
@@ -99,7 +100,8 @@ export function convertObjectToCurves(obj, fontMap) {
   } else if (obj.kind === 'logo' && obj.logoData) {
     const hMm = obj.heightMm || 500;
     for (const part of obj.logoData.parts) {
-      for (const s of part.shapes) {
+      for (const raw of part.shapes) {
+          const s=restoreLogoShape(raw);
         polygonsMm.push({
           outer: s.getPoints(10).map(p => ({ x: p.x * hMm, y: p.y * hMm })),
           holes: (s.holes || []).map(h => h.getPoints(10).map(p => ({ x: p.x * hMm, y: p.y * hMm }))),
