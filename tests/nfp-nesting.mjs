@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {forbiddenTranslations,nfpCandidates} from '../src/manufacturing/NfpGeometry.js';
 import {runTrueShapeNesting,validateSheetLayout} from '../src/manufacturing/NestingEngine.js';
+import {runProNesting} from '../src/manufacturing/NestingEnginePro.js';
 import {optimizeNesting,nestingScore,betterNesting} from '../src/manufacturing/NestingOptimizer.js';
 import {polygonArea,polygonBounds} from '../src/geometry/PolygonOffset.js';
 const make=(id,coords,holes=[])=>{const outer=coords.map(([x,y])=>({x,y}));const hs=holes.map(r=>r.map(([x,y])=>({x,y})));return {id,label:id,outer,holes:hs,areaMm2:polygonArea(outer)-hs.reduce((a,h)=>a+polygonArea(h),0),materialGroup:'metal'};};
@@ -26,3 +27,19 @@ assert(!betterNesting(base,opt));assert.equal(opt.unplaced.length,0);assert(opt.
 for(const p of opt.sheets.flatMap(s=>s.placements)){const original=mixed.find(i=>i.id===p.id);assert.equal(p.outer.length,original.outer.length);assert.equal(p.holes.length,original.holes.length);assert(Math.abs(polygonArea(p.outer)-polygonArea(original.outer))<.001);}
 console.log('Letter mix: baseline',nestingScore(base),'NFP',nestingScore(opt));
 console.log('✓ Clipper NFP, fixed-sheet packing, hole policy, exact contour preservation, collision validation and baseline protection');
+
+ // Exercise the new solver directly, rather than allowing the fallback to mask regressions.
+ const proConfig={...cfg,sheetWidthMm:140,sheetHeightMm:140,rotationStepDeg:0,timeBudgetMs:2000};
+ const pro=runProNesting([frame,small],proConfig);
+ assert.equal(pro.sheetCount,1);assert.equal(pro.unplaced.length,0);
+ assert(pro.sheets.every(s=>validateSheetLayout(s,2,true).valid));
+ assert(pro.totalCutLengthM>0);assert.equal(pro.sheets[0].placements.length,2);
+ for(const p of pro.sheets[0].placements){assert.equal(p.angleDeg,0);assert.equal(p.outer.length,[frame,small].find(i=>i.id===p.id).outer.length);}
+ const noHole=runProNesting([frame,small],{...proConfig,allowHoleNesting:false});
+ assert.equal(noHole.sheetCount,2);
+ const locked=pro.sheets.map(s=>({...s,placements:s.placements.map(p=>({...p,locked:p.id==='O'}))}));
+ const relaid=runProNesting([frame,small],proConfig,locked);
+ const oldFrame=pro.sheets[0].placements.find(p=>p.id==='O'),newFrame=relaid.sheets.flatMap(s=>s.placements).find(p=>p.id==='O');
+ assert(newFrame.locked);assert.deepEqual(newFrame.outer,oldFrame.outer);
+ assert(after.optimization.proAttempts>0);
+ console.log('✓ Supplied v3 Pro: hole policy, rotation, locked positions, production cut length and validated optimization integration');
