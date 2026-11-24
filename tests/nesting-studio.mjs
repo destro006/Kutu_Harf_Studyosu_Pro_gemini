@@ -15,7 +15,7 @@ syncActiveNestingTab(n);switchNestingTab(n,'design');switchNestingTab(n,tab.id);
 const a=n.sheets[0].placements.find(x=>x.id==='part0');const old=a.areaMm2;assert(editNestingPlacement(a,'scale',2));assert.equal(a.areaMm2,old*4);refreshNestingSheet(n.sheets[0],5.4);
 console.log('✓ Nesting independent edits persist through repack; optimization no worse than fast baseline; contour dimensions and statistics synchronized',nestingScore(result));
 
-import {nextNestingSelection,deleteNestingParts} from '../src/manufacturing/NestingSelection.js';
+import {nextNestingSelection,deleteNestingParts,moveNestingParts} from '../src/manufacturing/NestingSelection.js';
 import {renderNestingCenter} from '../src/ui/CentralWorkspaces.js';
 import {renderNestingSvg} from '../src/ui/NestingView.js';
 const order=['a','b','c','d','e'];
@@ -53,3 +53,31 @@ assert.equal(applyNestingPartOverrides(getActiveNestingImportedItems(selectionSt
 assert.equal(source.length,5);
 syncActiveNestingTab(selectionState.nesting);
 console.log('✓ Nesting Ctrl / Shift range and checkbox selection, SVG highlighting, isolated row deletion, batch deletion, locked protection and repack persistence');
+
+import {attachShortcuts} from '../src/cad/Shortcuts.js';
+const preserved=nextNestingSelection(order,['a','d','e'],'a','d',{preserve:true});
+assert.deepEqual(preserved.ids,['a','d','e']);
+assert.equal(preserved.primary,'d');
+assert.deepEqual(nextNestingSelection(order,preserved.ids,'a','b',{preserve:true}).ids,['b']);
+const prevPos=new Map(sh.placements.map(p=>[p.id,{x:p.bounds.minX,y:p.bounds.minY,area:p.areaMm2}]));
+const moved=moveNestingParts(selectionState.nesting,0,['c','d','e'],12,20,5);
+assert.deepEqual(new Set(moved),new Set(['d','e']));
+for(const p of sh.placements){const before=prevPos.get(p.id);assert.ok(Math.abs(p.bounds.minX-before.x-(p.id==='c'?0:12))<1e-6);assert.ok(Math.abs(p.bounds.minY-before.y-(p.id==='c'?0:20))<1e-6);assert.equal(p.areaMm2,before.area);}
+assert.equal(sh.usedAreaMm2,6000);
+let handler,deletes=0;
+globalThis.window={addEventListener:(type,fn)=>{if(type==='keydown')handler=fn;},removeEventListener:()=>{}};
+const cb={tagName:'INPUT',type:'checkbox',matches:s=>s==='[data-cws-check]'};
+const input={tagName:'INPUT',type:'number',matches:()=>false};
+globalThis.document={activeElement:cb};
+const cleanup=attachShortcuts({isNesting:()=>true,onDelete:()=>deletes++});
+handler({key:'Delete',target:cb,preventDefault(){}});
+assert.equal(deletes,1);
+globalThis.document.activeElement=input;
+handler({key:'Delete',target:input,preventDefault(){}});
+assert.equal(deletes,1);cleanup();
+selectionState.pageLayout.displayUnit='cm';selectionState.cnc.toolDiameterMm=3;
+const cncPanel=renderNestingCenter(selectionState,{activeSheetIdx:0});
+assert.ok(cncPanel.includes('CNC Makine ve Ayarları'));
+assert.match(cncPanel,/id="nestCncToolDia"[^>]*value="0.3"/);
+assert.ok(cncPanel.includes('id="nestCncExport"'));
+console.log('✓ Nesting preserved group selection, shared translation, locked part protection, Delete on focused checkbox, CNC controls and display units');
