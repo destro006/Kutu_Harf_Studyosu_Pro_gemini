@@ -89,3 +89,4 @@ assert.ok(cncHtml.includes('Kesim Kerfi (cm)'));
 assert.match(cncHtml,/id="cncToolDia"[^>]*value="0.3"/);
 assert.equal(displayToMm('0.3','cm'),3);
 console.log('✓ Page and sheet presets, nesting input/preview, CNC units and unchanged geometry');
+assert.equal(formatMmAsUnit(555.428571,'mm',2),'555.43');
