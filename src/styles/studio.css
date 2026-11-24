@@ -1523,3 +1523,5 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .ribbon-panel-content>.sec{min-width:0;margin:0}
 .ribbon-panel.hidden,.studio-ribbon.hidden{display:none!important}
 @media(max-width:850px){.ribbon-panel-content{grid-template-columns:1fr}.prop-row-caption{flex-basis:100%}.ribbon-panel{max-height:50vh}.ribbon-categories button{font-size:11px;padding:4px 6px}}
+
+.ribbon-panel-content{grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr))}

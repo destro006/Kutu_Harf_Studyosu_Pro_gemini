@@ -64,6 +64,6 @@ const screenshotActions=['duplicate','toCurves','breakApart','union','difference
 const screenshotDockers=['objects','properties','layers','materials','manufacturing','align','background','projects'];
 for(const name of screenshotTools)assert(html.includes(`data-tool="${name}"`),`Missing tool ${name}`);
 for(const name of screenshotActions)assert(html.includes(`data-action="${name}"`),`Missing CAD action ${name}`);
-for(const name of screenshotDockers)assert(html.includes(`data-ws="${name}"`),`Missing docker ${name}`);
+for(const name of screenshotDockers)assert(html.includes(`data-ws="${name}"`)||html.includes(`data-ribbon="${name}"`),`Missing tool category ${name}`);
 for(const id of ['btnExportPng','btnExportTransparentPng','btnExportSvg','btnExportDxf','btnSaveJson','qualitySelect','btnNewDocTab','documentTabsList','btnCopyBetweenTabs','btnPasteBetweenTabs'])assert(html.includes(`id="${id}"`),`Missing UI ${id}`);
 console.log(`✓ Fileli metal eşleştirme: file/yanak aynı PBR; özel yanak korunur; 80 mm derinlik; ekran görsellerindeki ${screenshotTools.length+screenshotActions.length} araç, ${screenshotDockers.length} docker ve 10 üst kontrol kodda mevcut`);
