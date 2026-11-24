@@ -66,7 +66,7 @@ export class Vector2DCanvas {
     const ph = state?.pageLayout?.heightMm || 1000;
     this.view.cx = 0;
     this.view.cy = 0;
-    const points=[];for(const o of state?.objects||[])if(o.visible!==false)for(const p of this._getObjectPolysWorld(o,this.lastFontMap||{}))points.push(...p.outer);
+    const points=[];for(const o of state?.objects||[])if(o.visible!==false)for(const p of this._getObjectPolysWorld(o,this.lastFontMap||new Map()))for(const pt of p.outer)points.push(pt);
     const b=points.length?polygonBounds(points):{minX:-pw/2,maxX:pw/2,minY:-ph/2,maxY:ph/2};
     const minX=Math.min(-pw/2,b.minX),maxX=Math.max(pw/2,b.maxX),minY=Math.min(-ph/2,b.minY),maxY=Math.max(ph/2,b.maxY);
     this.view.cx=(minX+maxX)/2;this.view.cy=(minY+maxY)/2;
