@@ -8,7 +8,7 @@ export async function runVectorImportJob(job,{signal,onStatus=()=>{}}={}){
  if(typeof Worker==='undefined'){
   throw Error('Bu tarayıcı Web Worker desteklemiyor. Donmayı önlemek için içe aktarma durduruldu. Güncel Chrome/Edge kullanın.');
  }
- const worker = new Worker(new URL('./NestingImportWorker.js',import.meta.url),{type:'module'});
+ const worker = new Worker(new URL('./NestingImportWorker.js?v=pro3-ui2',import.meta.url),{type:'module'});
  return new Promise((resolve,reject)=>{
   let finished=false,timeout;
   const cleanup=()=>{clearTimeout(timeout);worker.terminate();signal?.removeEventListener('abort',abort);};
