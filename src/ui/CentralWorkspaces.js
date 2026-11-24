@@ -115,7 +115,6 @@ export function renderNestingCenter(state, ctx) {
         </div>
         <h3 class="sec-title" style="margin-top:14px">Yerleşim Tercihi</h3>
         <div class="field-row"><label>Optimizasyon süresi</label><select id="cwsNestBudget"><option value="3000" ${n.optimizationBudgetMs===3000?'selected':''}>Hızlı</option><option value="7000" ${!n.optimizationBudgetMs||n.optimizationBudgetMs===7000?'selected':''}>Dengeli</option><option value="30000" ${n.optimizationBudgetMs===30000?'selected':''}>Detaylı · 30 sn</option><option value="60000" ${n.optimizationBudgetMs===60000?'selected':''}>Üretim · 60 sn</option><option value="120000" ${n.optimizationBudgetMs===120000?'selected':''}>Derin arama · 120 sn</option></select></div>
-        <small>Sol araç çubuğu: Seç, Taşı, Ölçek, Döndür. Delete yalnızca seçili nesting parçasını siler.</small>
         <div class="field-row"><label>Optimizasyon yönü</label>
           <select id="cwsNestStrategy">
             <option value="compact" ${(n.placementStrategy || 'compact') === 'compact' ? 'selected' : ''}>Kompakt · daha az fire</option>
