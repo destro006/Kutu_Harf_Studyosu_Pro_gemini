@@ -567,13 +567,14 @@ function findBestPlacementOnSheet(sheet, variants, minX, minY, maxX, maxY, allow
       }
       if (allowHoleNesting) for (const hole of placed.holes || []) {
         const hb = polygonBounds(hole);
-        candX.add(snap(hb.minX + minSep));
-        candY.add(snap(hb.minY + minSep));
+        for(const x of [hb.minX+minSep+.01,hb.maxX-minSep-v.bounds.width-.01,(hb.minX+hb.maxX-v.bounds.width)/2])candX.add(x);
+        for(const y of [hb.minY+minSep+.01,hb.maxY-minSep-v.bounds.height-.01,(hb.minY+hb.maxY-v.bounds.height)/2])candY.add(y);
       }
     }
     const xs = [...candX].filter(x => x >= minX && x + v.bounds.width <= maxX + 1e-5).sort((a,b)=>a-b);
     const ys = [...candY].filter(y => y >= minY && y + v.bounds.height <= maxY + 1e-5).sort((a,b)=>a-b);
     if(Number.isFinite(deadline)){
+      if(performance.now()>=deadline)break;
       const candidates=[];
       if(nfpSearch&&sheet.placements.length&&performance.now()<deadline){
         for(const {x,y} of nfpSearch(sheet,v,minX,minY,maxX,maxY,minSep,deadline))candidates.push({x,y,score:scoreAt(x,y,v)});

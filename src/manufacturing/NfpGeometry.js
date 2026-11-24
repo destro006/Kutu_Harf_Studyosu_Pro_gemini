@@ -9,7 +9,7 @@ const rect=(l,b,r,t)=>[{X:l,Y:b},{X:r,Y:b},{X:r,Y:t},{X:l,Y:t}];
 const cache=new WeakMap();
 function simplified(pts){
  // Bound only the search proxy. Preserve every source point in the result.
- const p=pts.length>200?pts.filter((_,i)=>i%Math.ceil(pts.length/180)===0):pts;
+ const p=pts.length>96?pts.filter((_,i)=>i%Math.ceil(pts.length/80)===0):pts;
  return ring(p);
 }
 export function forbiddenTranslations(fixed,moving,clearance){

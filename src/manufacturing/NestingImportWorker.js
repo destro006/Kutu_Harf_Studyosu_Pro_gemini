@@ -45,7 +45,9 @@ function processJob(job,onProgress=()=>{}){
   } else throw Error('Bilinmeyen içe aktarma işlemi.');
   if(!imported.items?.length)throw Error('Dosyada üretilebilir kapalı vektör parçası yok.');
   const config={...(job.nesting||{}),quickImport:job.operation!=='nest'||Boolean(job.nesting?.quickImport)};
-  const result=job.operation==='nest'&&!config.quickImport?optimizeNesting(imported.items,config,job.lockedSheets||[],onProgress):runTrueShapeNesting(imported.items,config,job.lockedSheets||[]);
+  // Small jobs receive a compact first layout instead of showing a shelf as final.
+  const compactImport=job.operation!=='nest'&&imported.items.length<=60;
+  const result=compactImport?optimizeNesting(imported.items,{...config,optimizationBudgetMs:3000},job.lockedSheets||[],onProgress):job.operation==='nest'&&!config.quickImport?optimizeNesting(imported.items,config,job.lockedSheets||[],onProgress):runTrueShapeNesting(imported.items,config,job.lockedSheets||[]);
   for(const sheet of result.sheets){
     const test=validateSheetLayout(sheet,result.minSep,config.allowHoleNesting!==false);
     if(!test.valid)throw Error('Nesting doğrulaması başarısız: kesim parçaları çakışıyor.');
@@ -64,7 +66,7 @@ if(typeof self!=='undefined'&&typeof self.addEventListener==='function'){
         if(['cdr','dwg'].includes(kind)){
           const {importNativeCad}=await import('./NativeCadImport.js');
           const imported=await importNativeCad(job.bytes,job.filename,kind,job.options||{},status=>self.postMessage({jobId:job.jobId,status}));
-          self.postMessage({jobId:job.jobId,result:processJob({...job,operation:'nest',imported,nesting:{...job.nesting,quickImport:true}})});return;
+          self.postMessage({jobId:job.jobId,result:processJob({...job,operation:'nest',imported,nesting:{...job.nesting,quickImport:imported.items.length>60,optimizationBudgetMs:3000}})});return;
         }
       }
       try{self.postMessage({jobId:job.jobId,result:processJob(job,p=>self.postMessage({jobId:job.jobId,status:'NFP optimizasyonu · '+p.attempts+' deneme · '+Math.min(99,Math.floor(100*p.elapsedMs/p.budgetMs))+'% zaman bütçesi'}))});}

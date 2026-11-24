@@ -42,7 +42,8 @@ export function optimizeNesting(items,config={},locked=[],onProgress=()=>{}){
   const ids=(best?.sheets.flatMap(s=>s.placements.map(p=>p.id))||[]).concat(items.map(i=>i.id));
   const order=[...new Set(ids)];
   for(let k=0;k<Math.max(1,Math.ceil(order.length*.15));k++){const i=Math.floor(rand()*order.length),j=Math.floor(rand()*order.length);[order[i],order[j]]=[order[j],order[i]];}
-  run({quickImport:false,nfpSearch:nfpCandidates,orderIds:new Map(order.map((id,i)=>[id,i])),placementStrategy:strategy,deadline:Math.min(end,performance.now()+Math.max(150,budget/5))});
+  const anglePreferences=new Map();for(const p of best?.sheets.flatMap(s=>s.placements)||[])anglePreferences.set(p.id,p.angleDeg);
+  run({quickImport:false,nfpSearch:nfpCandidates,orderIds:new Map(order.map((id,i)=>[id,i])),anglePreferences,placementStrategy:strategy,deadline:Math.min(end,performance.now()+Math.max(150,budget/5))});
  }
  if(!best)throw Error('Geçerli yerleşim bulunamadı. Kilitli parçaları ve levha ölçülerini kontrol edin.');
  return {...best,optimization:{attempts,nfpAttempts,elapsedMs:Math.round(performance.now()-start),method:'Clipper NFP + multi-start contour search',score:nestingScore(best,strategy)}};

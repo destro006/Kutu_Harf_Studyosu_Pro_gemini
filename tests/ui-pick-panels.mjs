@@ -47,7 +47,7 @@ console.log('✓ 3D Pick: gerçek nesne sınırları, serbest/kesişim seçim');
 
 const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const main=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
-for(const id of ['workspaceTabs','btnFloatActiveDocker','btnResetDockLayout','inspectorQuickColors','btnOpenBackgroundPanel','dockDropZone']) assert(html.includes(`id="${id}"`),`missing ${id}`);
-for(const word of ['reorderDockerTab','dockFloatingIntoTabs','onDeselectObject','onSelectObjects','background-preset','data-bg-wall','data-quick-hex']) assert(main.includes(word),`missing ${word}`);
-assert(BACKGROUND_SCENES.length>=9);
-console.log(`✓ UI: dock/float/restore, hızlı renk paleti ve ${BACKGROUND_SCENES.length} hazır arka plan`);
+for(const id of ['workspaceTabs','btnFloatActiveDocker','btnResetDockLayout','btnOpenBackgroundPanel','dockDropZone']) assert(html.includes(`id="${id}"`),`missing ${id}`);
+for(const word of ['reorderDockerTab','dockFloatingIntoTabs','onDeselectObject','onSelectObjects','background-preset','data-bg-wall','data-ral-hex']) assert(main.includes(word),`missing ${word}`);
+assert(!html.includes('id="inspectorQuickColors"'));assert(BACKGROUND_SCENES.length>=9);
+console.log(`✓ UI: dock/float/restore, malzeme panelinde RAL paleti ve ${BACKGROUND_SCENES.length} hazır arka plan`);
