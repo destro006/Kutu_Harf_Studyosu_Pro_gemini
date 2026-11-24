@@ -1,6 +1,7 @@
 import { renderDetailedCostCenter } from './CostCenterView.js';
 import { SHEET_PRESETS } from '../manufacturing/NestingEngine.js';
 import { renderNestingSvg } from './NestingView.js';
+import { renderNestingSourceTabs, renderNestingImportPane } from './NestingImportView.js';
 import { MACHINE_PROFILES, validateNestedProduction } from '../export/CncGcodeExporter.js';
 import { formatMoney } from '../manufacturing/CostEngine.js';
 import { buildQuoteHtml } from '../manufacturing/QuoteGenerator.js';
@@ -14,6 +15,9 @@ import { buildQuoteHtml } from '../manufacturing/QuoteGenerator.js';
 
 export function renderNestingCenter(state, ctx) {
   const n = state.nesting;
+  if ((n.activeTabId || 'design') === 'import') {
+    return `<div class="nesting-workspace" data-nesting-tab="import">${renderNestingSourceTabs(n)}${renderNestingImportPane()}</div>`;
+  }
   const sheets = n.sheets || [];
   const activeIdx = Math.min(Math.max(0, ctx.activeSheetIdx || 0), Math.max(0, sheets.length - 1));
   const activeSheet = sheets[activeIdx] || null;
@@ -30,6 +34,8 @@ export function renderNestingCenter(state, ctx) {
   const totalCutLenMm = sheets.reduce((a, sh) => a + sh.placements.reduce((s, p) => s + (p.bounds ? (p.bounds.width + p.bounds.height) * 2 : 0), 0), 0);
 
   return `
+    <div class="nesting-workspace" data-nesting-tab="${n.activeTabId || 'design'}">
+    ${renderNestingSourceTabs(n)}
     <div class="center-ws-grid">
       <!-- Left: Part List & Material Groups -->
       <div class="cws-side">
@@ -131,6 +137,7 @@ export function renderNestingCenter(state, ctx) {
         <span><b>Tahmini Kesim Yolu:</b> ${(totalCutLenMm / 1000).toFixed(2)} m</span>
         <span><b>Yerleşmeyen:</b> ${(n.unplaced || []).length}</span>
       </div>
+    </div>
     </div>
   `;
 }

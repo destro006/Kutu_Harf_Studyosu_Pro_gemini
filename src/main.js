@@ -63,6 +63,11 @@ import { SHORTCUT_LIST, SHORTCUT_GROUPS, attachShortcuts } from './cad/Shortcuts
 import { captureObjectClipboard, pasteObjectClipboard } from './core/ObjectClipboard.js';
 import { calculateManufacturingMetrics } from './manufacturing/MetricsCalculator.js';
 import { SHEET_PRESETS, extractNestingItems, runTrueShapeNesting, validateSheetLayout } from './manufacturing/NestingEngine.js';
+import { importVectorText } from './manufacturing/VectorFileImport.js';
+import {
+  createNestingImportedTab, getActiveNestingImportedItems, openNestingImportTab,
+  switchNestingTab, closeNestingImportedTab, syncActiveNestingTab,
+} from './manufacturing/NestingTabs.js';
 import { calculateProjectCosts, formatMoney, getPriceCard } from './manufacturing/CostEngine.js';
 import { buildQuoteHtml } from './manufacturing/QuoteGenerator.js';
 import {
@@ -303,7 +308,10 @@ function scheduleRebuild(immediate = false) {
 
 function mutate(label, fn, renderWorkspace = true) {
   history.push(store.get(), label);
-  store.update(fn);
+  store.update(s => {
+    fn(s);
+    syncActiveNestingTab(s.nesting);
+  });
   docManager.markDirty();
   updateUndoRedoButtons();
   scheduleRebuild(true);
@@ -2536,7 +2544,9 @@ function updateCenterWorkspaces(state) {
     if (el) {
       const html = renderNestingCenter(state, { activeSheetIdx, selectedPlacementId: selectedNestingId });
       const grid = el.querySelector('.center-ws-grid');
-      if (grid && grid.querySelector('.cws-side-r')) {
+      const currentTabId = el.querySelector('[data-nesting-tab]')?.getAttribute('data-nesting-tab');
+      const targetTabId = state.nesting.activeTabId || 'design';
+      if (grid && currentTabId === targetTabId && grid.querySelector('.cws-side-r')) {
         // Replace only changing parts; preserve the exact right-panel DOM node.
         const template = document.createElement('template');
         template.innerHTML = html;
@@ -2545,6 +2555,9 @@ function updateCenterWorkspaces(state) {
           const next = template.content.querySelector('.' + cls);
           if (current && next) current.replaceWith(next);
         }
+        const tabs = el.querySelector('.nesting-source-tabs');
+        const nextTabs = template.content.querySelector('.nesting-source-tabs');
+        if (tabs && nextTabs) tabs.replaceWith(nextTabs);
         syncNestingSettingsControls(grid.querySelector('.cws-side-r'), state.nesting);
       } else {
         el.innerHTML = html;
@@ -2574,7 +2587,8 @@ function repackNestingSettings(label, updateNesting) {
   const previous = store.get();
   const next = structuredCloneSafe(previous.nesting);
   updateNesting(next);
-  const items = extractNestingItems(lastSceneResult.metricsList || [], { ...previous, nesting: next });
+  const importedItems = getActiveNestingImportedItems(next);
+  const items = importedItems ?? extractNestingItems(lastSceneResult.metricsList || [], { ...previous, nesting: next });
   const result = runTrueShapeNesting(items, next);
   lastNesting = result;
   activeSheetIdx = 0;
@@ -2598,7 +2612,8 @@ function applyNestingSheetSize(width, height, presetId = 'custom') {
 function runAutoNesting() {
   const s = store.get();
   // The extractor requires the *complete state*, not the objects array.
-  const items = extractNestingItems(lastSceneResult.metricsList || [], s);
+  const importedItems = getActiveNestingImportedItems(s.nesting);
+  const items = importedItems ?? extractNestingItems(lastSceneResult.metricsList || [], s);
   const res = runTrueShapeNesting(items, s.nesting);
   lastNesting = res;
   activeSheetIdx = 0;
@@ -2610,7 +2625,78 @@ function runAutoNesting() {
   updateCenterWorkspaces(store.get());
 }
 
+function openNestingVectorImport(openPicker = false) {
+  mutate('Nesting içe aktar sekmesi', s => openNestingImportTab(s.nesting), false);
+  activeSheetIdx = 0;
+  selectedNestingId = null;
+  setMainWorkspace('nesting');
+  if (openPicker) document.getElementById('nestVectorFileInput')?.click();
+}
+
+async function importNestingVectorFiles(fileList, root) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  const unit = root.querySelector('#nestImportUnit')?.value || 'auto';
+  const scale = Number(root.querySelector('#nestImportScale')?.value || 1);
+  const tolerance = Number(root.querySelector('#nestImportTolerance')?.value || 1);
+  const status = root.querySelector('#nestImportMessage');
+  let success = 0, failures = [];
+  if (!(scale > 0 && scale <= 1000)) {
+    if (status) status.textContent='Ölçek 0 ile 1000 arasında olmalıdır.';
+    return;
+  }
+  for (const file of files) {
+    try {
+      if (file.size > 12 * 1024 * 1024) throw new Error('Dosya 12 MB sınırını aşıyor.');
+      const content = await file.text();
+      const imported = importVectorText(content, file.name, {unit, scale, tolerance});
+      mutate('Vektör Nesting dosyası: ' + file.name, state => {
+        createNestingImportedTab(state.nesting, imported);
+      }, false);
+      runAutoNesting();
+      success++;
+    } catch (err) {
+      failures.push(file.name+': '+(err?.message||'Dosya okunamadı'));
+    }
+  }
+  if (success) {
+    setMainWorkspace('nesting');
+    updateCenterWorkspaces(store.get());
+  }
+  if (failures.length) {
+    const message=failures.join(' · ').slice(0,800);
+    const hint = document.getElementById('nestImportMessage');
+    if (hint) hint.textContent=message;
+    else {
+      const warning=document.getElementById('stageWarning');
+      if (warning) {warning.textContent=message;warning.classList.remove('hidden');}
+    }
+  }
+}
+
 function bindNestingCenterEvents(root) {
+  root.querySelectorAll('[data-nest-tab]').forEach(b => b.onclick = () => {
+    mutate('Nesting iş sekmesi', s => switchNestingTab(s.nesting,b.dataset.nestTab), false);
+    activeSheetIdx=0;selectedNestingId=null;
+    updateCenterWorkspaces(store.get());
+  });
+  root.querySelectorAll('[data-nest-close]').forEach(b => b.onclick = (e) => {
+    e.stopPropagation();
+    mutate('Nesting dosya sekmesini kapat', s => closeNestingImportedTab(s.nesting,b.dataset.nestClose), false);
+    activeSheetIdx=0;selectedNestingId=null;
+    updateCenterWorkspaces(store.get());
+  });
+  root.querySelector('[data-nest-import]')?.addEventListener('click',() => openNestingVectorImport(true));
+  root.querySelector('#nestVectorFileInput')?.addEventListener('change', e => importNestingVectorFiles(e.target.files, root));
+  const dropZone=root.querySelector('#nestVectorDropZone');
+  if (dropZone) {
+    dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('nesting-drop-hover');});
+    dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('nesting-drop-hover'));
+    dropZone.addEventListener('drop',e=>{
+      e.preventDefault();dropZone.classList.remove('nesting-drop-hover');
+      importNestingVectorFiles(e.dataTransfer.files,root);
+    });
+  }
   root.querySelectorAll('[data-cws-sheet]').forEach(b => b.onclick = () => {
     activeSheetIdx = Number(b.dataset.cwsSheet);
     updateCenterWorkspaces(store.get());
@@ -3522,7 +3608,7 @@ function init() {
     onBreakApart: () => runCadAction('breakApart'),
     onCombine: () => runCadAction('combine'),
     onNewDoc: () => document.getElementById('btnNewDocTab')?.click(),
-    onExport: openExportDialog,
+    onExport: () => store.get().mainWorkspace === 'nesting' ? openNestingVectorImport(true) : openExportDialog(),
     onCenterOnPage: () => mutate('Sayfaya ortala', s => {
       const o = getSelectedOrFirst(s);
       if (o && !o.locked) { o.xMm = 0; o.yMm = 0; }
@@ -3697,7 +3783,7 @@ function init() {
     openJson: () => { setMainWorkspace('model3d'); store.update(s => { s.activeWorkspace = 'projects'; }); renderActiveWorkspace(); },
     saveDoc: () => document.getElementById('btnQuickSaveDoc')?.click(),
     saveJsonFile: () => document.getElementById('btnSaveJson')?.click(),
-    openExport: openExportDialog,
+    openExport: () => store.get().mainWorkspace === 'nesting' ? openNestingVectorImport(true) : openExportDialog(),
     exportPng: () => document.getElementById('btnExportPng')?.click(),
     exportSvg: () => document.getElementById('btnExportSvg')?.click(),
     exportDxf: () => document.getElementById('btnExportDxf')?.click(),
