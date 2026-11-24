@@ -1,3 +1,4 @@
+import { renderDetailedCostCenter } from './CostCenterView.js';
 import { SHEET_PRESETS } from '../manufacturing/NestingEngine.js';
 import { renderNestingSvg } from './NestingView.js';
 import { MACHINE_PROFILES, validateNestedProduction } from '../export/CncGcodeExporter.js';
@@ -175,45 +176,8 @@ export function renderCncCenter(state) {
   `;
 }
 
-export function renderCostCenter(state, lastMetrics, lastCosts) {
-  const cur = lastCosts.currency || 'TRY';
-  const quoteText = [
-    `Proje: ${state.projectName || 'Yeni Tabela Projesi'}`,
-    `Ölçü: ${lastMetrics.totalWidthMm} × ${lastMetrics.totalHeightMm} mm | Parça: ${lastMetrics.componentCount}`,
-    `Aydınlatma: ${state.lighting?.mode || 'both'} | Yapı: ${state.constructionType || 'fileli'}`,
-    `Metal: ${(lastMetrics.metalFaceAreaM2 ?? 0).toFixed(3)} m² | Pleksi: ${(lastMetrics.acrylicAreaM2 ?? 0).toFixed(3)} m² | Yan Bant: ${(lastMetrics.sidewallAreaM2 ?? 0).toFixed(3)} m²`,
-    `LED: ${(lastMetrics.totalLedModules ?? 0)} modül`,
-    `Genel Toplam (KDV Dahil): ${formatMoney((lastCosts.grandTotal ?? 0), cur)}`
-  ].join('\n');
-  return `
-    <div style="padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:1180px;margin:0 auto">
-      <div class="sec">
-        <h3 class="sec-title">Üretim Metrajı &amp; Maliyet Dağılımı</h3>
-        <div class="kpi-grid">
-          <div class="kpi"><small>Ön / File Metal</small><strong>${(lastMetrics.metalFaceAreaM2 ?? 0).toFixed(3)} m²</strong></div>
-          <div class="kpi"><small>Pleksi Alanı</small><strong>${(lastMetrics.acrylicAreaM2 ?? 0).toFixed(3)} m²</strong></div>
-          <div class="kpi"><small>Yan Bant Alanı</small><strong>${(lastMetrics.sidewallAreaM2 ?? 0).toFixed(3)} m²</strong></div>
-          <div class="kpi"><small>Tahmini LED / Trafo</small><strong>${(lastMetrics.totalLedModules ?? 0)} ad</strong></div>
-        </div>
-        <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px;font-size:12.5px">
-          <div class="field-row"><span>Malzeme Maliyeti</span><b>${formatMoney((lastCosts.materialCost ?? 0), cur)}</b></div>
-          <div class="field-row"><span>LED &amp; Güç Kaynağı</span><b>${formatMoney((lastCosts.ledCost ?? 0), cur)}</b></div>
-          <div class="field-row"><span>İşçilik &amp; CNC Kesim</span><b>${formatMoney((lastCosts.laborCost ?? 0), cur)}</b></div>
-          <div class="field-row"><span>Kâr Marjı (%${state.pricing?.profitValue ?? 35})</span><b>${formatMoney((lastCosts.profitAmount ?? 0), cur)}</b></div>
-          <div class="field-row"><span>KDV (%${state.pricing?.vatRatePct ?? 20})</span><b>${formatMoney((lastCosts.vatAmount ?? 0), cur)}</b></div>
-          <div class="field-row" style="font-size:15px;color:var(--accent)"><strong>GENEL TOPLAM</strong><strong>${formatMoney((lastCosts.grandTotal ?? 0), cur)}</strong></div>
-        </div>
-      </div>
-      <div class="sec">
-        <h3 class="sec-title">Müşteri Teklif Özeti &amp; Dışa Aktarım</h3>
-        <pre style="white-space:pre-wrap;font-size:11.5px;background:var(--bg);padding:10px;border-radius:8px;border:1px solid var(--line);max-height:260px;overflow:auto">${escapeHtml(quoteText)}</pre>
-        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-          <button type="button" id="costCenterPdfBtn" class="cta-btn">Yazdır / PDF Teklif</button>
-          <button type="button" id="costCenterCopyBtn" class="sec-btn">Teklif Metnini Kopyala</button>
-        </div>
-      </div>
-    </div>
-  `;
+export function renderCostCenter(state, lastMetrics, lastCosts, ctx={}) {
+  return renderDetailedCostCenter(state, lastMetrics, lastCosts, ctx);
 }
 
 function escapeHtml(s) {

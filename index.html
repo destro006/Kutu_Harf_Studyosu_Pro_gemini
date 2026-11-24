@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Kutu Harf Stüdyosu — Profesyonel 3D Tabela CAD/CAM &amp; İmalat Stüdyosu</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Crect x='9' y='7' width='14' height='18' rx='3' fill='%23ffb547'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./src/styles/studio.css?v=20261124integrated">
+  <link rel="stylesheet" href="./src/styles/studio.css?v=20261124tabtop">
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -39,8 +39,9 @@
     <div id="menuDropdown" class="menu-dropdown hidden" role="menu"></div>
 
     <!-- REGION 2: Document Tabs (Independent Projects) -->
-    <div class="doc-tabs-bar" id="documentTabsBar" role="tablist" aria-label="Üstte açık proje sekmeleri">
-      <div id="documentTabsList" class="doc-tabs-list"></div>
+    <div class="doc-tabs-bar" id="documentTabsBar" aria-label="Üstte açık proje sekmeleri">
+      <button type="button" id="btnNewDocTab" class="doc-new-tab-btn" title="Yeni proje sekmesi oluştur (Ctrl+N)" aria-label="Yeni Sekme">＋ <span>Yeni Sekme</span></button>
+      <div id="documentTabsList" class="doc-tabs-list" role="tablist" aria-label="Açık proje sekmeleri"></div>
       <div class="doc-tab-actions" aria-label="Sekmeler arası nesne aktarımı">
         <span id="docClipboardStatus" class="doc-clipboard-status" aria-live="polite" title="Sekmeler arası kopyalanan nesneler">Sekmeler arasında nesne taşı</span>
         <button type="button" id="btnCopyBetweenTabs" class="tb-btn" title="Seçili nesneleri kopyala (Ctrl+C)">⧉ Kopyala</button>
@@ -78,7 +79,6 @@
     <div class="studio-body" id="studioBody">
       <!-- REGION 4: Left Vertical CAD Toolbox -->
       <aside class="cad-rail" id="cadRail" aria-label="CAD Araç Çubuğu">
-        <button type="button" id="btnNewDocTab" class="rail-new-doc-btn" title="Yeni belge sekmesi oluştur (Ctrl+N)" aria-label="Yeni Sekme">+<span>Yeni Sekme</span></button>
         <button type="button" id="btnToggleRail" class="rail-expand-btn" title="Araç Çubuğunu Genişlet/Daralt">⇄</button>
         <div class="rail-group">
           <button class="tool-btn active" data-tool="select" title="Seçim Aracı (Boşluk / V)">↖<span>Seç</span><kbd class="rail-kbd">V</kbd></button>
@@ -195,7 +195,7 @@
       <!-- REGION 6: Right Docker Panels -->
       <aside class="inspector-col" id="inspectorCol">
         <div class="inspector-mode-bar">
-          <span>Docker Paneller</span>
+          <span>Çalışma Panelleri</span>
           <div style="display:flex;gap:4px">
             <button type="button" id="btnSaveDefaults" class="tb-btn" style="padding:2px 7px;font-size:11px" title="Varsayılanları Kaydet">★ Kaydet</button>
             <button type="button" id="btnFloatActiveDocker" class="tb-btn" title="Aktif paneli serbest pencereye ayır">↗ Ayır</button>
@@ -204,6 +204,18 @@
           </div>
         </div>
         <div class="inspector-quick-colors" id="inspectorQuickColors" aria-label="Hızlı renk paleti"></div>
+        <label class="inspector-panel-picker">Panel seç
+          <select id="inspectorPanelSelect" aria-label="Aktif panel">
+            <option value="properties">Özellikler</option>
+            <option value="objects">Nesneler</option>
+            <option value="materials">Malzemeler</option>
+            <option value="layers">Katmanlar</option>
+            <option value="manufacturing">İmalat</option>
+            <option value="align">Hizalama</option>
+            <option value="background">Arka Plan / Cephe</option>
+            <option value="projects">Projeler</option>
+          </select>
+        </label>
         <nav class="workspace-tabs" id="workspaceTabs" aria-label="Docker Sekmeleri">
           <button type="button" data-ws="objects">Nesneler</button>
           <button type="button" data-ws="properties" class="on">Özellikler</button>
@@ -216,7 +228,7 @@
         </nav>
 
         <div id="workspaceContent" class="workspace-content"></div>
-        <div id="dockDropZone" class="dock-drop-zone hidden">Buraya bırakarak aktif sekmenin altına sabitle</div>
+        <div id="dockDropZone" class="dock-drop-zone hidden">⇩ Sağ panele bırak · Sekme olarak ekle</div>
       </aside>
     </div>
   </div>
@@ -233,6 +245,6 @@
   </div>
 
   <div id="floatingWindowsLayer" class="floating-windows-layer"></div>
-  <script type="module" src="./src/main.js?v=20261124dockfix"></script>
+  <script type="module" src="./src/main.js?v=20261124tabtop"></script>
 </body>
 </html>

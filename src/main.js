@@ -5,6 +5,7 @@ import { DocumentManager } from './core/DocumentManager.js';
 import { Vector2DCanvas } from './cad/Vector2DCanvas.js';
 import { ContextMenu } from './ui/ContextMenu.js';
 import { renderPropertyBar } from './ui/PropertyBar.js';
+import { PAGE_SIZE_PRESETS, normalizeDisplayUnit } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js';
 import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js';
 import { generateNestedGcode, generateNestedHpgl } from './export/CncGcodeExporter.js';
@@ -58,7 +59,7 @@ import { SHORTCUT_LIST, SHORTCUT_GROUPS, attachShortcuts } from './cad/Shortcuts
 import { captureObjectClipboard, pasteObjectClipboard } from './core/ObjectClipboard.js';
 import { calculateManufacturingMetrics } from './manufacturing/MetricsCalculator.js';
 import { SHEET_PRESETS, extractNestingItems, runTrueShapeNesting, validateSheetLayout } from './manufacturing/NestingEngine.js';
-import { calculateProjectCosts, formatMoney } from './manufacturing/CostEngine.js';
+import { calculateProjectCosts, formatMoney, getPriceCard } from './manufacturing/CostEngine.js';
 import { buildQuoteHtml } from './manufacturing/QuoteGenerator.js';
 import {
   downloadBlob,
@@ -114,6 +115,9 @@ let lastCosts = calculateProjectCosts(lastMetrics, store.get());
 let lastNesting = null;
 let selectedNestingId = null;
 let objectClipboard = null;
+let activeCostTab = 'summary';
+let activeCostRole = 'face';
+const PRICE_TEMPLATE_STORAGE = 'khs_pricebook_template_v1';
 
 function setDocumentClipboardStatus(message) {
   const el = document.getElementById('docClipboardStatus');
@@ -346,10 +350,33 @@ function updateNumericBar(state) {
     onTool: (t) => activateTool(t),
     onAlign: (m) => mutate('Hizalama', s => alignSelectedObjects(s, m)),
     onDistribute: (ax) => mutate('Dağıtma', s => distributeSelectedObjects(s, ax)),
+    onDisplayUnit: unit => {
+      const safeUnit = normalizeDisplayUnit(unit);
+      store.update(s => { s.pageLayout.displayUnit = safeUnit; });
+      // Unit switching only changes the presentation of dimensions; the model remains in mm.
+      updateNumericBar(store.get());
+      if (store.get().mainWorkspace === 'design2d') vector2D?.render(store.get(), fontMap);
+      writeAutosave(store.get());
+    },
+    onPagePreset: id => {
+      const preset = PAGE_SIZE_PRESETS.find(p => p.id === id);
+      if (!preset) return;
+      mutate('Sayfa ebadı', s => {
+        s.pageLayout.preset = id;
+        if (preset.widthMm && preset.heightMm) {
+          const landscape = s.pageLayout.widthMm >= s.pageLayout.heightMm;
+          s.pageLayout.widthMm = landscape ? Math.max(preset.widthMm, preset.heightMm) : Math.min(preset.widthMm, preset.heightMm);
+          s.pageLayout.heightMm = landscape ? Math.min(preset.widthMm, preset.heightMm) : Math.max(preset.widthMm, preset.heightMm);
+          const page = s.pages?.find(p => p.id === s.activePageId);
+          if (page) { page.widthMm = s.pageLayout.widthMm; page.heightMm = s.pageLayout.heightMm; }
+        }
+      });
+    },
     onPageSize: (w, h) => mutate('Sayfa ölçüsü', s => {
       const p = s.pages?.find(x => x.id === s.activePageId);
-      if (w) { s.pageLayout.widthMm = Math.max(100, w); if (p) p.widthMm = s.pageLayout.widthMm; }
-      if (h) { s.pageLayout.heightMm = Math.max(100, h); if (p) p.heightMm = s.pageLayout.heightMm; }
+      if (w !== null && Number.isFinite(w) && w > 0) { s.pageLayout.widthMm = Math.max(1, w); if (p) p.widthMm = s.pageLayout.widthMm; }
+      if (h !== null && Number.isFinite(h) && h > 0) { s.pageLayout.heightMm = Math.max(1, h); if (p) p.heightMm = s.pageLayout.heightMm; }
+      s.pageLayout.preset = 'custom';
     }),
     onTogglePageOrient: () => mutate('Sayfa yönü', s => {
       const w = s.pageLayout.widthMm;
@@ -622,6 +649,10 @@ const wsLayout = loadWsLayout();
 if (!Array.isArray(wsLayout.floating)) wsLayout.floating = [];
 if (!wsLayout.dockedUnder || typeof wsLayout.dockedUnder !== 'object') wsLayout.dockedUnder = {};
 if (!Array.isArray(wsLayout.tabOrder)) wsLayout.tabOrder = [];
+wsLayout.floating = wsLayout.floating.filter(f => WS_META.some(m => m.id === f.id));
+for (const host of Object.keys(wsLayout.dockedUnder)) {
+  wsLayout.dockedUnder[host] = (wsLayout.dockedUnder[host] || []).filter(id => WS_META.some(m => m.id === id) && id !== host);
+}
 function arrangeDockerTabs() {
   const bar = document.getElementById('workspaceTabs');
   if (!bar) return;
@@ -781,7 +812,7 @@ function renderFloatingWindows(state) {
         if (dockZone) {
           const dz = dockZone.getBoundingClientRect();
           if (up.clientX >= dz.left && up.clientX <= dz.right && up.clientY >= dz.top && up.clientY <= dz.bottom) {
-            dockWorkspaceUnder(wsId, store.get().activeWorkspace);
+            dockFloatingIntoTabs(wsId);
             return;
           }
         }
@@ -830,6 +861,8 @@ function renderActiveWorkspace() {
   const stackMode = state.ui?.stackMode === 'stacked';
   arrangeDockerTabs();
   const tabsEl = document.getElementById('workspaceTabs');
+  const panelSelect = document.getElementById('inspectorPanelSelect');
+  if (panelSelect) panelSelect.value = ws;
   const stackBtn = document.getElementById('btnToggleStackMode');
   if (tabsEl) tabsEl.classList.toggle('hidden', stackMode);
   if (stackBtn) stackBtn.textContent = stackMode ? '⊟ Sekme Modu' : '⊞ Alt Alta Aç';
@@ -838,6 +871,7 @@ function renderActiveWorkspace() {
   document.querySelectorAll('#workspaceTabs button').forEach(b => {
     const id = b.dataset.ws;
     b.classList.toggle('on', id === ws);
+    b.classList.toggle('secondary-docker-tab', !['properties', 'objects', 'materials'].includes(id));
     b.classList.toggle('is-detached', floatIds.has(id));
     b.classList.toggle('has-docked', (wsLayout.dockedUnder[id] || []).length > 0);
   });
@@ -1081,6 +1115,45 @@ function syncSelectedFileliMetal(state, { id, color } = {}) {
   }
 }
 
+// A RAL coating is an opaque painted finish, not tinted chrome/gold.
+// The selected surface switches its PBR preset to boyaliAluminyum.
+function applyRalCoating(s, hex, part = 'face', ralCode = '') {
+  const paintId = 'boyaliAluminyum';
+  s.materialOverrides.metalness = null;
+  s.materialOverrides.roughness = null;
+  const current = getSelectedOrFirst(s);
+  const fileli = (current?.constructionType || s.constructionType) === 'fileli';
+  const eligible = (s.objects || []).filter(o => s.selectedIds.includes(o.id) && !o.locked);
+  if (part === 'side') {
+    s.materials.sideFollowsFace = false;
+    s.materials.sideId = paintId;
+    s.materials.sideColor = hex;
+    for (const o of eligible) {
+      o.sideFollowsFace = false; o.sideMaterial = paintId; o.sideColor = hex;
+      o.sideRalCode = ralCode;
+    }
+    return;
+  }
+  s.materials.faceId = paintId;
+  s.materials.faceColor = hex;
+  s.materials.ralCode = ralCode;
+  if (fileli) {
+    s.fileli.fileMaterial = paintId; s.fileli.fileColor = hex;
+    if (s.materials.sideFollowsFace !== false) {
+      s.materials.sideId = paintId; s.materials.sideColor = hex;
+    }
+  }
+  for (const o of eligible) {
+    o.faceMaterial = paintId; o.faceColor = hex; o.ralCode = ralCode;
+    if ((o.constructionType || s.constructionType) === 'fileli') {
+      o.fileMaterial = paintId; o.fileColor = hex;
+      if ((o.sideFollowsFace ?? s.materials.sideFollowsFace) !== false) {
+        o.sideMaterial = paintId; o.sideColor = hex;
+      }
+    }
+  }
+}
+
 function renderMaterialsWs(state) {
   const obj = getSelectedOrFirst(state);
   const faceId = obj?.faceMaterial || state.materials.faceId;
@@ -1090,13 +1163,15 @@ function renderMaterialsWs(state) {
   const displayedMetalId = isFileli ? fileId : faceId;
   const facePreset = MATERIAL_PRESETS[displayedMetalId] || MATERIAL_PRESETS.aynaAltin;
   const sideFollows = obj?.sideFollowsFace ?? state.materials.sideFollowsFace;
+  const ralPaintActive = displayedMetalId === 'boyaliAluminyum' && Boolean(obj?.ralCode || state.materials.ralCode);
 
   return `
     <section class="sec">
       <h3 class="sec-title">Ön Yüzey / File Materyali</h3>
-      <div class="mat-grid">
+      ${ralPaintActive ? `<div class="ral-active-notice">✓ RAL boya aktif ${escapeHtml(obj?.ralCode || state.materials.ralCode || '')} · Krom, altın ve metal yansımaları kapalı.<button type="button" class="sec-btn" data-surface-metal="1">↩ Metal malzemelere dön</button></div>` : ''}
+      <div class="mat-grid ${ralPaintActive ? 'finish-presets-inactive' : ''}">
         ${Object.values(MATERIAL_PRESETS).filter(m => !isFileli || m.kind !== 'acrylic').map(m => `
-          <button type="button" class="mat-btn ${displayedMetalId === m.id ? 'on' : ''}" data-face-mat="${m.id}">
+          <button type="button" class="mat-btn ${!ralPaintActive && displayedMetalId === m.id ? 'on' : ''}" data-face-mat="${m.id}" ${ralPaintActive ? 'disabled title="RAL boya seçili. Metal malzemelere dön düğmesine basın."' : ''}>
             <i style="background:${m.swatch}"></i>
             <span>${m.shortLabel}</span>
           </button>
@@ -1446,90 +1521,28 @@ function renderNestingWs(state) {
 }
 
 function renderCostWs(state) {
-  const cfg = state.costConfig;
-  const curr = lastCosts.currency;
-  return `
-    <section class="sec">
-      <h3 class="sec-title">İmalat Metrajı (Gerçek Geometri)</h3>
-      <table class="cost-table">
-        <tr><td>Toplam Ölçü</td><td>${lastMetrics.totalWidthMm} × ${lastMetrics.totalHeightMm} mm</td></tr>
-        <tr><td>Pleksi Alanı</td><td>${lastMetrics.acrylicAreaM2.toFixed(3)} m²</td></tr>
-        <tr><td>File Alanı</td><td>${lastMetrics.fileAreaM2.toFixed(3)} m²</td></tr>
-        <tr><td>Yan Bant Alanı</td><td>${lastMetrics.sidewallAreaM2.toFixed(3)} m²</td></tr>
-        <tr><td>Toplam Kesim Metrajı</td><td>${lastMetrics.cuttingLengthM.toFixed(2)} m</td></tr>
-        <tr><td>LED Modül / Trafo</td><td>${lastMetrics.totalLedModules} adet / ${lastMetrics.powerSupplies} trafo</td></tr>
-      </table>
-    </section>
-
-    <section class="sec">
-      <h3 class="sec-title">Para Birimi, Kar &amp; Montaj</h3>
-      <div class="field-row">
-        <label>Para Birimi</label>
-        <select id="costCurrency">
-          <option value="TRY" ${cfg.currency === 'TRY' ? 'selected' : ''}>TRY (₺)</option>
-          <option value="USD" ${cfg.currency === 'USD' ? 'selected' : ''}>USD ($)</option>
-          <option value="EUR" ${cfg.currency === 'EUR' ? 'selected' : ''}>EUR (€)</option>
-        </select>
-      </div>
-      <div class="field-row"><label>USD Kuru (₺)</label><input id="rateUsd" type="number" step="0.1" value="${cfg.rates.USD}"></div>
-      <div class="field-row"><label>EUR Kuru (₺)</label><input id="rateEur" type="number" step="0.1" value="${cfg.rates.EUR}"></div>
-      <div class="field-row">
-        <label>Fiyatlandırma Yöntemi</label>
-        <select id="pricingMode">
-          <option value="markup" ${cfg.pricingMode === 'markup' ? 'selected' : ''}>Kar Payı (Markup %)</option>
-          <option value="margin" ${cfg.pricingMode === 'margin' ? 'selected' : ''}>Kar Marjı (Margin %)</option>
-        </select>
-      </div>
-      <div class="field-row">
-        <label>${cfg.pricingMode === 'margin' ? 'Kar Marjı (%)' : 'Kar Payı (%)'}</label>
-        <input id="profitPct" type="number" min="0" max="90" step="1" value="${cfg.pricingMode === 'margin' ? cfg.marginPct : cfg.markupPct}">
-      </div>
-      <div class="field-row"><label>Genel Gider (%)</label><input id="overheadPct" type="number" min="0" max="100" value="${cfg.overheadPct}"></div>
-      <div class="field-row"><label>İndirim (%)</label><input id="discountPct" type="number" min="0" max="80" value="${cfg.discountPct}"></div>
-      <div class="field-row">
-        <label>Montaj Tipi</label>
-        <select id="mountingId">
-          <option value="duvar" ${cfg.mountingId === 'duvar' ? 'selected' : ''}>Duvara Direkt Montaj</option>
-          <option value="profil" ${cfg.mountingId === 'profil' ? 'selected' : ''}>Arka Profil (Ray) Üzerine</option>
-          <option value="yok" ${cfg.mountingId === 'yok' ? 'selected' : ''}>Montajsız (Sadece Üretim)</option>
-        </select>
-      </div>
-    </section>
-
-    <section class="sec">
-      <h3 class="sec-title">Maliyet Kalemleri</h3>
-      <table class="cost-table">
-        ${lastCosts.lines.map(l => `<tr><td>${l.label} <small style="color:var(--muted)">(${l.qty})</small></td><td>${formatMoney(l.amount, curr)}</td></tr>`).join('')}
-        <tr><td><strong>Toplam Üretim Maliyeti</strong></td><td><strong>${formatMoney(lastCosts.totalCost, curr)}</strong></td></tr>
-        <tr><td>Kar (${cfg.pricingMode === 'margin' ? 'Marj' : 'Markup'})</td><td>${formatMoney(lastCosts.profitAmount, curr)}</td></tr>
-        <tr><td>KDV (%${Math.round(cfg.vatRate * 100)})</td><td>${formatMoney(lastCosts.vatAmount, curr)}</td></tr>
-        <tr><td><strong>Genel Toplam</strong></td><td><strong style="color:var(--accent)">${formatMoney(lastCosts.grandTotal, curr)}</strong></td></tr>
-      </table>
-    </section>
-  `;
+  const c=lastCosts, curr=c.currency;
+  return `<section class="sec">
+    <h3 class="sec-title">Maliyet &amp; Teklif</h3>
+    <div class="field-row"><span>Üretici Maliyeti</span><b>${formatMoney(c.totalCost,curr)}</b></div>
+    <div class="field-row"><span>Müşteriye Satış (KDV Hariç)</span><b>${formatMoney(c.subtotal,curr)}</b></div>
+    <div class="field-row"><span>Gerçek Kâr</span><b style="color:${c.profitAmount>=0?'#8bdea9':'#ef8d89'}">${formatMoney(c.profitAmount,curr)}</b></div>
+    <div class="field-row"><span>KDV Dahil Toplam</span><b>${formatMoney(c.grandTotal,curr)}</b></div>
+    <p class="cst-help">Malzeme birim alış-satış fiyatları, işçilik, LED, nakliye ve teklifler ana çalışma alanında ayrı yönetilir.</p>
+    <button class="cta-btn" type="button" data-open-cost-studio="summary" style="width:100%;margin-top:12px">Maliyet Stüdyosunu Aç ↗</button>
+  </section>`;
 }
 
 function renderQuoteWs(state) {
-  const q = state.quote;
-  return `
-    <section class="sec">
-      <h3 class="sec-title">Müşteri Teklif Formu</h3>
-      <div class="field-row"><label>Firma Adınız</label><input id="qCompName" type="text" value="${escapeAttr(q.companyName)}"></div>
-      <div class="field-row"><label>Müşteri Adı</label><input id="qCustName" type="text" value="${escapeAttr(q.customerName)}"></div>
-      <div class="field-row"><label>Müşteri Firma</label><input id="qCustComp" type="text" value="${escapeAttr(q.customerCompany)}"></div>
-      <div class="field-row"><label>Teslimat Şartı</label><input id="qDelivery" type="text" value="${escapeAttr(q.deliveryTerms)}"></div>
-      <div class="field-row"><label>Üretim Süresi (Gün)</label><input id="qDays" type="number" min="1" max="90" value="${q.productionDays}"></div>
-      <div class="field-row"><label>Geçerlilik (Gün)</label><input id="qValid" type="number" min="1" max="90" value="${q.validityDays}"></div>
-      <div class="field-row">
-        <label>Teklif Fiyatını Kilitle</label>
-        <input id="qLock" type="checkbox" ${q.locked ? 'checked' : ''}>
-      </div>
-      <div style="display:flex;gap:6px;flex-direction:column">
-        <button type="button" id="btnPrintQuote" class="cta-btn">PDF Müşteri Teklifi Oluştur</button>
-        <button type="button" id="btnCopyQuoteText" class="sec-btn">Teklif Özetini Panoya Kopyala (WhatsApp)</button>
-      </div>
-    </section>
-  `;
+  const q=state.quote;
+  return `<section class="sec">
+   <h3 class="sec-title">Kurumsal Teklif</h3>
+   <div class="field-row"><span>Üretici</span><b>${escapeHtml(q.companyName||'—')}</b></div>
+   <div class="field-row"><span>Müşteri</span><b>${escapeHtml(q.customerCompany||q.customerName||'—')}</b></div>
+   <div class="field-row"><span>Teklif</span><b>${formatMoney(lastCosts.grandTotal,lastCosts.currency)}</b></div>
+   <p class="cst-help">Firma ve müşteri logosu, telefonlar, ödeme, teslimat ve A4 PDF teklifi için tasarım ekranını açın.</p>
+   <button class="cta-btn" type="button" data-open-cost-studio="quote" style="width:100%;margin-top:12px">Teklif Tasarımını Aç ↗</button>
+  </section>`;
 }
 
 function renderProjectsWs(state) {
@@ -1559,12 +1572,22 @@ function renderProjectsWs(state) {
 
 /* ---------------- Event Binding ---------------- */
 function bindWorkspaceEvents(ws, root) {
+  root.querySelectorAll('[data-open-cost-studio]').forEach(b=>b.addEventListener('click',()=>{
+    activeCostTab=b.dataset.openCostStudio || 'summary';
+    setMainWorkspace('cost');
+  }));
   if (ws === 'design' || ws === 'properties') {
     root.querySelectorAll('[data-ctype]').forEach(b => b.onclick = () => {
       mutate('Yapı tipi değiştirildi', s => {
         s.constructionType = b.dataset.ctype;
-        const o = getSelectedOrFirst(s);
-        if (o && !o.locked) o.constructionType = b.dataset.ctype;
+        const ids = new Set(s.selectedIds || []);
+        for (const o of s.objects) {
+          if (ids.has(o.id) && !o.locked) o.constructionType = b.dataset.ctype;
+        }
+        if (b.dataset.ctype === 'metal' || b.dataset.ctype === 'isiksiz') {
+          s.lighting.enabled = false; s.lighting.mode = 'none';
+          for (const o of s.objects) if (ids.has(o.id) && !o.locked) o.lightingMode = 'none';
+        }
       });
     });
 
@@ -1690,14 +1713,25 @@ function bindWorkspaceEvents(ws, root) {
       mutate('Yüz materyali', s => {
         s.materials.faceId = id;
         s.materials.faceColor = preset.color;
+        s.materials.ralCode = '';
         s.materialOverrides.metalness = null;
         s.materialOverrides.roughness = null;
-        assignMaterialToSelected(s, { faceMaterial: id, faceColor: preset.color });
+        assignMaterialToSelected(s, { faceMaterial: id, faceColor: preset.color, ralCode: '' });
         if ((getSelectedOrFirst(s)?.constructionType || s.constructionType) === 'fileli' && preset.kind !== 'acrylic') {
           syncSelectedFileliMetal(s, { id, color: preset.color });
         }
       });
     });
+    root.querySelector('[data-surface-metal]')?.addEventListener('click', () => mutate('Metal yüzeye geç', s => {
+      const id = 'aynaKrom';
+      s.materials.ralCode = '';
+      s.materials.faceId = id; s.materials.faceColor = MATERIAL_PRESETS[id].color;
+      s.materialOverrides.metalness = null; s.materialOverrides.roughness = null;
+      assignMaterialToSelected(s, { faceMaterial: id, faceColor: MATERIAL_PRESETS[id].color, ralCode: '' });
+      if ((getSelectedOrFirst(s)?.constructionType || s.constructionType) === 'fileli') {
+        syncSelectedFileliMetal(s, { id, color: MATERIAL_PRESETS[id].color });
+      }
+    }));
     root.querySelector('#faceColorPicker')?.addEventListener('input', e => {
       mutate('Yüz rengi', s => {
         s.materials.faceColor = e.target.value;
@@ -1742,25 +1776,8 @@ function bindWorkspaceEvents(ws, root) {
     });
     root.querySelectorAll('[data-ral-hex]').forEach(b => b.onclick = () => {
       const hex = b.dataset.ralHex;
-      mutate('RAL rengi', s => {
-        if (ralTargetPart === 'file') {
-          s.fileli.fileColor = hex;
-          assignMaterialToSelected(s, { fileColor: hex });
-          if ((getSelectedOrFirst(s)?.constructionType || s.constructionType) === 'fileli') {
-            syncSelectedFileliMetal(s, { color: hex });
-          }
-        } else if (ralTargetPart === 'side') {
-          s.materials.sideFollowsFace = false;
-          s.materials.sideColor = hex;
-          assignMaterialToSelected(s, { sideFollowsFace: false, sideColor: hex });
-        } else {
-          s.materials.faceColor = hex;
-          assignMaterialToSelected(s, { faceColor: hex });
-          if ((getSelectedOrFirst(s)?.constructionType || s.constructionType) === 'fileli') {
-            syncSelectedFileliMetal(s, { color: hex });
-          }
-        }
-      });
+      const ralColor = RAL_COLORS.find(c => c.hex.toLowerCase() === hex.toLowerCase());
+      mutate('RAL boya seçildi', s => applyRalCoating(s, hex, ralTargetPart, ralColor?.code || ''));
     });
     root.querySelector('#chkSideFollows')?.addEventListener('change', e => {
       mutate('Yan yüzey senkronizasyonu', s => {
@@ -2519,13 +2536,16 @@ function updateCenterWorkspaces(state) {
   } else if (ws === 'cost') {
     const el = document.getElementById('costCenterWrap');
     if (el) {
-      el.innerHTML = renderCostCenter(state, lastMetrics, lastCosts);
+      const oldScroll = el.scrollTop;
+      el.innerHTML = renderCostCenter(state, lastMetrics, lastCosts, {tab:activeCostTab,role:activeCostRole});
       bindCostCenterEvents(el);
+      el.scrollTop = oldScroll;
     }
   }
 }
 
-// Sheet-size edits must update the actual CAM layout rather than just the form.
+// Resizing a sheet changes the manufacturing envelope, not just the input value.
+// Repack in one undoable transaction so CNC exports and the SVG preview remain in sync.
 function applyNestingSheetSize(width, height, presetId = 'custom') {
   const w = Number(width), h = Number(height);
   if (!Number.isFinite(w) || !Number.isFinite(h) || w < 200 || h < 200) return;
@@ -2543,6 +2563,7 @@ function applyNestingSheetSize(width, height, presetId = 'custom') {
     st.nesting.sheets = result.sheets;
     st.nesting.unplaced = result.unplaced;
   }, false);
+  // Update immediately, without re-creating the right-side settings control.
   updateCenterWorkspaces(store.get());
 }
 
@@ -2580,7 +2601,8 @@ function bindNestingCenterEvents(root) {
       showNestingPartContextMenu(e, selectedNestingId);
     };
   });
-  // Clicking empty sheet space clears only the part selection.
+  // A click on empty sheet space only clears the selected part. It must never
+  // dismiss or rebuild the sheet-size and optimization settings sidebar.
   root.querySelector('#cwsNestSvgBox')?.addEventListener('click', e => {
     if (e.target.closest('[data-pid]') || !selectedNestingId) return;
     selectedNestingId = null;
@@ -2610,7 +2632,8 @@ function bindNestingCenterEvents(root) {
   });
   root.querySelector('#cwsRunNesting')?.addEventListener('click', () => runAutoNesting());
   root.querySelector('#cwsReoptUnlocked')?.addEventListener('click', () => runAutoNesting());
-  // Settings persist across redraws. Do not attach duplicate event handlers.
+  // Settings are mounted once and persist across sheet/selection redraws.
+  // Bind their listeners only once to prevent duplicate mutations.
   const nestingSettings = root.querySelector('.cws-side-r');
   if (nestingSettings && nestingSettings.dataset.nestingEventsBound !== 'true') {
     nestingSettings.dataset.nestingEventsBound = 'true';
@@ -2677,15 +2700,173 @@ function bindCncCenterEvents(root) {
   });
 }
 
+function applyDefaultPriceTemplate() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PRICE_TEMPLATE_STORAGE) || 'null');
+    if (!saved || typeof saved !== 'object') return;
+    store.update(s => {
+      if (!s.costConfig?.priceBook || !Object.keys(s.costConfig.priceBook).length) {
+        s.costConfig.priceBook = structuredCloneSafe(saved);
+      }
+    });
+  } catch (err) { console.warn('Fiyat şablonu okunamadı', err); }
+}
+
+function openCustomerQuote(print = false) {
+  const state = store.get();
+  const preview = signEngine && !signEngine.isDisposed ? signEngine.capturePng(1200, 750) : null;
+  const html = buildQuoteHtml(state, lastMetrics, lastCosts, preview);
+  const w = window.open('', '_blank', 'width=1050,height=850');
+  if (!w) {
+    downloadBlob(`${state.projectName || 'teklif'}_teklif.html`, html, 'text/html');
+    return;
+  }
+  w.document.open(); w.document.write(html); w.document.close();
+  if (print) { w.focus(); setTimeout(() => w.print(), 450); }
+}
+function customerQuoteText() {
+  const s=store.get();
+  const cost=s.quote?.locked && s.quote?.lockedSnapshot?.costs ? s.quote.lockedSnapshot.costs : lastCosts;
+  const metrics=s.quote?.locked && s.quote?.lockedSnapshot?.metrics ? s.quote.lockedSnapshot.metrics : lastMetrics;
+  return [
+    `*${s.quote?.companyName || 'Tabela Teklifi'}*`,
+    `Proje: ${s.projectName}`,
+    `Müşteri: ${s.quote?.customerCompany || s.quote?.customerName || '—'}`,
+    `Ölçü: ${metrics.totalWidthMm} × ${metrics.totalHeightMm} mm`,
+    `KDV Hariç: ${formatMoney(cost.subtotal, cost.currency)}`,
+    `KDV Dahil: *${formatMoney(cost.grandTotal, cost.currency)}*`,
+    `Üretim: ${s.quote?.productionDays || 7} iş günü`,
+    `Geçerlilik: ${s.quote?.validityDays || 15} gün`,
+  ].join('\n');
+}
+function exportInternalCostCsv() {
+  const c=lastCosts;
+  const quoteCsv=v=>`"${String(v??'').replace(/"/g,'""')}"`;
+  const rows=[['Kalem','Miktar','Birim','Alış Birim','Maliyet','Satış Birim','Satış','Para Birimi'],
+    ...c.lines.map(l=>[l.label,l.quantity,l.unit,l.buyUnit,l.costAmount,l.saleUnit,l.sellAmount,c.currency]),
+    ['Üretici maliyet toplamı','','','',c.totalCost],
+    ['Genel gider','','','',c.overheadAmount],
+    ['Satış ara toplamı','','','','','',c.subtotal],
+    ['KDV','','','','','',c.vatAmount],
+    ['Müşteri genel toplamı','','','','','',c.grandTotal],
+    ['Gerçek kâr','','','',c.profitAmount]
+  ];
+  downloadBlob(`${store.get().projectName||'proje'}_gizli_maliyet.csv`, '\ufeff'+rows.map(r=>r.map(quoteCsv).join(';')).join('\r\n'), 'text/csv;charset=utf-8');
+}
+async function loadLogoAsCompressedDataUrl(file) {
+  if(!file || !['image/png','image/jpeg','image/webp'].includes(file.type))throw new Error('Logo PNG, JPG veya WebP olmalıdır.');
+  if(file.size>8_000_000)throw new Error('Logo en fazla 8 MB olabilir.');
+  const src=await new Promise((resolve,reject)=>{
+    const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);
+  });
+  const image=await new Promise((resolve,reject)=>{
+    const img=new Image();img.onload=()=>resolve(img);img.onerror=reject;img.src=src;
+  });
+  const scale=Math.min(1,500/Math.max(image.naturalWidth||500,1),240/Math.max(image.naturalHeight||240,1));
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));
+  canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
+  const ctx=canvas.getContext('2d');if(!ctx)throw new Error('Logo işlenemedi.');
+  ctx.drawImage(image,0,0,canvas.width,canvas.height);
+  const data=canvas.toDataURL('image/png');
+  if(data.length>1_800_000)throw new Error('Logo boyutu hâlâ çok büyük. Daha küçük bir görsel seçin.');
+  return data;
+}
 function bindCostCenterEvents(root) {
-  root.querySelector('#costCenterPdfBtn')?.addEventListener('click', () => {
-    const html = buildQuoteHtml(store.get(), lastMetrics, lastCosts);
-    const w = window.open('', '_blank', 'width=900,height=700');
-    if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 300); }
+  root.querySelectorAll('[data-cost-tab]').forEach(el=>{
+    el.onclick=()=>{activeCostTab=el.dataset.costTab; root.scrollTop=0; updateCenterWorkspaces(store.get());};
   });
-  root.querySelector('#costCenterCopyBtn')?.addEventListener('click', () => {
-    navigator.clipboard?.writeText(root.querySelector('pre')?.textContent || '');
+  root.querySelector('#costHeaderQuoteBtn')?.addEventListener('click',()=>{
+    activeCostTab='quote';root.scrollTop=0;updateCenterWorkspaces(store.get());
   });
+  root.querySelectorAll('[data-cost-role]').forEach(el=>el.addEventListener('click',()=>{
+    activeCostRole=el.dataset.costRole;updateCenterWorkspaces(store.get());
+  }));
+  root.querySelector('#costCatalogSearch')?.addEventListener('input',e=>{
+    const needle=e.target.value.trim().toLocaleLowerCase('tr-TR');
+    root.querySelectorAll('[data-cost-catalog-item]').forEach(row=>{
+      row.hidden=Boolean(needle) && !row.textContent.toLocaleLowerCase('tr-TR').includes(needle);
+    });
+  });
+  root.querySelectorAll('[data-cost-config]').forEach(el=>el.addEventListener('change',()=>{
+    const path=el.dataset.costConfig.split('.');
+    const val=el.type==='number' || el.type==='range' ? Number(el.value) : el.value;
+    if(el.type==='number' && !Number.isFinite(val))return;
+    mutate('Maliyet ayarları',s=>{
+      let cfg=s.costConfig;for(let i=0;i<path.length-1;i++)cfg=cfg[path[i]] ||= {};
+      cfg[path.at(-1)]=val;
+    },false);
+  }));
+  root.querySelectorAll('[data-rate-key]').forEach(el=>el.addEventListener('change',()=>{
+    const key=el.dataset.rateKey, [which,field]=el.dataset.ratePath.split('.');
+    const val=field==='value'?Number(el.value):el.value;
+    if(field==='value' && !(Number.isFinite(val)&&val>=0))return;
+    mutate('Malzeme alış / satış tarifesi',s=>{
+      s.costConfig.priceBook ||= {};
+      s.costConfig.priceBook[key] ||= {buy:{...getPriceCard(s,key).buy},sell:{...getPriceCard(s,key).sell}};
+      s.costConfig.priceBook[key][which][field]=val;
+      s.costConfig.pricingMode='unit';
+    },false);
+  }));
+  root.querySelectorAll('[data-cost-reset-rate]').forEach(b=>b.addEventListener('click',()=>{
+    mutate('Tarifeyi sıfırla',s=>{delete s.costConfig.priceBook?.[b.dataset.costResetRate];},false);
+  }));
+  root.querySelector('#costSavePriceDefaults')?.addEventListener('click',()=>{
+    try { localStorage.setItem(PRICE_TEMPLATE_STORAGE,JSON.stringify(store.get().costConfig.priceBook||{}));
+      const btn=root.querySelector('#costSavePriceDefaults');if(btn)btn.textContent='✓ Tarife Kaydedildi';
+    } catch(e){alert('Tarife tarayıcıya kaydedilemedi: '+e.message);}
+  });
+  root.querySelector('#costAddExtra')?.addEventListener('click',()=>{
+    mutate('Ek maliyet kalemi ekle',s=>{
+      s.costConfig.extraItems ||= [];
+      s.costConfig.extraItems.push({id:createObjectId('extra'),label:'Özel iş / malzeme',qty:1,unit:'adet',buy:{value:0,currency:'TRY'},sell:{value:0,currency:'TRY'}});
+      s.costConfig.pricingMode='unit';
+    },false);
+  });
+  root.querySelectorAll('[data-extra-field]').forEach(el=>el.addEventListener('change',()=>{
+    const id=el.closest('[data-extra-id]')?.dataset.extraId;
+    const path=el.dataset.extraField.split('.');
+    const val=el.type==='number'?Number(el.value):el.value;
+    if(el.type==='number'&&!(Number.isFinite(val)&&val>=0))return;
+    mutate('Özel iş kalemi',s=>{
+      const item=s.costConfig.extraItems?.find(i=>i.id===id);if(!item)return;
+      if(path.length===2) {item[path[0]] ||= {};item[path[0]][path[1]]=val;}
+      else item[path[0]]=val;
+      s.costConfig.pricingMode='unit';
+    },false);
+  }));
+  root.querySelectorAll('[data-remove-extra]').forEach(b=>b.addEventListener('click',()=>{
+    mutate('Özel kalemi sil',s=>{s.costConfig.extraItems=(s.costConfig.extraItems||[]).filter(i=>i.id!==b.dataset.removeExtra);},false);
+  }));
+  root.querySelectorAll('[data-quote-field]').forEach(el=>el.addEventListener('change',()=>{
+    const field=el.dataset.quoteField;
+    const value=el.type==='number'?Number(el.value):el.value;
+    mutate('Teklif bilgileri',s=>{s.quote[field]=value;},false);
+  }));
+  root.querySelectorAll('[data-cost-logo]').forEach(input=>input.addEventListener('change',async()=>{
+    const file=input.files?.[0];if(!file)return;
+    try{
+      const data=await loadLogoAsCompressedDataUrl(file);
+      mutate('Teklif logosu',s=>{s.quote[input.dataset.costLogo]=data;},false);
+    }catch(err){alert(err.message||'Logo okunamadı.');}
+  }));
+  root.querySelectorAll('[data-cost-clear-logo]').forEach(b=>b.addEventListener('click',()=>{
+    mutate('Teklif logosu kaldır',s=>{s.quote[b.dataset.costClearLogo]=null;},false);
+  }));
+  root.querySelector('#costQuoteLock')?.addEventListener('change',e=>{
+    const locked=e.target.checked;
+    mutate('Teklif fiyatı kilidi',s=>{
+      s.quote.locked=locked;
+      s.quote.lockedSnapshot=locked?{costs:structuredCloneSafe(lastCosts),metrics:structuredCloneSafe(lastMetrics),createdAt:new Date().toISOString()}:null;
+    },false);
+  });
+  root.querySelector('#costCenterPreviewBtn')?.addEventListener('click',()=>openCustomerQuote(false));
+  root.querySelector('#costCenterPdfBtn')?.addEventListener('click',()=>openCustomerQuote(true));
+  root.querySelector('#costCenterHtmlBtn')?.addEventListener('click',()=>{
+    const s=store.get();downloadBlob(`${s.projectName||'proje'}_musteri_teklifi.html`,buildQuoteHtml(s,lastMetrics,lastCosts), 'text/html;charset=utf-8');
+  });
+  root.querySelector('#costCenterCopyBtn')?.addEventListener('click',()=>navigator.clipboard?.writeText(customerQuoteText()));
+  root.querySelectorAll('#costExportInternalCsv').forEach(b=>b.addEventListener('click',exportInternalCostCsv));
 }
 
 function showObjectContextMenu(e, objId) {
@@ -2755,6 +2936,7 @@ function resetMaterialDefaults() {
 
 /* ---------------- Bootstrap ---------------- */
 function init() {
+  if (!autosaved) applyDefaultPriceTemplate();
   document.getElementById('btnFloatActiveDocker')?.addEventListener('click', () => {
     const active = store.get().activeWorkspace;
     detachWorkspaceToFloat(active, Math.max(36, window.innerWidth - 670), 100);
@@ -2763,6 +2945,12 @@ function init() {
     wsLayout.floating = []; wsLayout.dockedUnder = {}; wsLayout.tabOrder = WS_META.map(m => m.id);
     store.update(s => { s.ui.stackMode = 'tabs'; });
     saveWsLayout(); renderActiveWorkspace();
+  });
+  document.getElementById('inspectorPanelSelect')?.addEventListener('change', e => {
+    const id = e.target.value;
+    restoreWorkspaceToTab(id);
+    store.update(s => { s.activeWorkspace = id; s.ui.stackMode = 'tabs'; });
+    renderActiveWorkspace();
   });
   document.getElementById('btnToggleStackMode')?.addEventListener('click', () => {
     store.update(s => { s.ui.stackMode = s.ui.stackMode === 'stacked' ? 'tabs' : 'stacked'; });
@@ -2785,9 +2973,7 @@ function init() {
     if (!btn) return;
     const color = btn.dataset.quickHex;
     mutate('Hızlı renk paleti', s => {
-      s.materials.faceColor = color;
-      assignMaterialToSelected(s, { faceColor: color });
-      if ((getSelectedOrFirst(s)?.constructionType || s.constructionType) === 'fileli') syncSelectedFileliMetal(s, { color });
+      applyRalCoating(s, color, 'face', 'Özel Renk');
     });
     renderQuickPalette(store.get());
   });
@@ -2978,12 +3164,12 @@ function init() {
           return;
         }
 
-        // 2. Dropped on dockDropZone / workspaceContent -> dock underneath active tab
-        const wc = document.getElementById('workspaceContent');
+        // 2. Dropped on right inspector -> dock as an accessible tab.
+        const wc = document.getElementById('inspectorCol');
         const wcRect = wc?.getBoundingClientRect();
         if (wcRect && up.clientX >= wcRect.left && up.clientX <= wcRect.right && up.clientY >= wcRect.top && up.clientY <= wcRect.bottom) {
           if (store.get().activeWorkspace !== wsId) {
-            dockWorkspaceUnder(wsId, store.get().activeWorkspace);
+            dockFloatingIntoTabs(wsId);
           }
           return;
         }
@@ -3296,6 +3482,7 @@ function init() {
   document.getElementById('btnPasteBetweenTabs')?.addEventListener('click', pasteSelectionFromClipboard);
   document.getElementById('btnNewDocTab')?.addEventListener('click', () => {
     docManager.newDocument();
+    applyDefaultPriceTemplate();
     renderDocumentTabs();
     setMainWorkspace(store.get().mainWorkspace || 'model3d');
     scheduleRebuild(true);

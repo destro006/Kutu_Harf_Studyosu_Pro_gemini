@@ -1,3 +1,4 @@
+import { DISPLAY_UNITS, PAGE_SIZE_PRESETS, normalizeDisplayUnit, displayUnitLabel, mmToDisplay, displayToMm, formatMmAsUnit } from '../core/units.js';
 const CONSTRUCTION_TYPES = [
   { id: 'fileli', label: 'Fileli Kutu Harf' },
   { id: 'pleksi', label: 'Pleksi Kutu Harf' },
@@ -21,6 +22,11 @@ export function renderPropertyBar(state, ctx = {}) {
   const selObjs = (state.objects || []).filter(o => (state.selectedIds || []).includes(o.id));
   const sel = selObjs[0] || null;
   const page = (state.pages || []).find(p => p.id === state.activePageId) || state.pages?.[0];
+  const unit = normalizeDisplayUnit(state.pageLayout?.displayUnit);
+  const u = displayUnitLabel(unit);
+  const show = mm => formatMmAsUnit(mm, unit);
+  const unitSelect = `<div class="prop-field unit-picker"><label for="pbDisplayUnit">Birim</label><select id="pbDisplayUnit" class="prop-select" aria-label="Ölçü birimi">${DISPLAY_UNITS.map(item => `<option value="${item.id}" ${item.id === unit ? 'selected' : ''}>${item.label}</option>`).join('')}</select></div>`;
+
 
   // 1. Nesting Part Selected
   if (mainWs === 'nesting') {
@@ -29,9 +35,10 @@ export function renderPropertyBar(state, ctx = {}) {
     const part = activeSheet?.placements?.find(p => p.id === ctx.selectedPlacementId);
     if (part) {
       bar.innerHTML = `
+        ${unitSelect}
         <span class="chip on" style="cursor:default">Parça: ${escapeHtml(part.label)}</span>
-        <div class="prop-field"><label>X</label><input id="npPartX" type="number" step="5" value="${Math.round(part.x || 0)}"></div>
-        <div class="prop-field"><label>Y</label><input id="npPartY" type="number" step="5" value="${Math.round(part.y || 0)}"></div>
+        <div class="prop-field"><label>X (${u})</label><input id="npPartX" type="number" step="any" value="${show(part.x || 0)}"></div>
+        <div class="prop-field"><label>Y (${u})</label><input id="npPartY" type="number" step="any" value="${show(part.y || 0)}"></div>
         <div class="prop-field"><label>Açı</label><input id="npPartRot" type="number" step="15" value="${Math.round(part.rotationDeg || 0)}"></div>
         <span class="chip" style="cursor:default">${escapeHtml(activeSheet?.materialLabel || '')} (${activeSheet?.thicknessMm || 1.2} mm)</span>
         <button type="button" id="npPartLock" class="tb-btn ${part.locked ? 'on' : ''}">${part.locked ? '🔒 Kilitli' : '🔓 Kilitle'}</button>
@@ -42,7 +49,7 @@ export function renderPropertyBar(state, ctx = {}) {
           </select>
         ` : ''}
       `;
-      bindNestingPartBar(bar, ctx);
+      bindNestingPartBar(bar, ctx, unit);
       return;
     }
   }
@@ -50,6 +57,7 @@ export function renderPropertyBar(state, ctx = {}) {
   // 2. Multiple Objects Selected
   if (selObjs.length > 1) {
     bar.innerHTML = `
+      ${unitSelect}
       <span class="chip on" style="cursor:default">${selObjs.length} Nesne Seçili</span>
       <button type="button" class="tb-btn" data-pb-act="group" title="Grupla (Ctrl+G)">Grupla</button>
       <button type="button" class="tb-btn" data-pb-act="ungroup" title="Grubu Çöz (Ctrl+U)">Grubu Çöz</button>
@@ -79,9 +87,11 @@ export function renderPropertyBar(state, ctx = {}) {
     const ph = page?.heightMm || state.pageLayout?.heightMm || 1000;
     const g = state.grid || {};
     bar.innerHTML = `
-      <span class="chip" style="cursor:default">Sayfa: ${escapeHtml(page?.name || 'Sayfa 1')}</span>
-      <div class="prop-field"><label>Genişlik (mm)</label><input id="pageW" type="number" min="100" max="10000" step="50" value="${pw}"></div>
-      <div class="prop-field"><label>Yükseklik (mm)</label><input id="pageH" type="number" min="100" max="10000" step="50" value="${ph}"></div>
+      <span class="chip page-layout-title" style="cursor:default">Sayfa ve Yerleşim · ${escapeHtml(page?.name || 'Sayfa 1')}</span>
+      ${unitSelect}
+      <div class="prop-field"><label for="pbPagePreset">Ebat</label><select id="pbPagePreset" class="prop-select" aria-label="Hazır sayfa boyutu">${PAGE_SIZE_PRESETS.map(p => `<option value="${p.id}" ${(state.pageLayout?.preset || 'custom') === p.id ? 'selected' : ''}>${p.label}</option>`).join('')}</select></div>
+      <div class="prop-field"><label for="pageW">Genişlik (${u})</label><input id="pageW" type="number" min="${show(1)}" step="any" value="${show(pw)}" aria-label="Sayfa genişliği"></div>
+      <div class="prop-field"><label for="pageH">Yükseklik (${u})</label><input id="pageH" type="number" min="${show(1)}" step="any" value="${show(ph)}" aria-label="Sayfa yüksekliği"></div>
       <button type="button" id="pbPageOrient" class="tb-btn">${pw >= ph ? '▭ Yatay' : '▯ Dikey'}</button>
       <div class="prop-sep"></div>
       <button type="button" id="pbGridVis" class="tb-btn ${g.visible !== false ? 'on' : ''}"># Izgara</button>
@@ -90,7 +100,7 @@ export function renderPropertyBar(state, ctx = {}) {
       <button type="button" id="btnTogglePageFrame" class="tb-btn ${state.pageLayout?.visible ? 'on' : ''}">▭ Çerçeve</button>
       <button type="button" id="pbFitView" class="tb-btn">🔍 Sığdır</button>
     `;
-    bindPageBarActions(bar, ctx);
+    bindPageBarActions(bar, ctx, unit);
     return;
   }
 
@@ -98,9 +108,10 @@ export function renderPropertyBar(state, ctx = {}) {
   const locked = sel.proportionalLock !== false;
   const scaledH = Math.round((sel.heightMm || 400) * (sel.scaleY ?? 1));
   const baseCommon = `
-    <div class="prop-field"><label for="numX">X</label><input id="numX" type="number" step="5" value="${Math.round(sel.xMm || 0)}"></div>
-    <div class="prop-field"><label for="numY">Y</label><input id="numY" type="number" step="5" value="${Math.round(sel.yMm || 0)}"></div>
-    <div class="prop-field"><label for="numH">Yükseklik</label><input id="numH" type="number" min="20" max="3000" step="10" value="${scaledH}"></div>
+    ${unitSelect}
+    <div class="prop-field"><label for="numX">X (${u})</label><input id="numX" type="number" step="any" value="${show(sel.xMm || 0)}"></div>
+    <div class="prop-field"><label for="numY">Y (${u})</label><input id="numY" type="number" step="any" value="${show(sel.yMm || 0)}"></div>
+    <div class="prop-field"><label for="numH">Yükseklik (${u})</label><input id="numH" type="number" min="${show(0.5)}" step="any" value="${show(scaledH)}"></div>
     <div class="prop-field"><label for="numScale">Ölçek</label><input id="numScale" type="number" min="0.1" max="10" step="0.05" value="${Number((sel.scaleX ?? 1).toFixed(2))}"><button type="button" id="btnPropLock" class="tb-btn ${locked ? 'on' : ''}" style="padding:2px 6px" title="Oranı Kilitle">${locked ? '🔒' : '🔓'}</button></div>
     <div class="prop-field"><label for="numRot">Açı</label><input id="numRot" type="number" min="-360" max="360" step="5" value="${Math.round(sel.rotationDeg || 0)}"></div>
   `;
@@ -109,8 +120,8 @@ export function renderPropertyBar(state, ctx = {}) {
     bar.innerHTML = `
       ${baseCommon}
       <div class="prop-sep"></div>
-      <div class="prop-field"><label for="numD">Kenar Çıta</label><input id="numD" type="number" min="10" max="400" step="5" value="${Math.round(sel.depthMm ?? 80)}"></div>
-      <div class="prop-field"><label for="pbFileW">File (mm)</label><input id="pbFileW" type="number" min="0" max="40" step="1" value="${sel.fileWidthMm ?? 5}"></div>
+      <div class="prop-field"><label for="numD">Derinlik (${u})</label><input id="numD" type="number" min="${show(1)}" step="any" value="${show(sel.depthMm ?? 80)}"></div>
+      <div class="prop-field"><label for="pbFileW">File (${u})</label><input id="pbFileW" type="number" min="0" step="any" value="${show(sel.fileWidthMm ?? 5)}"></div>
       <div class="prop-field">
         <label>Yapı</label>
         <select id="pbCtype" class="prop-select">${CONSTRUCTION_TYPES.map(t => `<option value="${t.id}" ${(sel.constructionType || state.constructionType) === t.id ? 'selected' : ''}>${t.label}</option>`).join('')}</select>
@@ -130,7 +141,7 @@ export function renderPropertyBar(state, ctx = {}) {
         <label>Font</label>
         <select id="pbFont" class="prop-select">${fonts.map(f => `<option value="${f.id}" ${(sel.fontId || 'cinzel') === f.id ? 'selected' : ''}>${escapeHtml(f.label)}</option>`).join('')}</select>
       </div>
-      <div class="prop-field"><label for="numSpacing">Aralık</label><input id="numSpacing" type="number" min="-50" max="200" step="1" value="${Math.round(sel.letterSpacingMm ?? 8)}"></div>
+      <div class="prop-field"><label for="numSpacing">Aralık (${u})</label><input id="numSpacing" type="number" step="any" value="${show(sel.letterSpacingMm ?? 8)}"></div>
       <button type="button" class="tb-btn" data-pb-act="toCurves" title="Eğriye Çevir (Ctrl+Q)">∿ Eğriye Çevir</button>
       <button type="button" class="tb-btn" data-pb-act="breakApart" title="Harflere Ayır (Ctrl+K)">✂ Harflere Ayır</button>
     `;
@@ -138,8 +149,8 @@ export function renderPropertyBar(state, ctx = {}) {
     bar.innerHTML = `
       ${baseCommon}
       <div class="prop-sep"></div>
-      <div class="prop-field"><label>Genişlik</label><input id="pbRectW" type="number" min="10" max="5000" step="10" value="${Math.round((sel.widthMm || 320) * (sel.scaleX ?? 1))}"></div>
-      <div class="prop-field"><label>Köşe Radyüs</label><input id="pbCornerR" type="number" min="0" max="200" step="2" value="${Math.round(sel.cornerRadiusMm || 0)}"></div>
+      <div class="prop-field"><label>Genişlik (${u})</label><input id="pbRectW" type="number" min="${show(1)}" step="any" value="${show((sel.widthMm || 320) * (sel.scaleX ?? 1))}"></div>
+      <div class="prop-field"><label>Köşe Radyüs (${u})</label><input id="pbCornerR" type="number" min="0" step="any" value="${show(sel.cornerRadiusMm || 0)}"></div>
       <button type="button" class="tb-btn" data-pb-act="toCurves">∿ Eğriye Çevir</button>
     `;
   } else if (sel.kind === 'polygon') {
@@ -160,18 +171,31 @@ export function renderPropertyBar(state, ctx = {}) {
     `;
   }
 
-  bindObjectBarEvents(bar, sel, ctx);
+  bindObjectBarEvents(bar, sel, ctx, unit);
+}
+
+function bindUnitControl(bar, ctx) {
+  bar.querySelector('#pbDisplayUnit')?.addEventListener('change', e => ctx.onDisplayUnit?.(normalizeDisplayUnit(e.target.value)));
 }
 
 function bindCommonBarActions(bar, ctx) {
+  bindUnitControl(bar, ctx);
   bar.querySelectorAll('[data-pb-act]').forEach(b => b.onclick = () => ctx.onCadAction?.(b.dataset.pbAct));
   bar.querySelectorAll('[data-align]').forEach(b => b.onclick = () => ctx.onAlign?.(b.dataset.align));
   bar.querySelectorAll('[data-dist]').forEach(b => b.onclick = () => ctx.onDistribute?.(b.dataset.dist));
 }
 
-function bindPageBarActions(bar, ctx) {
-  bar.querySelector('#pageW')?.addEventListener('change', e => ctx.onPageSize?.(Number(e.target.value), null));
-  bar.querySelector('#pageH')?.addEventListener('change', e => ctx.onPageSize?.(null, Number(e.target.value)));
+function bindPageBarActions(bar, ctx, unit) {
+  bindUnitControl(bar, ctx);
+  bar.querySelector('#pbPagePreset')?.addEventListener('change', e => ctx.onPagePreset?.(e.target.value));
+  bar.querySelector('#pageW')?.addEventListener('change', e => {
+    const mm = displayToMm(e.target.value, unit);
+    if (Number.isFinite(mm) && mm > 0) ctx.onPageSize?.(mm, null);
+  });
+  bar.querySelector('#pageH')?.addEventListener('change', e => {
+    const mm = displayToMm(e.target.value, unit);
+    if (Number.isFinite(mm) && mm > 0) ctx.onPageSize?.(null, mm);
+  });
   bar.querySelector('#pbPageOrient')?.addEventListener('click', () => ctx.onTogglePageOrient?.());
   bar.querySelector('#pbGridVis')?.addEventListener('click', () => ctx.onToggleGrid?.('visible'));
   bar.querySelector('#pbSnapGrid')?.addEventListener('click', () => ctx.onToggleGrid?.('snapToGrid'));
@@ -180,9 +204,10 @@ function bindPageBarActions(bar, ctx) {
   bar.querySelector('#pbFitView')?.addEventListener('click', () => ctx.onFitView?.());
 }
 
-function bindNestingPartBar(bar, ctx) {
-  bar.querySelector('#npPartX')?.addEventListener('change', e => ctx.onNestingPartEdit?.('x', Number(e.target.value)));
-  bar.querySelector('#npPartY')?.addEventListener('change', e => ctx.onNestingPartEdit?.('y', Number(e.target.value)));
+function bindNestingPartBar(bar, ctx, unit) {
+  bindUnitControl(bar, ctx);
+  bar.querySelector('#npPartX')?.addEventListener('change', e => ctx.onNestingPartEdit?.('x', displayToMm(e.target.value, unit)));
+  bar.querySelector('#npPartY')?.addEventListener('change', e => ctx.onNestingPartEdit?.('y', displayToMm(e.target.value, unit)));
   bar.querySelector('#npPartRot')?.addEventListener('change', e => ctx.onNestingPartEdit?.('rot', Number(e.target.value)));
   bar.querySelector('#npPartLock')?.addEventListener('click', () => ctx.onNestingPartEdit?.('toggleLock'));
   bar.querySelector('#npMoveSheet')?.addEventListener('change', e => {
@@ -190,8 +215,14 @@ function bindNestingPartBar(bar, ctx) {
   });
 }
 
-function bindObjectBarEvents(bar, sel, ctx) {
-  const num = (id, fn) => bar.querySelector('#' + id)?.addEventListener('change', e => ctx.onEditSelected?.(o => fn(o, Number(e.target.value))));
+function bindObjectBarEvents(bar, sel, ctx, unit) {
+  bindUnitControl(bar, ctx);
+  const dimensionIds = new Set(['numX','numY','numH','numD','numSpacing','pbFileW','pbCornerR','pbRectW']);
+  const num = (id, fn) => bar.querySelector('#' + id)?.addEventListener('change', e => {
+    const parsed = Number(e.target.value);
+    if (!Number.isFinite(parsed)) return;
+    ctx.onEditSelected?.(o => fn(o, dimensionIds.has(id) ? displayToMm(parsed, unit) : parsed));
+  });
   num('numX', (o, v) => { o.xMm = v; });
   num('numY', (o, v) => { o.yMm = v; });
   num('numD', (o, v) => { o.depthMm = Math.max(10, v); });

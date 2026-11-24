@@ -16,7 +16,7 @@ export function createDefaultState() {
     activeWorkspace: 'design',
     activeTool: 'select', // 'select' | 'move' | 'scale' | 'rotate' | 'pan' | 'zoom' | 'rect' | 'ellipse' | 'text' | 'pen' | 'node' | 'measure'
     quality: 'high', // 'performance' | 'balanced' | 'high' | 'ultra'
-    constructionType: 'fileli', // 'fileli' | 'pleksi' | 'metal' | 'halo' | 'isiksiz'
+    constructionType: 'metal', // 'fileli' | 'pleksi' | 'metal' | 'halo' | 'isiksiz'
 
     dimensions: {
       heightMm: 400,
@@ -66,6 +66,7 @@ export function createDefaultState() {
     pageLayout: {
       visible: false,
       preset: '2000x1000',
+      displayUnit: 'mm', // Görüntüleme birimi; vektör/CNC koordinatları her zaman mm.
       widthMm: 2000,
       heightMm: 1000,
     },
@@ -82,8 +83,8 @@ export function createDefaultState() {
     },
 
     lighting: {
-      enabled: true,
-      mode: 'both', // 'front' | 'halo' | 'both' | 'none'
+      enabled: false,
+      mode: 'none', // 'front' | 'halo' | 'both' | 'none'
       colorHex: '#ffc982',
       ledKind: 'mono', // 'mono' | 'rgb'
       frontIntensity: 1.0,
@@ -176,7 +177,7 @@ export function createDefaultState() {
         visible: true,
         locked: false,
         groupId: null,
-        constructionType: 'fileli',
+        constructionType: 'metal',
         fileWidthMm: 4,
         faceMaterial: 'aynaAltin',
         faceColor: '#f5c66a',
@@ -187,7 +188,7 @@ export function createDefaultState() {
         fileColor: '#f5c66a',
         acrylicMaterial: 'opalPleksi',
         acrylicColor: '#f3f3ee',
-        lightingMode: 'both',
+        lightingMode: 'none',
       },
     ],
 
@@ -215,12 +216,14 @@ export function createDefaultState() {
       rates: { TRY: 1, USD: 34.5, EUR: 37.2 },
       vatRate: 0.2,
       overheadPct: 12,
-      pricingMode: 'markup', // 'markup' | 'margin'
+      pricingMode: 'unit', // 'unit' | 'markup' | 'margin'
       markupPct: 35,
       marginPct: 26,
       discountPct: 0,
       manualAdjustment: 0,
       mountingId: 'duvar', // 'duvar' | 'profil' | 'yok'
+      priceBook: {}, // per-material independent buy/sell rates, keyed by face|side|file|acrylic|process
+      extraItems: [], // custom project costs and customer sell amounts
       unitCosts: {
         acrylicPerM2: { value: 1450, currency: 'TRY' },
         metalFacePerM2: { value: 2200, currency: 'TRY' },
@@ -245,10 +248,15 @@ export function createDefaultState() {
     },
 
     quote: {
-      companyName: 'Kutu Harf Stüdyosu İmalat A.Ş.',
-      companyPhone: '+90 (312) 000 00 00',
-      companyEmail: 'teklif@kutuharfstudyosu.com',
-      companyAddress: 'Ostim OSB, Ankara',
+      quoteNumber: 'KT-0001',
+      companyLogoDataUrl: null,
+      customerLogoDataUrl: null,
+      customerAddress: '',
+      paymentTerms: 'Ödeme koşulları karşılıklı anlaşma ile belirlenecektir.',
+      companyName: 'Üretici Firma Adı',
+      companyPhone: '',
+      companyEmail: '',
+      companyAddress: '',
       customerName: '',
       customerCompany: '',
       customerPhone: '',
