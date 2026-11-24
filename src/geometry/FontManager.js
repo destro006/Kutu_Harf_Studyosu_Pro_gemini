@@ -96,6 +96,7 @@ export class FontManager {
     this.fonts = new Map();
     this.customCatalog = this.loadCustomCatalog();
     this.cssRegistered = new Set();
+    this.assetBytes=new Map();
   }
 
   getAllFontMetas() {
@@ -135,21 +136,24 @@ export class FontManager {
     }
   }
 
-  async ensureCssFont(meta) {
-    if (this.cssRegistered.has(meta.id) || typeof document === 'undefined' || typeof FontFace === 'undefined') return;
-    this.cssRegistered.add(meta.id);
-    const asset = FONT_ASSETS.find(f => f.id === meta.id);
-    if (!asset) return;
-    for (const url of asset.files) {
-      try {
-        const name = meta.family.split(',')[0].replace(/['"]/g, '').trim();
-        const face = new FontFace(name, `url(${url})`, { weight: String(meta.weight) });
-        await face.load();
-        document.fonts.add(face);
-      } catch {
-        // Fallback silently
-      }
+  getAssetBytes(url){
+    if(!this.assetBytes.has(url)){
+      const pending=fetch(url).then(r=>{if(!r.ok)throw Error('Font yüklenemedi: '+url);return r.arrayBuffer();});
+      this.assetBytes.set(url,pending);pending.catch(()=>this.assetBytes.delete(url));
     }
+    return this.assetBytes.get(url);
+  }
+  async ensureCssFont(meta) {
+    if(this.cssRegistered.has(meta.id)||typeof document==='undefined'||typeof FontFace==='undefined')return;
+    this.cssRegistered.add(meta.id);
+    const asset=FONT_ASSETS.find(f=>f.id===meta.id);if(!asset)return;
+    try{
+      await Promise.all(asset.files.map(async url=>{
+        const name=meta.family.split(',')[0].replace(/['"]/g,'').trim();
+        const face=new FontFace(name,(await this.getAssetBytes(url)).slice(0),{weight:String(meta.weight)});
+        await face.load();document.fonts.add(face);
+      }));
+    }catch{this.cssRegistered.delete(meta.id);}
   }
 
   async loadFont(fontId) {
@@ -157,16 +161,8 @@ export class FontManager {
 
     const builtIn = FONT_ASSETS.find(f => f.id === fontId);
     if (builtIn) {
-      const promise = Promise.all(
-        builtIn.files.map(url =>
-          fetch(url)
-            .then(r => {
-              if (!r.ok) throw new Error(`Font yüklenemedi: ${url}`);
-              return r.arrayBuffer();
-            })
-            .then(buf => parseFont(buf))
-        )
-      );
+      const promise=Promise.all(builtIn.files.map(url=>this.getAssetBytes(url).then(buf=>parseFont(buf.slice(0)))));
+      promise.catch(()=>this.fonts.delete(fontId));
       this.fonts.set(fontId, promise);
       this.ensureCssFont(builtIn);
       return promise;
