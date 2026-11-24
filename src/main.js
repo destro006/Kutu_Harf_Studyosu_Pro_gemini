@@ -11,7 +11,7 @@ import { renderPropertyBar } from './ui/PropertyBar.js';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=pro3-ui2';
 import { generateNestedGcode, generateNestedHpgl } from './export/CncGcodeExporter.js';
 import { HistoryManager } from './core/history.js';
 import {
@@ -70,7 +70,7 @@ import { calculateManufacturingMetrics } from './manufacturing/MetricsCalculator
 import { SHEET_PRESETS, extractNestingItems, runTrueShapeNesting, validateSheetLayout, editNestingPlacement, refreshNestingSheet } from './manufacturing/NestingEngine.js';
 import { importVectorText } from './manufacturing/VectorFileImport.js';
 import { importPdfFile } from './manufacturing/PdfVectorImport.js';
-import { runVectorImportJob } from './manufacturing/AsyncVectorImport.js';
+import { runVectorImportJob } from './manufacturing/AsyncVectorImport.js?v=pro3-ui2';
 import {
   createNestingImportedTab, getActiveNestingImportedItems, openNestingImportTab,
   switchNestingTab, closeNestingImportedTab, syncActiveNestingTab, applyNestingPartOverrides,
@@ -2867,6 +2867,7 @@ async function importNestingVectorFiles(fileList, root) {
           createNestingImportedTab(state.nesting,job.imported);
           state.nesting.sheets=job.nesting.sheets;
           state.nesting.unplaced=job.nesting.unplaced;
+          state.nesting.optimizationInfo=job.nesting.optimization||null;
           syncActiveNestingTab(state.nesting);
         }
       },false);
