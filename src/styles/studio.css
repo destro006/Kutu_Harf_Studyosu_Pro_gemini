@@ -1669,3 +1669,13 @@ html,body{height:100%;overflow:hidden}
  .ribbon-categories button{flex:none}
  #canvasTransformHud{max-width:calc(100% - 24px)}
 }
+
+.background-preview{background-size:cover;background-position:center}
+.background-preview-studioPremium{background-color:#29313d}
+.background-preview-traverten{background-color:#c9b99f}
+.background-preview-kompozit{background-color:#35404b}
+.background-preview-siyahMermer{background-color:#15171e}
+.background-preview-cevizPanel{background-color:#674331}
+.background-preview-beyazSiva{background-color:#ddd9cd}
+@media(max-width:960px){.inspector-col{top:115px;}.inspector-col.mobile-open{top:115px}}
+@media(max-width:600px){.inspector-col,.inspector-col.mobile-open{top:101px}}
