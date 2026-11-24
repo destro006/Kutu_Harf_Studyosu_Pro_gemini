@@ -96,6 +96,11 @@ export function attachShortcuts(handlers) {
       if (ctrl && key === 'i') { e.preventDefault(); handlers.onImport?.(); return; }
     }
 
+    // A focused part-list checkbox is a selection control, not a text editor.
+    if(e.key==='Delete'&&!ctrl&&!e.altKey&&handlers.isNesting?.()){
+      const blocks=el=>isAnyInputTarget(el)&&!(el?.matches?.('[data-cws-check]'));
+      if(!blocks(activeEl)&&!blocks(e.target)){e.preventDefault();if(!e.repeat)handlers.onDelete?.();return;}
+    }
     // Never intercept single-key tools or Delete while typing in any input/select
     if (isAnyInputTarget(e.target) || isAnyInputTarget(activeEl)) {
       return;
