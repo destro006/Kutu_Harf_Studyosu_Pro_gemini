@@ -4,7 +4,7 @@ import {binaryDxfToText} from './BinaryDxfImport.js';
 import {importLegacyPostScript,extractAiOutlineFallback} from './LegacyPostScriptImport.js';
 import { importVectorText, groupRings } from './VectorFileImport.js';
 import { pdfOperatorRings } from './PdfVectorImport.js';
-import { optimizeNesting } from './NestingOptimizer.js?v=pro3-fast3';
+import { optimizeNesting } from './NestingOptimizer.js?v=pro4-exact-nfp';
 import { runTrueShapeNesting, validateSheetLayout } from './NestingEngine.js';
 
 function processJob(job,onProgress=()=>{}){
@@ -44,10 +44,10 @@ function processJob(job,onProgress=()=>{}){
     imported=job.imported;
   } else throw Error('Bilinmeyen içe aktarma işlemi.');
   if(!imported.items?.length)throw Error('Dosyada üretilebilir kapalı vektör parçası yok.');
-  const config={...(job.nesting||{}),optimizationBudgetMs:3000,quickImport:job.operation!=='nest'||Boolean(job.nesting?.quickImport)};
+  const config={...(job.nesting||{}),optimizationBudgetMs:job.operation==='nest'?3500:2500,quickImport:job.operation!=='nest'||Boolean(job.nesting?.quickImport)};
   // Small jobs receive a compact first layout instead of showing a shelf as final.
   const compactImport=job.operation!=='nest'&&imported.items.length<=60;
-  const result=compactImport?optimizeNesting(imported.items,{...config,optimizationBudgetMs:3000},job.lockedSheets||[],onProgress):job.operation==='nest'&&!config.quickImport?optimizeNesting(imported.items,config,job.lockedSheets||[],onProgress):runTrueShapeNesting(imported.items,config,job.lockedSheets||[]);
+  const result=compactImport?optimizeNesting(imported.items,{...config,optimizationBudgetMs:2500},job.lockedSheets||[],onProgress):job.operation==='nest'&&!config.quickImport?optimizeNesting(imported.items,config,job.lockedSheets||[],onProgress):runTrueShapeNesting(imported.items,config,job.lockedSheets||[]);
   if(!result.optimization)result.optimization={engineVersion:'3.0-pro',selectedEngine:'quick-baseline',attempts:1,proAttempts:0,proCompleted:0,nfpAttempts:0,elapsedMs:0};
   for(const sheet of result.sheets){
     const test=validateSheetLayout(sheet,result.minSep,config.allowHoleNesting!==false);

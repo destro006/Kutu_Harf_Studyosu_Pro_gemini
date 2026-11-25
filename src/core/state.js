@@ -201,8 +201,8 @@ export function createDefaultState() {
       kerfMm: 0.4,
       allowedAngles: [0, 90, 180, 270],
       fineAngleStep: 0, // 0 = use allowedAngles, >0 = e.g. 45 or 15 deg steps
-      rotationStepDeg: 90, // 0=fixed, 180=two positions, 90=quarter turns, 45=eighth turns
-      placementStrategy: 'vertical', // compact | vertical | bottomLeft
+      rotationStepDeg: 'auto', // 'auto' | 0 | 180 | 90 | 45 | 30 | 15 | 5
+      placementStrategy: 'auto', // 'auto' | 'compact' | 'vertical' | 'bottomLeft'
       previewColors: { body: '#c89343', holes: '#c89343' },
       copies: 1,
       grainDirection: 'none',

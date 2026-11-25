@@ -1512,6 +1512,14 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 
 .nesting-sheet-svg .nest-picked [data-nest-body]{stroke:#fff;stroke-width:4;fill-opacity:.83}.nesting-sheet-svg{touch-action:none;user-select:none}.cad-rail button:disabled{opacity:.3;cursor:not-allowed}
 
+.nesting-advanced-details{margin:10px 0 6px;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:rgba(255,255,255,.025)}
+.nesting-advanced-summary{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 9px;cursor:pointer;list-style:none;font-size:11.5px;font-weight:600;color:#dfd9ce;user-select:none}
+.nesting-advanced-summary::-webkit-details-marker{display:none}
+.nesting-advanced-summary span::before{content:'▸ ';color:#d6ad65;display:inline-block;transition:transform .15s}
+.nesting-advanced-details[open] .nesting-advanced-summary span::before{content:'▾ '}
+.nesting-advanced-summary small{font-weight:500;font-size:10px;padding:2px 6px;border-radius:999px;background:rgba(214,173,101,.14);color:#e9c77f;white-space:nowrap}
+.nesting-advanced-body{padding:4px 9px 9px;border-top:1px solid rgba(255,255,255,.08)}
+
 .studio-body.nesting-isolated{grid-template-columns:82px minmax(0,1fr) 0!important}.studio-body.nesting-isolated.rail-expanded{grid-template-columns:168px minmax(0,1fr) 0!important}.studio-body.nesting-isolated>.inspector-col{display:none!important}@media(max-width:960px){.studio-body.nesting-isolated{grid-template-columns:56px minmax(0,1fr)!important}.studio-body.nesting-isolated.rail-expanded{grid-template-columns:56px minmax(0,1fr)!important}}
 
 /* Embedded Image Tracer Studio full-bleed workspace */

@@ -219,6 +219,39 @@ export function validateSheetLayout(sheet, minSep = 5, allowHoleNesting = sheet.
 }
 
 /**
+ * Resolves allowed rotation angles cleanly for both NestingEngine and NestingEnginePro.
+ * When brushed grain / texture direction is enforced, zero rotation ([0]) is strictly locked.
+ */
+export function resolveNestingAngles(config = {}, itemCount = 10) {
+  if (
+    config.enforceGrainDirection ||
+    config.grainDirection === 'horizontal' ||
+    config.grainDirection === 'vertical'
+  ) {
+    return [0];
+  }
+  if (config.rotationStepDeg === 'auto') {
+    if (itemCount <= 24) {
+      return [0, 180, 90, 270, 45, 135, 225, 315, 30, 60, 120, 150, 210, 240, 300, 330];
+    }
+    if (itemCount <= 60) {
+      return [0, 180, 90, 270, 45, 135, 225, 315];
+    }
+    return [0, 180, 90, 270];
+  }
+  if (config.rotationStepDeg != null && [0, 5, 15, 30, 45, 90, 180].includes(Number(config.rotationStepDeg))) {
+    const step = Number(config.rotationStepDeg);
+    return step === 0 ? [0] : Array.from({ length: 360 / step }, (_, i) => i * step);
+  }
+  if (config.fineAngleStep > 0) {
+    const out = [];
+    for (let a = 0; a < 360; a += config.fineAngleStep) out.push(a);
+    return out;
+  }
+  return config.allowedAngles?.length ? config.allowedAngles : [0, 90, 180, 270];
+}
+
+/**
  * Runs material-aware true-shape irregular polygon nesting.
  * Groups incompatible materials/thicknesses into separate batches automatically.
  */
@@ -252,21 +285,12 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
   const minSep = Math.max(0.5, clearanceMm + kerfMm);
   const usableW = sheetWidthMm - mL - mR;
   const usableH = sheetHeightMm - mB - mT;
+  const effectiveStrategy = placementStrategy === 'auto'
+    ? (sheetWidthMm >= sheetHeightMm ? 'compact' : 'bottomLeft')
+    : placementStrategy;
 
-  // The UI rotation selector is authoritative. Older projects that lack it
-  // retain their explicit allowedAngles/fineAngleStep settings.
-  let angles = allowedAngles.length ? allowedAngles : [0, 90, 180, 270];
-  if (rotationStepDeg != null && [0, 5, 15, 30, 45, 90, 180].includes(Number(rotationStepDeg))) {
-    angles = Number(rotationStepDeg) === 0 ? [0] :
-      Array.from({length:360 / Number(rotationStepDeg)}, (_, i) => i * Number(rotationStepDeg));
-  } else if (fineAngleStep > 0) {
-    angles = [];
-    for (let a = 0; a < 360; a += fineAngleStep) angles.push(a);
-  }
-  if (enforceGrainDirection || grainDirection === 'horizontal' || grainDirection === 'vertical') {
-    angles = angles.filter(a => a % 180 === 0);
-    if (!angles.length) angles = [0, 180];
-  }
+  // The UI rotation selector is authoritative. When brush/grain lock is active, zero rotation [0] is forced.
+  const angles = resolveNestingAngles({ allowedAngles, fineAngleStep, rotationStepDeg, enforceGrainDirection, grainDirection }, items.length);
 
   // Group items by materialGroup so acrylic and metal never share a sheet
   const batches = new Map();
@@ -346,7 +370,7 @@ export function runTrueShapeNesting(items, config = {}, existingLockedSheets = [
       return true;
     };
 
-    const choose=(sheet,variants)=>quickImport||performance.now()>=deadline?findQuickPlacement(sheet,variants,mL,mB,sheetWidthMm-mR,sheetHeightMm-mT,minSep):findBestPlacementOnSheet(sheet,variants,mL,mB,sheetWidthMm-mR,sheetHeightMm-mT,allowHoleNesting,fitsOnSheet,minSep,placementStrategy,deadline,nfpSearch);
+    const choose=(sheet,variants)=>quickImport||performance.now()>=deadline?findQuickPlacement(sheet,variants,mL,mB,sheetWidthMm-mR,sheetHeightMm-mT,minSep):findBestPlacementOnSheet(sheet,variants,mL,mB,sheetWidthMm-mR,sheetHeightMm-mT,allowHoleNesting,fitsOnSheet,minSep,effectiveStrategy,deadline,nfpSearch);
     for (const item of sorted) {
       if (lockedIds.has(item.id)) continue;
 

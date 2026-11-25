@@ -148,6 +148,7 @@ const history = {
 let vector2D = null;
 let contextMenu = null;
 let activeSheetIdx = 0;
+let nestingAdvancedOpen = false;
 const fontManager = new FontManager();
 const fontMap = new Map();
 window.__khsFontMap = fontMap;
@@ -1755,9 +1756,9 @@ function renderNestingWs(state) {
       <div class="field-row">
         <label>Doku / Fırça Yönü</label>
         <select id="nestGrain">
-          <option value="none" ${n.grainDirection === 'none' ? 'selected' : ''}>Serbest (0/90/180/270°)</option>
-          <option value="horizontal" ${n.grainDirection === 'horizontal' ? 'selected' : ''}>Yatay Doku (0/180°)</option>
-          <option value="vertical" ${n.grainDirection === 'vertical' ? 'selected' : ''}>Dikey Doku (0/180°)</option>
+          <option value="none" ${n.grainDirection === 'none' ? 'selected' : ''}>Serbest (Otomatik)</option>
+          <option value="horizontal" ${n.grainDirection === 'horizontal' ? 'selected' : ''}>Yatay Doku (0° Sabit)</option>
+          <option value="vertical" ${n.grainDirection === 'vertical' ? 'selected' : ''}>Dikey Doku (0° Sabit)</option>
         </select>
       </div>
       <div class="field-row">
@@ -2841,8 +2842,8 @@ function syncNestingSettingsControls(sidebar, nesting, displayUnit) {
     cwsNestH: show(nesting.sheetHeightMm),
     cwsNestSp: show(nesting.clearanceMm),
     cwsNestMg: show(nesting.marginLeftMm),
-    cwsNestRot: nesting.rotationStepDeg ?? 90,
-    cwsNestStrategy: nesting.placementStrategy || 'compact',
+    cwsNestRot: nesting.rotationStepDeg ?? 'auto',
+    cwsNestStrategy: nesting.placementStrategy || 'auto',
     cwsNestBodyColor: nesting.previewColors?.body || '#c89343',
     cwsNestHoleColor: nesting.previewColors?.holes || '#c89343',
     cwsNestHoles: nesting.allowHoleNesting,
@@ -2853,6 +2854,17 @@ function syncNestingSettingsControls(sidebar, nesting, displayUnit) {
     if (!input || value == null || input === document.activeElement) continue;
     if (input.type === 'checkbox') input.checked = Boolean(value);
     else if (String(input.value) !== String(value)) input.value = String(value);
+  }
+  const rotSel = sidebar.querySelector('#cwsNestRot');
+  if (rotSel) {
+    rotSel.disabled = Boolean(nesting.enforceGrainDirection);
+    rotSel.title = nesting.enforceGrainDirection ? 'Fırça yönü kısıtı açıkken parçalar 0° sabit kalır' : '';
+  }
+  const advBadge = sidebar.querySelector('#cwsNestAdvancedBadge');
+  if (advBadge) {
+    advBadge.textContent = nesting.enforceGrainDirection
+      ? '0° Sabit · Otomatik'
+      : (nesting.rotationStepDeg === 'auto' || nesting.rotationStepDeg == null ? 'Otomatik · En İyi Geçirme' : `${nesting.rotationStepDeg}° Adım`);
   }
 }
 
@@ -2867,7 +2879,7 @@ function updateCenterWorkspaces(state) {
       if(currentNestingImportController&&targetTabId==='import'&&currentTabId==='import')return;
       if(nestingGesture?.active)return;
       syncNestingSelectionScope(state);
-      const html=renderNestingCenter(state,{activeSheetIdx,selectedPlacementId:selectedNestingId,selectedPlacementIds:[...selectedNestingIds]});
+      const html=renderNestingCenter(state,{activeSheetIdx,selectedPlacementId:selectedNestingId,selectedPlacementIds:[...selectedNestingIds],advancedOpen:nestingAdvancedOpen});
       if(el._lastHtml===html)return;
       el._lastHtml=html;
       if (grid && currentTabId === targetTabId && el.querySelector('.nesting-workspace')?.dataset.displayUnit===normalizeDisplayUnit(state.pageLayout?.displayUnit) && grid.querySelector('.cws-side-r')) {
@@ -3063,7 +3075,7 @@ function applyNestingEdit(n,p,action,value){
     n.partOverrides[p.id]={...old,scale:(old.scale||1)*factor};
     return true;
   }
-  if(action==='rot'&&n.enforceGrainDirection&&Math.abs(value%180)>1e-6)return false;
+  if(action==='rot'&&n.enforceGrainDirection&&Math.abs(value)>1e-6)return false;
   return editNestingPlacement(p,action,value);
 }
 function editSelectedNesting(action,value){
@@ -3165,7 +3177,7 @@ function bindNestingGestures(root){
     if(d.tool==='rotate'){
       let a=(Math.atan2(p.y-d.center.y,p.x-d.center.x)-Math.atan2(d.start.y-d.center.y,d.start.x-d.center.x))*180/Math.PI;
       if(e.shiftKey)a=Math.round(a/15)*15;
-      if(store.get().nesting.enforceGrainDirection)a=Math.round(a/180)*180;
+      if(store.get().nesting.enforceGrainDirection)a=0;
       d.angle=a;d.group.setAttribute('transform','rotate('+a+' '+d.center.x+' '+d.center.y+')');
     }
     if(d.tool==='scale'){
@@ -3290,10 +3302,13 @@ function bindNestingCenterEvents(root) {
   });
   root.querySelector('#cwsNestHoles')?.addEventListener('change', e =>
     repackNestingSettings('Delik içi yerleşim', n => { n.allowHoleNesting = e.target.checked; }));
+  root.querySelector('#cwsNestAdvanced')?.addEventListener('toggle', e => {
+    nestingAdvancedOpen = Boolean(e.target.open);
+  });
   root.querySelector('#cwsNestGrain')?.addEventListener('change', e =>
     repackNestingSettings('Fırça yönü kısıtı', n => { n.enforceGrainDirection = e.target.checked; }));
   root.querySelector('#cwsNestRot')?.addEventListener('change', e =>
-    repackNestingSettings('Dönüş adımı', n => { n.rotationStepDeg = Number(e.target.value); }));
+    repackNestingSettings('Dönüş adımı', n => { n.rotationStepDeg = e.target.value === 'auto' ? 'auto' : Number(e.target.value); }));
   root.querySelector('#cwsNestStrategy')?.addEventListener('change', e =>
     repackNestingSettings('Nesting yönü', n => { n.placementStrategy = e.target.value; }));
   const setNestingPreviewColor = (field, value) => {

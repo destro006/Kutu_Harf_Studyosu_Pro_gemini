@@ -43,3 +43,60 @@ console.log('✓ Clipper NFP, fixed-sheet packing, hole policy, exact contour pr
  assert(newFrame.locked);assert.deepEqual(newFrame.outer,oldFrame.outer);
  assert(after.optimization.proAttempts>0);
  console.log('✓ Supplied v3 Pro: hole policy, rotation, locked positions, production cut length and validated optimization integration');
+
+ // Exact Minkowski NFP + Multi-Directional Compaction: curved crescent arcs + U spoon-nesting
+ const makeArc = (id, rOut = 120, rIn = 85, a0 = -55, a1 = 55, steps = 16) => {
+   const pts = [];
+   for (let i = 0; i <= steps; i++) {
+     const a = ((a0 + (a1 - a0) * (i / steps)) * Math.PI) / 180;
+     pts.push({ x: Math.cos(a) * rOut, y: Math.sin(a) * rOut });
+   }
+   for (let i = steps; i >= 0; i--) {
+     const a = ((a0 + (a1 - a0) * (i / steps)) * Math.PI) / 180;
+     pts.push({ x: Math.cos(a) * rIn, y: Math.sin(a) * rIn });
+   }
+   const b = polygonBounds(pts);
+   return make(id, pts.map(p => [p.x - b.minX, p.y - b.minY]));
+ };
+ const makeU = (id, w = 130, h = 160, t = 28) => make(id, [
+   [0, 0], [w, 0], [w, h], [w - t, h], [w - t, t], [t, t], [t, h], [0, h],
+ ]);
+ const curvedBatch = [
+   makeU('U0'),
+   makeArc('ARC0'),
+   makeArc('ARC1'),
+   makeArc('ARC2'),
+   makeArc('ARC3'),
+   makeArc('ARC4'),
+ ];
+ const curvedCfg = { sheetWidthMm: 520, sheetHeightMm: 340, marginMm: 8, clearanceMm: 4, kerfMm: 0, rotationStepDeg: 'auto', placementStrategy: 'auto', optimizationBudgetMs: 2200 };
+ const curvedBaseline = runTrueShapeNesting(curvedBatch, { ...curvedCfg, quickImport: true });
+ const curvedOpt = optimizeNesting(curvedBatch, curvedCfg);
+ assert.equal(curvedOpt.unplaced.length, 0);
+ assert.equal(curvedOpt.sheetCount, 1);
+ assert(validateSheetLayout(curvedOpt.sheets[0], 4, true).valid);
+ const envOf = (res) => {
+   const s = res.sheets[0];
+   return Math.max(0, ...s.placements.map(p => p.bounds.maxX)) * Math.max(0, ...s.placements.map(p => p.bounds.maxY));
+ };
+ const envRatio = envOf(curvedOpt) / Math.max(1, envOf(curvedBaseline));
+ assert(envRatio <= 0.78, `Expected curved arcs + U to compact envelope by >=22% vs baseline, got ratio ${envRatio.toFixed(3)}`);
+ assert(curvedOpt.interlockedPairs >= 3, `Expected >=3 interlocked curved pairs, got ${curvedOpt.interlockedPairs}`);
+ for (const p of curvedOpt.sheets[0].placements) {
+   const orig = curvedBatch.find(x => x.id === p.id);
+   assert.equal(p.outer.length, orig.outer.length);
+   assert(Math.abs(polygonArea(p.outer) - polygonArea(orig.outer)) < 0.01);
+ }
+
+ // Strict 0-degree grain lock (zero rotation across Pro, baseline, and optimizer)
+ for (const solver of [
+   runTrueShapeNesting(curvedBatch, { ...curvedCfg, sheetWidthMm: 900, sheetHeightMm: 500, enforceGrainDirection: true }),
+   runProNesting(curvedBatch, { ...curvedCfg, sheetWidthMm: 900, sheetHeightMm: 500, enforceGrainDirection: true, timeBudgetMs: 800 }),
+   optimizeNesting(curvedBatch, { ...curvedCfg, sheetWidthMm: 900, sheetHeightMm: 500, enforceGrainDirection: true, optimizationBudgetMs: 1000 }),
+ ]) {
+   assert.equal(solver.unplaced.length, 0);
+   for (const p of solver.sheets.flatMap(s => s.placements)) {
+     assert.equal(p.angleDeg, 0, `enforceGrainDirection must lock every part to 0 deg, got ${p.angleDeg}`);
+   }
+ }
+ console.log(`✓ Exact Minkowski NFP crescent/U interlocking (env ${(envRatio * 100).toFixed(1)}%, interlocked=${curvedOpt.interlockedPairs}) & strict 0° grain lock verified`);
