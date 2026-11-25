@@ -36,6 +36,13 @@ import { buildChannelComponent } from '../src/geometry/ChannelLetterGeometry.js'
 import { healPolygonWithHoles, pointInPolygon, hasSelfIntersection } from '../src/geometry/PolygonOffset.js';
 import { calculateProjectCosts, COST_ROLE_LABELS } from '../src/manufacturing/CostEngine.js';
 import { PostProcessor } from '../src/render/PostProcessor.js';
+import {
+  rotateNestingParts,
+  alignNestingParts,
+  cloneNestingPlacements,
+  pasteNestingParts,
+} from '../src/manufacturing/NestingSelection.js';
+import { attachShortcuts } from '../src/cad/Shortcuts.js';
 
 // 1. Machine profiles catalogue (>= 40 profiles, 5 original IDs intact, dialect G-Code & HPGL)
 assert(MACHINE_PROFILES.length >= 40, `Expected >=40 profiles, got ${MACHINE_PROFILES.length}`);
@@ -208,10 +215,10 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v8'));
-assert(rootHtml.includes('./src/main.js?v=20261126-v22'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v22'));
+assert(rootHtml.includes('./src/main.js?v=20261126-v23'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v23'));
 assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
-assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v22'));
+assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v23'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -659,3 +666,88 @@ const stripSheetMacro = generateCorelVbaMacro([{
 }]);
 assert(decodedPs1.includes('KENAR_CITALARI') && stripSheetMacro.includes('KENAR_CITALARI'));
 console.log('✓ Cinzel Z & node auto-healing, vivid Fileli/Pleksi lighting glow, return sidewall costing & Kenar Çıtaları nesting verified');
+
+// 16. Nesting CorelDRAW CAD features: Ctrl+A select-all + batch delete, 2-click rotate handles + top rotate bar, alignment & cut/copy/paste/duplicate
+const cadState = createDefaultState();
+const mkRectPart = (id, x, y, w, h, locked = false) => ({
+  id, label: id, partType: 'Gövde', partGroup: 'body', material: 'aynaAltin', thicknessMm: 2,
+  angleDeg: 0, areaMm2: w * h, xMm: x, yMm: y, locked, holes: [],
+  outer: [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }],
+  bounds: { minX: x, minY: y, maxX: x + w, maxY: y + h, width: w, height: h },
+});
+cadState.nesting.sheets = [{
+  index: 1, name: 'Levha 1', materialGroup: 'Altın', widthMm: 1000, heightMm: 500,
+  marginLeftMm: 10, marginRightMm: 10, marginTopMm: 10, marginBottomMm: 10,
+  placements: [mkRectPart('p1', 20, 20, 60, 40), mkRectPart('p2', 120, 80, 80, 40), mkRectPart('p3', 300, 140, 100, 40)],
+}];
+// Rotate 90 deg around single part
+assert.deepEqual(rotateNestingParts(cadState.nesting, 0, ['p1'], 90, 5), ['p1']);
+const p1Rot = cadState.nesting.sheets[0].placements[0];
+assert(Math.abs(p1Rot.bounds.width - 40) < 1 && Math.abs(p1Rot.bounds.height - 60) < 1, 'Rotated 60x40 part by 90° must become 40x60');
+// Grain direction blocks rotation
+cadState.nesting.enforceGrainDirection = true;
+assert.deepEqual(rotateNestingParts(cadState.nesting, 0, ['p1'], 45, 5), []);
+cadState.nesting.enforceGrainDirection = false;
+// Alignment: left to last selected ('p3' minX=300), then page center
+assert(alignNestingParts(cadState.nesting, 0, ['p1', 'p2', 'p3'], 'left', 5).length >= 2);
+assert.equal(Math.round(cadState.nesting.sheets[0].placements[0].bounds.minX), 300);
+assert.equal(Math.round(cadState.nesting.sheets[0].placements[1].bounds.minX), 300);
+alignNestingParts(cadState.nesting, 0, ['p1'], 'page', 5);
+assert.equal(Math.round((p1Rot.bounds.minX + p1Rot.bounds.maxX) * 0.5), 500);
+assert.equal(Math.round((p1Rot.bounds.minY + p1Rot.bounds.maxY) * 0.5), 250);
+// Clone & paste
+const copied = cloneNestingPlacements([p1Rot, cadState.nesting.sheets[0].placements[1]]);
+const pastedIds = pasteNestingParts(cadState.nesting, 0, copied, { offsetX: 30, offsetY: 20, minSep: 5 });
+assert.equal(pastedIds.length, 2);
+assert.equal(cadState.nesting.sheets[0].placements.length, 5);
+assert(pastedIds.every(id => id.includes('_copy_')));
+
+// Visual rotate gizmo + floating #nestingRotateBar HTML
+const selSvg = renderNestingSvg(cadState.nesting.sheets[0], new Set(['p1']), {}, 'mm', { rotateMode: false });
+assert(selSvg.includes('data-gizmo-mode="select"') && !selSvg.includes('data-nest-rotate-handle'));
+const rotSvg = renderNestingSvg(cadState.nesting.sheets[0], new Set(['p1']), {}, 'mm', { rotateMode: true });
+assert(rotSvg.includes('data-gizmo-mode="rotate"') && rotSvg.includes('data-nest-rotate-handle="top"'));
+assert.equal((rotSvg.match(/data-nest-rotate-handle="corner"/g) || []).length, 4);
+const rotCenterHtml = renderNestingCenter(cadState, { activeSheetIdx: 0, selectedPlacementId: 'p1', selectedPlacementIds: ['p1'], rotateMode: true });
+assert(rotCenterHtml.includes('id="nestingRotateBar"') && rotCenterHtml.includes('id="nestRotAngleInput"') && rotCenterHtml.includes('data-nest-rot-delta="90"'));
+
+// Shortcuts: Ctrl+A, Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+D, Delete, Backspace in Nesting
+let keyCb = null;
+const origWin = globalThis.window, origDoc = globalThis.document;
+const fired = [];
+try {
+  globalThis.window = { addEventListener: (t, fn) => { if (t === 'keydown') keyCb = fn; }, removeEventListener: () => {} };
+  const fakeCb = { tagName: 'INPUT', type: 'checkbox', matches: s => s === '[data-cws-check]' };
+  const numInput = { tagName: 'INPUT', type: 'number', matches: () => false };
+  globalThis.document = { activeElement: fakeCb };
+  const stopKeys = attachShortcuts({
+    isNesting: () => true,
+    onSelectAll: () => fired.push('selectAll'),
+    onCopy: () => fired.push('copy'),
+    onCut: () => fired.push('cut'),
+    onPaste: () => fired.push('paste'),
+    onDuplicate: () => fired.push('duplicate'),
+    onDelete: () => fired.push('delete'),
+  });
+  for (const ev of [
+    { key: 'a', ctrlKey: true },
+    { key: 'c', ctrlKey: true },
+    { key: 'x', ctrlKey: true },
+    { key: 'v', ctrlKey: true },
+    { key: 'd', ctrlKey: true },
+    { key: 'Delete' },
+    { key: 'Backspace' },
+  ]) {
+    keyCb({ ...ev, target: fakeCb, preventDefault() {} });
+  }
+  assert.deepEqual(fired, ['selectAll', 'copy', 'cut', 'paste', 'duplicate', 'delete', 'delete']);
+  globalThis.document.activeElement = numInput;
+  keyCb({ key: 'a', ctrlKey: true, target: numInput, preventDefault() {} });
+  assert.equal(fired.length, 7, 'Ctrl+A inside numeric input must not steal input selection');
+  stopKeys();
+} finally {
+  if (origWin === undefined) delete globalThis.window; else globalThis.window = origWin;
+  if (origDoc === undefined) delete globalThis.document; else globalThis.document = origDoc;
+}
+assert(mainJs.includes('function selectAllNestingParts()') && mainJs.includes('function duplicateNestingSelection()') && mainJs.includes("['model3d','materials','design2d','nesting'].includes(ws)"));
+console.log('✓ Nesting CorelDRAW CAD features (Ctrl+A, 2-click rotate gizmo/bar, alignment & cut/copy/paste/duplicate) verified');

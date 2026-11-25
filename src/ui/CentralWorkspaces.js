@@ -1,7 +1,7 @@
 import {normalizeDisplayUnit,formatMmAsUnit,formatDimensions,formatPresetLabel} from '../core/units.js';
 import { renderDetailedCostCenter } from './CostCenterView.js?v=qa8';
 import { ringLength, SHEET_PRESETS } from '../manufacturing/NestingEngine.js';
-import { renderNestingSvg } from './NestingView.js?v=20261126-v19';
+import { renderNestingSvg } from './NestingView.js?v=20261126-v23';
 import { renderNestingSourceTabs, renderNestingImportPane } from './NestingImportView.js?v=units6';
 import { MACHINE_PROFILES, MACHINE_PROFILE_CATEGORIES, getMachineProfile, validateNestedProduction } from '../export/CncGcodeExporter.js';
 import { formatMoney } from '../manufacturing/CostEngine.js';
@@ -56,6 +56,9 @@ export function renderNestingCenter(state, ctx) {
   const activeGroup = (ctx.activePartGroup && partGroupsMap.has(ctx.activePartGroup)) ? ctx.activePartGroup : null;
   const isSidewallMode = (n.targetPart || 'all') === 'sidewalls';
   const totalStripLenMm = sheets.reduce((sum, sh) => sum + sh.placements.filter(p => p.partGroup === 'sidewall_strip').reduce((a, p) => a + (p.bounds?.width || 0), 0), 0);
+  const rotateMode = Boolean(ctx.rotateMode && selectedIds.size > 0);
+  const primaryPart = (activeSheet?.placements || []).find(p => p.id === (ctx.selectedPlacementId || [...selectedIds].at(-1))) || (activeSheet?.placements || []).find(p => selectedIds.has(p.id));
+  const curRotDeg = primaryPart ? Number((primaryPart.angleDeg || 0).toFixed(1)) : 0;
   const renderPartRow = (p, colorDot = null) => `
     <div class="layer-item nesting-part-row ${selectedIds.has(p.id) ? 'on' : ''}" data-cws-pid="${escapeHtml(p.id)}" aria-selected="${selectedIds.has(p.id)}">
       <input type="checkbox" data-cws-check aria-label="${escapeHtml(p.label)} seç" ${selectedIds.has(p.id)?'checked':''}>
@@ -141,7 +144,19 @@ export function renderNestingCenter(state, ctx) {
           </div>
         </div>
         <div id="cwsNestSvgBox" class="nesting-sheet-fit">
-          ${renderNestingSvg(displayedSheet, selectedIds, n.previewColors, unit, { activeGroup, groupColors })}
+          ${renderNestingSvg(displayedSheet, selectedIds, n.previewColors, unit, { activeGroup, groupColors, rotateMode })}
+          ${rotateMode ? `
+            <div id="nestingRotateBar" class="nest-rotate-bar" role="toolbar" aria-label="Döndürme Kontrolleri">
+              <span class="nest-rot-title">↻ Döndür</span>
+              <input id="nestRotAngleInput" type="number" step="1" value="${curRotDeg}" title="Açı (derece)">
+              <span class="nest-rot-deg">°</span>
+              <button type="button" data-nest-rot-delta="-90" title="Sola 90° döndür">-90°</button>
+              <button type="button" data-nest-rot-delta="90" title="Sağa 90° döndür">+90°</button>
+              <button type="button" data-nest-rot-delta="180" title="180° çevir">180°</button>
+              <button type="button" data-nest-rot-abs="0" title="Açıyı sıfırla (0°)">0°</button>
+              <button type="button" id="nestRotDoneBtn" class="nest-rot-done" title="Döndürme modundan çık (Esc)">✓</button>
+            </div>
+          ` : ''}
           <span class="nesting-sheet-dimensions">${formatDimensions(displayedSheet.widthMm,displayedSheet.heightMm,unit)}</span>
           ${!activeSheet ? '<span class="nesting-sheet-empty-note">Parçaları yerleştirmek için Otomatik Yerleştir seçin</span>' : ''}
         </div>

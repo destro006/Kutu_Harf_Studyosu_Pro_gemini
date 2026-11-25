@@ -11,8 +11,16 @@ import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v15';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v22';
-import {nextNestingSelection,deleteNestingParts,moveNestingParts} from './manufacturing/NestingSelection.js?v=nest7';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v23';
+import {
+  nextNestingSelection,
+  deleteNestingParts,
+  moveNestingParts,
+  rotateNestingParts,
+  alignNestingParts,
+  cloneNestingPlacements,
+  pasteNestingParts,
+} from './manufacturing/NestingSelection.js?v=20261126-v23';
 import { generateNestedGcode, generateNestedHpgl,validateNestedProduction,MACHINE_PROFILES,getMachineProfile } from './export/CncGcodeExporter.js';
 import { HistoryManager } from './core/history.js';
 import {
@@ -34,7 +42,7 @@ import { LIGHT_COLOR_PRESETS, LIGHTING_MODES } from './render/LightingSystem.js'
 import {detectVectorFormat} from './manufacturing/VectorFormatDetect.js';
 import { BACKGROUND_SCENES } from './photomontage/BackgroundLibrary.js';
 import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js?v=20261125-v15';
-import { renderNestingSvg } from './ui/NestingView.js?v=20261126-v21';
+import { renderNestingSvg } from './ui/NestingView.js?v=20261126-v23';
 import { applySurfaceMaterialPreset, getDisplayedSurfaceMaterial } from './core/MaterialActions.js';
 import { getExportSelection } from './export/ExportScope.js';
 import { EXPORT_FORMAT_GROUPS, getExportFormat, formatSupportsSource } from './export/ExportFormatCatalog.js';
@@ -85,7 +93,7 @@ import {
   reversePolygonPath,
   combineSelectedToCompound,
 } from './cad/CadTools.js';
-import { SHORTCUT_LIST, SHORTCUT_GROUPS, attachShortcuts } from './cad/Shortcuts.js?v=nest7';
+import { SHORTCUT_LIST, SHORTCUT_GROUPS, attachShortcuts } from './cad/Shortcuts.js?v=20261126-v23';
 import { captureObjectClipboard, pasteObjectClipboard } from './core/ObjectClipboard.js';
 import { calculateManufacturingMetrics } from './manufacturing/MetricsCalculator.js';
 import { SHEET_PRESETS, extractNestingItems, runTrueShapeNesting, validateSheetLayout, editNestingPlacement, refreshNestingSheet } from './manufacturing/NestingEngine.js';
@@ -249,8 +257,24 @@ function setDocumentClipboardStatus(message) {
   const el = document.getElementById('docClipboardStatus');
   if (el) el.textContent = message;
 }
+let nestingRotateMode = false;
+let nestingClipboard = null;
 function copySelectionToClipboard(includeLocked = true) {
-  if(store.get().mainWorkspace==='nesting')return false;
+  if (store.get().mainWorkspace === 'nesting') {
+    const s = store.get();
+    syncNestingSelectionScope(s);
+    const pls = (s.nesting?.sheets?.[activeSheetIdx]?.placements || [])
+      .filter(p => selectedNestingIds.has(p.id) && (includeLocked || !p.locked));
+    if (!pls.length) {
+      setDocumentClipboardStatus('Önce nesting parçası seçin');
+      return false;
+    }
+    nestingClipboard = cloneNestingPlacements(pls);
+    const msg = `${nestingClipboard.length} nesting parçası panoya kopyalandı`;
+    setDocumentClipboardStatus(msg);
+    studioToast(msg);
+    return true;
+  }
   const next = captureObjectClipboard(store.get(), { includeLocked, sourceDocumentId: docManager.activeDocId });
   if (!next) {
     setDocumentClipboardStatus('Önce bir nesne seçin');
@@ -261,10 +285,33 @@ function copySelectionToClipboard(includeLocked = true) {
   return true;
 }
 function cutSelectionToClipboard() {
+  if (store.get().mainWorkspace === 'nesting') {
+    if (copySelectionToClipboard(false)) removeNestingSelection();
+    return;
+  }
   if (copySelectionToClipboard(false)) mutate('Kes', s => deleteSelectedLayers(s));
 }
 function pasteSelectionFromClipboard() {
-  if(store.get().mainWorkspace==='nesting')return;
+  if (store.get().mainWorkspace === 'nesting') {
+    if (!nestingClipboard?.length) {
+      studioToast('Nesting panosunda parça yok.', true);
+      return;
+    }
+    let pasted = [];
+    mutateData('Nesting yapıştır', s => {
+      pasted = pasteNestingParts(s.nesting, activeSheetIdx, nestingClipboard, { offsetX: 25, offsetY: 25, minSep: nestingSeparation(s.nesting) });
+    }, false);
+    if (pasted.length) {
+      selectedNestingIds = new Set(pasted);
+      selectedNestingId = pasted.at(-1);
+      nestingSelectionAnchor = selectedNestingId;
+      nestingRotateMode = false;
+      updateCenterWorkspaces(store.get());
+      updateNumericBar(store.get());
+      studioToast(`${pasted.length} parça yapıştırıldı.`);
+    }
+    return;
+  }
   if (!objectClipboard) {
     setDocumentClipboardStatus('Panoda nesne yok');
     return;
@@ -272,6 +319,41 @@ function pasteSelectionFromClipboard() {
   const offsetMm = objectClipboard.sourceDocumentId === docManager.activeDocId ? 40 : 0;
   mutate('Yapıştır', s => pasteObjectClipboard(s, objectClipboard, { offsetMm }));
   setDocumentClipboardStatus(`${objectClipboard.objects.length} nesne bu sekmeye aktarıldı`);
+}
+function duplicateNestingSelection() {
+  const s = store.get();
+  syncNestingSelectionScope(s);
+  const pls = (s.nesting?.sheets?.[activeSheetIdx]?.placements || [])
+    .filter(p => selectedNestingIds.has(p.id) && !p.locked);
+  if (!pls.length) return;
+  const clip = cloneNestingPlacements(pls);
+  let pasted = [];
+  mutateData('Nesting çoğalt', st => {
+    pasted = pasteNestingParts(st.nesting, activeSheetIdx, clip, { offsetX: 25, offsetY: 25, minSep: nestingSeparation(st.nesting) });
+  }, false);
+  if (pasted.length) {
+    selectedNestingIds = new Set(pasted);
+    selectedNestingId = pasted.at(-1);
+    nestingSelectionAnchor = selectedNestingId;
+    nestingRotateMode = false;
+    updateCenterWorkspaces(store.get());
+    updateNumericBar(store.get());
+    studioToast(`${pasted.length} parça çoğaltıldı.`);
+  }
+}
+function selectAllNestingParts() {
+  const s = store.get();
+  const sheet = s.nesting?.sheets?.[activeSheetIdx];
+  const pls = (sheet?.placements || []).filter(p => !activeNestingGroup || (p.partGroup || 'body') === activeNestingGroup);
+  nestingRotateMode = false;
+  selectedNestingIds = new Set(pls.map(p => p.id));
+  selectedNestingId = pls.at(-1)?.id ?? null;
+  nestingSelectionAnchor = selectedNestingId;
+  const wrap = document.getElementById('nestingCenterWrap');
+  if (wrap) wrap._lastHtml = null;
+  updateCenterWorkspaces(s);
+  updateNumericBar(s);
+  if (pls.length) studioToast(`${pls.length} parça seçildi (Ctrl+A).`);
 }
 
 let fontSearchQuery = '';
@@ -612,7 +694,18 @@ function editLighting(key,value){
   else scheduleRebuild(true);
 }
 function runAlignment(command){
- const s=store.get();if(!['model3d','materials','design2d'].includes(s.mainWorkspace||'model3d'))return;
+ const s=store.get();
+ if (s.mainWorkspace === 'nesting') {
+  syncNestingSelectionScope(s);
+  const ids = [...selectedNestingIds];
+  if (!ids.length) return;
+  nestingRepackController?.abort();
+  mutateData('Nesting hizalama · ' + (ALIGN_COMMANDS.find(c => c[0] === command)?.[1] || command), draft => {
+    alignNestingParts(draft.nesting, activeSheetIdx, ids, command, nestingSeparation(draft.nesting));
+  }, false);
+  return;
+ }
+ if(!['model3d','materials','design2d'].includes(s.mainWorkspace||'model3d'))return;
  const plan=alignmentPlan(s,command,o=>contourBounds(Vector2DCanvas.prototype._getObjectPolysWorld(o,fontMap)));
  if(!plan.length)return;
  mutate('Hizalama · '+(ALIGN_COMMANDS.find(c=>c[0]===command)?.[1]||command),draft=>applyAlignmentPlan(draft,plan));
@@ -620,8 +713,11 @@ function runAlignment(command){
 function updateAlignmentRail(state){
  const button=document.getElementById('btnAlignmentRail'),panel=document.getElementById('alignmentFlyout');
  if(!button||!panel)return;
- const enabled=['model3d','materials','design2d'].includes(state.mainWorkspace||'model3d');
- const count=state.objects.filter(o=>(state.selectedIds||[]).includes(o.id)&&!o.locked&&o.visible!==false).length;
+ const ws = state.mainWorkspace || 'model3d';
+ const enabled=['model3d','materials','design2d','nesting'].includes(ws);
+ const count = ws === 'nesting'
+  ? (state.nesting?.sheets?.[activeSheetIdx]?.placements || []).filter(p => selectedNestingIds.has(p.id) && !p.locked).length
+  : state.objects.filter(o=>(state.selectedIds||[]).includes(o.id)&&!o.locked&&o.visible!==false).length;
  button.disabled=!enabled;if(!enabled){panel.classList.add('hidden');button.setAttribute('aria-expanded','false');}
  for(const el of panel.querySelectorAll('[data-align-command]'))el.disabled=!enabled||count<(el.dataset.alignCommand==='page'?1:el.dataset.alignCommand.startsWith('dist')?3:2);
 }
@@ -3046,7 +3142,8 @@ function updateCenterWorkspaces(state) {
       if(currentNestingImportController&&targetTabId==='import'&&currentTabId==='import')return;
       if(nestingGesture?.active)return;
       syncNestingSelectionScope(state);
-      const html=renderNestingCenter(state,{activeSheetIdx,selectedPlacementId:selectedNestingId,selectedPlacementIds:[...selectedNestingIds],advancedOpen:nestingAdvancedOpen,activePartGroup:activeNestingGroup});
+      if (!selectedNestingIds.size) nestingRotateMode = false;
+      const html=renderNestingCenter(state,{activeSheetIdx,selectedPlacementId:selectedNestingId,selectedPlacementIds:[...selectedNestingIds],advancedOpen:nestingAdvancedOpen,activePartGroup:activeNestingGroup,rotateMode:nestingRotateMode});
       if(el._lastHtml===html)return;
       el._lastHtml=html;
       if (grid && currentTabId === targetTabId && el.querySelector('.nesting-workspace')?.dataset.displayUnit===normalizeDisplayUnit(state.pageLayout?.displayUnit) && grid.querySelector('.cws-side-r')) {
@@ -3074,6 +3171,7 @@ function updateCenterWorkspaces(state) {
         el.innerHTML = html;
       }
       bindNestingCenterEvents(el);
+      positionNestingRotateBar(el);
     }
   } else if (ws === 'cnc') {
     const el = document.getElementById('cncCenterWrap');
@@ -3288,7 +3386,7 @@ function syncWorkspaceRail(ws){
     b.disabled=isNest&&!supported.has(b.dataset.tool);
     b.classList.toggle('active',b.dataset.tool===(isNest?nestingTool:store.get().activeTool));
   }
-  for(const b of document.querySelectorAll('.cad-rail [data-action]'))b.disabled=isNest&&b.dataset.action!=='delete';
+  for(const b of document.querySelectorAll('.cad-rail [data-action]'))b.disabled=isNest&&!['delete','duplicate'].includes(b.dataset.action);
 }
 function removeNestingSelection(singleId=null){
  const state=store.get();syncNestingSelectionScope(state);
@@ -3343,6 +3441,24 @@ function moveNestingSelection(dx,dy,ids=[...selectedNestingIds]){
  nestingRepackController?.abort();
  mutateData('Nesting seçili parçaları taşı',s=>moveNestingParts(s.nesting,activeSheetIdx,ids,dx,dy,nestingSeparation(s.nesting)),false);
 }
+function positionNestingRotateBar(root) {
+  const bar = root?.querySelector('#nestingRotateBar');
+  const box = root?.querySelector('#cwsNestSvgBox');
+  const gizmo = root?.querySelector('.nest-transform-gizmo[data-gizmo-mode="rotate"]');
+  if (!bar || !box || !gizmo) return;
+  const boxRect = box.getBoundingClientRect();
+  const gizmoRect = gizmo.getBoundingClientRect();
+  if (!boxRect.width || !gizmoRect.width) return;
+  const bw = bar.offsetWidth || 260;
+  const bh = bar.offsetHeight || 34;
+  const leftPx = Math.max(8, Math.min(boxRect.width - bw - 8, (gizmoRect.left + gizmoRect.width * 0.5) - boxRect.left - bw * 0.5));
+  const preferTop = gizmoRect.top - boxRect.top - bh - 10;
+  const topPx = preferTop >= 8 ? preferTop : Math.min(boxRect.height - bh - 8, gizmoRect.bottom - boxRect.top + 10);
+  bar.style.transform = 'none';
+  bar.style.left = `${Math.round(leftPx)}px`;
+  bar.style.top = `${Math.round(Math.max(8, topPx))}px`;
+}
+
 function bindNestingGestures(root){
   const svg=root.querySelector('.nesting-sheet-svg');if(!svg||svg._gestureBound)return;
   svg._gestureBound=true;svg.style.touchAction='none';
@@ -3351,13 +3467,44 @@ function bindNestingGestures(root){
   const cancel=()=>{if(!drag)return;for(const g of drag.groups||[drag.group])g?.removeAttribute('transform');drag=null;if(nestingGesture)nestingGesture.active=false;};
   nestingGesture={active:false,cancel};
   svg.addEventListener('pointerdown',e=>{
-    if(e.button!==0||!['select','move','rotate','scale'].includes(nestingTool))return;
-    const group=e.target.closest('[data-pid]');if(!group){selectNestingPart(null);return;}
+    if(e.button!==0)return;
+    const rotHandle = e.target.closest('[data-nest-rotate-handle]');
+    if (rotHandle) {
+      e.preventDefault();
+      e.stopPropagation();
+      const s = store.get();
+      const sh = s.nesting.sheets?.[activeSheetIdx];
+      const ids = (sh?.placements || []).filter(p => selectedNestingIds.has(p.id) && !p.locked).map(p => p.id);
+      if (!sh || !ids.length) return;
+      const cx = Number(rotHandle.dataset.cx);
+      const cy = Number(rotHandle.dataset.cy);
+      const groups = ids.map(id => svg.querySelector('[data-pid="' + CSS.escape(id) + '"]')).filter(Boolean);
+      const gizmoEl = svg.querySelector('.nest-transform-gizmo');
+      if (gizmoEl) groups.push(gizmoEl);
+      nestingGesture.active = true;
+      drag = { part: null, group: groups[0] || null, groups, ids, start: point(e), center: { x: cx, y: cy }, h: sh.heightMm, tool: 'rotate', fromGizmo: true, pointer: e.pointerId, moved: false, dx: 0, dy: 0, factor: 1, angle: 0 };
+      svg.setPointerCapture?.(e.pointerId);
+      return;
+    }
+    if(!['select','move','rotate','scale'].includes(nestingTool))return;
+    const group=e.target.closest('[data-pid]');
+    if(!group){
+      nestingRotateMode = false;
+      selectNestingPart(null);
+      updateCenterWorkspaces(store.get());
+      return;
+    }
     e.preventDefault();e.stopPropagation();
     const part=store.get().nesting.sheets?.[activeSheetIdx]?.placements.find(p=>p.id===group.dataset.pid);
     if(!part)return;
     if(activeNestingGroup && (part.partGroup || 'body') !== activeNestingGroup) return;
-    if(nestingTool==='select'&&(e.ctrlKey||e.metaKey||e.shiftKey)){selectNestingPart(part.id,{toggle:e.ctrlKey||e.metaKey,range:e.shiftKey,addRange:e.ctrlKey||e.metaKey});return;}
+    if(nestingTool==='select'&&(e.ctrlKey||e.metaKey||e.shiftKey)){
+      nestingRotateMode = false;
+      selectNestingPart(part.id,{toggle:e.ctrlKey||e.metaKey,range:e.shiftKey,addRange:e.ctrlKey||e.metaKey});
+      updateCenterWorkspaces(store.get());
+      return;
+    }
+    const wasPrimary = selectedNestingIds.has(part.id) && (selectedNestingIds.size === 1 || selectedNestingId === part.id);
     const start=point(e),h=store.get().nesting.sheets[activeSheetIdx].heightMm;
     const center={x:(part.bounds.minX+part.bounds.maxX)/2,y:h-(part.bounds.minY+part.bounds.maxY)/2};
     const tool=nestingTool==='select'?'move':nestingTool;
@@ -3365,7 +3512,7 @@ function bindNestingGestures(root){
     selectNestingPart(part.id,{preserve:tool==='move'});
     const ids=tool==='move'?(store.get().nesting.sheets[activeSheetIdx].placements||[]).filter(p=>selectedNestingIds.has(p.id)&&!p.locked).map(p=>p.id):part.locked?[]:[part.id];
     const groups=ids.map(id=>svg.querySelector('[data-pid="'+CSS.escape(id)+'"]')).filter(Boolean);
-    drag={part,group,groups,ids,start,center,h,tool,pointer:e.pointerId,moved:false,dx:0,dy:0,factor:1,angle:0};
+    drag={part,group,groups,ids,wasPrimary,start,center,h,tool,pointer:e.pointerId,moved:false,dx:0,dy:0,factor:1,angle:0};
     svg.setPointerCapture?.(e.pointerId);
   });
   svg.addEventListener('pointermove',e=>{
@@ -3378,7 +3525,10 @@ function bindNestingGestures(root){
       let a=(Math.atan2(p.y-d.center.y,p.x-d.center.x)-Math.atan2(d.start.y-d.center.y,d.start.x-d.center.x))*180/Math.PI;
       if(e.shiftKey)a=Math.round(a/15)*15;
       if(store.get().nesting.enforceGrainDirection)a=0;
-      d.angle=a;d.group.setAttribute('transform','rotate('+a+' '+d.center.x+' '+d.center.y+')');
+      d.angle=a;
+      for (const g of (d.fromGizmo ? d.groups : [d.group])) {
+        g?.setAttribute('transform','rotate('+a+' '+d.center.x+' '+d.center.y+')');
+      }
     }
     if(d.tool==='scale'){
       const anchor={x:d.part.bounds.minX,y:d.h-d.part.bounds.minY};
@@ -3392,9 +3542,27 @@ function bindNestingGestures(root){
     const d=drag;cancel();
     if(d.moved&&d.ids.length){
       if(d.tool==='move')moveNestingSelection(d.dx,-d.dy,d.ids);
-      else if(d.tool==='rotate')editSelectedNesting('rot',(d.part.angleDeg||0)-d.angle);
+      else if(d.tool==='rotate'){
+        if (d.fromGizmo) {
+          nestingRepackController?.abort();
+          mutateData('Parça döndür', s => rotateNestingParts(s.nesting, activeSheetIdx, d.ids, -d.angle, nestingSeparation(s.nesting)), false);
+        } else {
+          editSelectedNesting('rot',(d.part.angleDeg||0)-d.angle);
+        }
+      }
       else if(d.tool==='scale')editSelectedNesting('scale',d.factor);
-    }else selectNestingPart(d.part.id,{preserve:d.tool==='move'});
+    } else if (d.part) {
+      if (d.wasPrimary && nestingTool === 'select') {
+        nestingRotateMode = !nestingRotateMode;
+      } else {
+        nestingRotateMode = false;
+        selectNestingPart(d.part.id, { preserve: false });
+      }
+      const wrap = document.getElementById('nestingCenterWrap');
+      if (wrap) wrap._lastHtml = null;
+      updateCenterWorkspaces(store.get());
+      updateNumericBar(store.get());
+    }
   });
   svg.addEventListener('pointercancel',()=>{cancel();updateCenterWorkspaces(store.get());});
   svg.addEventListener('lostpointercapture',()=>{cancel();});
@@ -3498,9 +3666,59 @@ function bindNestingCenterEvents(root) {
   });
   // A click on empty sheet space only clears the selected part. It must never
   // dismiss or rebuild the sheet-size and optimization settings sidebar.
-  root.querySelector('#cwsNestSvgBox')?.addEventListener('click', e => {
-    if (e.target.closest('[data-pid]') || !selectedNestingId) return;
+  const svgBox = root.querySelector('#cwsNestSvgBox');
+  svgBox?.addEventListener('click', e => {
+    if (e.target.closest('[data-pid]') || e.target.closest('#nestingRotateBar') || e.target.closest('[data-nest-rotate-handle]') || !selectedNestingId) return;
+    nestingRotateMode = false;
     selectNestingPart(null);
+    updateCenterWorkspaces(store.get());
+  });
+  svgBox?.addEventListener('contextmenu', e => {
+    if (e.target.closest('[data-pid]') || e.target.closest('#nestingRotateBar')) return;
+    e.preventDefault();
+    showNestingPartContextMenu(e, null);
+  });
+  root.querySelector('#nestingRotateBar')?.addEventListener('pointerdown', e => e.stopPropagation());
+  root.querySelectorAll('#nestingRotateBar [data-nest-rot-delta]').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    const delta = Number(b.dataset.nestRotDelta);
+    const ids = [...selectedNestingIds];
+    if (!ids.length || !Number.isFinite(delta)) return;
+    nestingRepackController?.abort();
+    mutateData('Parça döndür', s => rotateNestingParts(s.nesting, activeSheetIdx, ids, delta, nestingSeparation(s.nesting)), false);
+  }));
+  root.querySelectorAll('#nestingRotateBar [data-nest-rot-abs]').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    const targetDeg = Number(b.dataset.nestRotAbs);
+    const ids = [...selectedNestingIds];
+    if (!ids.length || !Number.isFinite(targetDeg)) return;
+    const sNow = store.get();
+    const cur = (sNow.nesting.sheets?.[activeSheetIdx]?.placements || []).find(p => p.id === (selectedNestingId || ids[0]));
+    const delta = targetDeg - (cur?.angleDeg || 0);
+    nestingRepackController?.abort();
+    mutateData('Açıyı sıfırla', s => rotateNestingParts(s.nesting, activeSheetIdx, ids, delta, nestingSeparation(s.nesting)), false);
+  }));
+  const rotInput = root.querySelector('#nestRotAngleInput');
+  if (rotInput) {
+    const commitAngle = () => {
+      const targetDeg = Number(rotInput.value);
+      const ids = [...selectedNestingIds];
+      if (!ids.length || !Number.isFinite(targetDeg)) return;
+      const cur = (store.get().nesting.sheets?.[activeSheetIdx]?.placements || []).find(p => p.id === (selectedNestingId || ids[0]));
+      const delta = targetDeg - (cur?.angleDeg || 0);
+      if (Math.abs(delta) < 1e-4) return;
+      nestingRepackController?.abort();
+      mutateData('Açıyı ayarla', s => rotateNestingParts(s.nesting, activeSheetIdx, ids, delta, nestingSeparation(s.nesting)), false);
+    };
+    rotInput.addEventListener('change', commitAngle);
+    rotInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commitAngle(); } });
+  }
+  root.querySelector('#nestRotDoneBtn')?.addEventListener('click', e => {
+    e.stopPropagation();
+    nestingRotateMode = false;
+    const wrap = document.getElementById('nestingCenterWrap');
+    if (wrap) wrap._lastHtml = null;
+    updateCenterWorkspaces(store.get());
   });
   root.querySelector('#cwsAddSheet')?.addEventListener('click', () => {
     mutateData('Yeni nesting levhası', s => {
@@ -3963,12 +4181,32 @@ function showObjectContextMenu(e, objId) {
 
 function showNestingPartContextMenu(e, pid) {
   if (!contextMenu) return;
-  contextMenu.show(e.clientX, e.clientY, [
-    { label: '90° Döndür', action: () => mutateData('Parça döndür', s => { const p = s.nesting.sheets[activeSheetIdx]?.placements?.find(x => x.id === pid); if(p){editNestingPlacement(p,'rot',((p.angleDeg||0)+90)%360);validateSheetLayout(s.nesting.sheets[activeSheetIdx],(s.nesting.clearanceMm??5)+(s.nesting.kerfMm??.4));} }) },
-    { label: 'Kilitle / Kilidi Aç', action: () => mutateData('Parça kilidi', s => { const p = s.nesting.sheets[activeSheetIdx]?.placements?.find(x => x.id === pid); if (p) p.locked = !p.locked; }) },
-    { label: 'Parçayı Sil',kbd:'Del',danger:true,action:()=>removeNestingSelection(pid) },
-    { label: 'Kilitsizleri Yeniden Optimize Et', action: () => runAutoNesting() },
-  ]);
+  const pls = store.get().nesting?.sheets?.[activeSheetIdx]?.placements || [];
+  const hasPart = Boolean(pid && pls.some(x => x.id === pid));
+  if (hasPart) {
+    contextMenu.show(e.clientX, e.clientY, [
+      { label: 'Kes', kbd: 'Ctrl+X', action: cutSelectionToClipboard },
+      { label: 'Kopyala', kbd: 'Ctrl+C', action: () => copySelectionToClipboard() },
+      { label: 'Yapıştır', kbd: 'Ctrl+V', disabled: !nestingClipboard?.length, action: pasteSelectionFromClipboard },
+      { label: 'Çoğalt', kbd: 'Ctrl+D', action: duplicateNestingSelection },
+      { sep: true },
+      { label: nestingRotateMode ? 'Seçim Moduna Dön' : 'Döndürme Tutamaçlarını Aç (2. Tık)', action: () => { nestingRotateMode = !nestingRotateMode; const wrap = document.getElementById('nestingCenterWrap'); if (wrap) wrap._lastHtml = null; updateCenterWorkspaces(store.get()); } },
+      { label: '90° Döndür', action: () => mutateData('Parça döndür', s => rotateNestingParts(s.nesting, activeSheetIdx, [...selectedNestingIds], 90, nestingSeparation(s.nesting)), false) },
+      { label: 'Sayfaya Ortala', kbd: 'P', action: () => runAlignment('page') },
+      { label: 'Tümünü Seç', kbd: 'Ctrl+A', action: selectAllNestingParts },
+      { sep: true },
+      { label: 'Kilitle / Kilidi Aç', action: () => mutateData('Parça kilidi', s => { const p = s.nesting.sheets[activeSheetIdx]?.placements?.find(x => x.id === pid); if (p) p.locked = !p.locked; }) },
+      { label: 'Parçayı Sil', kbd: 'Del', danger: true, action: () => removeNestingSelection() },
+      { label: 'Kilitsizleri Yeniden Optimize Et', action: () => runAutoNesting() },
+    ]);
+  } else {
+    contextMenu.show(e.clientX, e.clientY, [
+      { label: 'Yapıştır', kbd: 'Ctrl+V', disabled: !nestingClipboard?.length, action: pasteSelectionFromClipboard },
+      { label: 'Tümünü Seç', kbd: 'Ctrl+A', action: selectAllNestingParts },
+      { sep: true },
+      { label: 'Otomatik Yerleştir', action: () => runAutoNesting() },
+    ]);
+  }
 }
 
 
@@ -4590,14 +4828,28 @@ function init() {
       saveProjectToBrowser(store.get().projectName, store.get());
     },
     onSelectAll: () => {
-      if(store.get().mainWorkspace==='nesting')return;
+      if (store.get().mainWorkspace === 'nesting') { selectAllNestingParts(); return; }
       store.update(s => { s.selectedIds = s.objects.map(o => o.id); });
       renderActiveWorkspace();
     },
     onGroup: () => {if(store.get().mainWorkspace!=='nesting')mutate('Grupla', s => groupSelectedLayers(s));},
     onUngroup: () => {if(store.get().mainWorkspace!=='nesting')mutate('Grubu çöz', s => ungroupSelectedLayers(s));},
     onEscape: () => {
-      if(store.get().mainWorkspace==='nesting'){nestingGesture?.cancel?.();nestingTool='select';syncWorkspaceRail('nesting');selectNestingPart(null);return;}
+      if (store.get().mainWorkspace === 'nesting') {
+        nestingGesture?.cancel?.();
+        if (nestingRotateMode) {
+          nestingRotateMode = false;
+          const wrap = document.getElementById('nestingCenterWrap');
+          if (wrap) wrap._lastHtml = null;
+          updateCenterWorkspaces(store.get());
+          return;
+        }
+        nestingTool = 'select';
+        syncWorkspaceRail('nesting');
+        selectNestingPart(null);
+        updateCenterWorkspaces(store.get());
+        return;
+      }
       if (signEngine?.cancelActiveDrag?.()) {
         // Reverted pre-drag state via onTransformCancel
       }
@@ -4764,7 +5016,7 @@ function init() {
     copy: () => copySelectionToClipboard(),
     paste: () => runCadAction('paste'),
     duplicate: () => runCadAction('duplicate'),
-    selectAll: () => { if(store.get().mainWorkspace==='nesting')return;store.update(s => { s.selectedIds = s.objects.map(o => o.id); }); scheduleRebuild(true); },
+    selectAll: () => { if (store.get().mainWorkspace === 'nesting') { selectAllNestingParts(); return; } store.update(s => { s.selectedIds = s.objects.map(o => o.id); }); scheduleRebuild(true); },
     del: () => runCadAction('delete'),
     setMainWs: (ws) => setMainWorkspace(ws),
     fitView: () => { if (store.get().mainWorkspace === 'design2d') vector2D?.fitAll(store.get()); else signEngine?.setCameraPreset('fit'); },
@@ -4916,7 +5168,14 @@ function activateTool(tool) {
 }
 
 function runCadAction(action) {
-  if(store.get().mainWorkspace==='nesting'){if(action==='delete')editSelectedNesting('delete');return;}
+  if (store.get().mainWorkspace === 'nesting') {
+    if (action === 'delete') editSelectedNesting('delete');
+    else if (action === 'duplicate') duplicateNestingSelection();
+    else if (action === 'paste') pasteSelectionFromClipboard();
+    else if (action === 'copy') copySelectionToClipboard();
+    else if (action === 'cut') cutSelectionToClipboard();
+    return;
+  }
   if (action === 'duplicate') mutate('Çoğalt', s => duplicateSelectedLayers(s));
   else if (action === 'delete') mutate('Sil', s => deleteSelectedLayers(s));
   else if (action === 'mirrorX') mutate('Yatay aynala', s => mirrorSelectedObjects(s, 'x'));

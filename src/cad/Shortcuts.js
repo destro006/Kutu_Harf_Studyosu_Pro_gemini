@@ -97,9 +97,20 @@ export function attachShortcuts(handlers) {
     }
 
     // A focused part-list checkbox is a selection control, not a text editor.
-    if(e.key==='Delete'&&!ctrl&&!e.altKey&&handlers.isNesting?.()){
-      const blocks=el=>isAnyInputTarget(el)&&!(el?.matches?.('[data-cws-check]'));
-      if(!blocks(activeEl)&&!blocks(e.target)){e.preventDefault();if(!e.repeat)handlers.onDelete?.();return;}
+    if (handlers.isNesting?.()) {
+      const blocks = el => isAnyInputTarget(el) && !(el?.matches?.('[data-cws-check]'));
+      if (!blocks(activeEl) && !blocks(e.target)) {
+        if ((e.key === 'Delete' || e.key === 'Backspace') && !ctrl && !e.altKey) {
+          e.preventDefault(); if (!e.repeat) handlers.onDelete?.(); return;
+        }
+        if (ctrl && !e.altKey) {
+          if (key === 'a') { e.preventDefault(); handlers.onSelectAll?.(); return; }
+          if (key === 'c') { e.preventDefault(); handlers.onCopy?.(); return; }
+          if (key === 'x') { e.preventDefault(); handlers.onCut?.(); return; }
+          if (key === 'v') { e.preventDefault(); handlers.onPaste?.(); return; }
+          if (key === 'd') { e.preventDefault(); handlers.onDuplicate?.(); return; }
+        }
+      }
     }
     // Never intercept single-key tools or Delete while typing in any input/select
     if (isAnyInputTarget(e.target) || isAnyInputTarget(activeEl)) {
@@ -141,7 +152,7 @@ export function attachShortcuts(handlers) {
       if (key === 'd') { e.preventDefault(); handlers.onTool?.('measure'); return; }
     }
 
-    if (e.key === 'Delete') {
+    if (e.key === 'Delete' || (e.key === 'Backspace' && handlers.isNesting?.())) {
       e.preventDefault();
       handlers.onDelete?.();
       return;
