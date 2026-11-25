@@ -115,18 +115,17 @@ export function generateCorelColoredSvg(sheets, previewColors = {}, projectName 
 
     for (const p of sh.placements) {
       if (!p.outer.length) continue;
-      const pFill = p.colorHex || bodyHex;
-      const compoundD = [ringToD(p.outer, sh.heightMm), ...p.holes.filter(h => h.length >= 3).map(h => ringToD(h, sh.heightMm))].join(' ');
+      const pStroke = p.colorHex || bodyHex;
+      const grp = p.partGroup || 'body';
       itemsSvg.push(
-        `<path data-part="${escapeXml(p.label)}" data-group="${escapeXml(p.partGroup || 'body')}" d="${compoundD}" fill="${pFill}" fill-rule="evenodd" stroke="#1f2937" stroke-width="0.15" />`
+        `<path data-part="${escapeXml(p.label)}" data-group="${escapeXml(grp)}" d="${ringToD(p.outer, sh.heightMm)}" fill="none" stroke="${pStroke}" stroke-width="0.25" />`
       );
-      if (distinctHoleColor && p.partGroup !== 'file_frame') {
-        for (const h of p.holes) {
-          if (h.length < 3) continue;
-          itemsSvg.push(
-            `<path data-hole-for="${escapeXml(p.label)}" d="${ringToD(h, sh.heightMm)}" fill="${holesHex}" stroke="#1f2937" stroke-width="0.12" />`
-          );
-        }
+      const holeStroke = grp === 'file_frame' ? pStroke : holesHex;
+      for (const h of p.holes) {
+        if (h.length < 3) continue;
+        itemsSvg.push(
+          `<path data-hole-for="${escapeXml(p.label)}" d="${ringToD(h, sh.heightMm)}" fill="none" stroke="${holeStroke}" stroke-width="0.25" />`
+        );
       }
     }
 
@@ -219,21 +218,23 @@ export function generateCorelVbaMacro(payload) {
       });
       lines.push('  AddClosedRing crv, xs, ys, ox, oy');
 
-      for (const hole of part.holes) {
-        if (hole.length < 3) continue;
-        lines.push(`  ReDim xs(0 To ${hole.length - 1}): ReDim ys(0 To ${hole.length - 1})`);
-        hole.forEach((pt, i) => {
-          lines.push(`  xs(${i}) = ${pt.x.toFixed(3)}: ys(${i}) = ${pt.y.toFixed(3)}`);
-        });
-        lines.push('  AddClosedRing crv, xs, ys, ox, oy');
+      if (!distinctHoleColor || grp === 'file_frame') {
+        for (const hole of part.holes) {
+          if (hole.length < 3) continue;
+          lines.push(`  ReDim xs(0 To ${hole.length - 1}): ReDim ys(0 To ${hole.length - 1})`);
+          hole.forEach((pt, i) => {
+            lines.push(`  xs(${i}) = ${pt.x.toFixed(3)}: ys(${i}) = ${pt.y.toFixed(3)}`);
+          });
+          lines.push('  AddClosedRing crv, xs, ys, ox, oy');
+        }
       }
 
       lines.push(
         `  Set sh = ${targetLayer}.CreateCurve(crv)`,
         `  sh.Name = "${pName}"`,
-        `  sh.Fill.ApplyUniformFill CreateRGBColor(${pr}, ${pg}, ${pb})`,
-        '  sh.Outline.Width = 0.1',
-        '  sh.Outline.Color.RGBAssign 30, 35, 42'
+        '  sh.Fill.ApplyNoFill',
+        '  sh.Outline.Width = 0.2',
+        `  sh.Outline.Color.RGBAssign ${pr}, ${pg}, ${pb}`
       );
 
       if (distinctHoleColor && grp !== 'file_frame' && part.holes.length) {
@@ -250,9 +251,9 @@ export function generateCorelVbaMacro(payload) {
             '  AddClosedRing hCrv, xs, ys, ox, oy',
             '  Set sh = lHoles.CreateCurve(hCrv)',
             `  sh.Name = "${pName} - Ic Bosluk"`,
-            `  sh.Fill.ApplyUniformFill CreateRGBColor(${hr}, ${hg}, ${hb})`,
-            '  sh.Outline.Width = 0.1',
-            '  sh.Outline.Color.RGBAssign 30, 35, 42'
+            '  sh.Fill.ApplyNoFill',
+            '  sh.Outline.Width = 0.2',
+            `  sh.Outline.Color.RGBAssign ${hr}, ${hg}, ${hb}`
           );
         }
       }
@@ -486,6 +487,9 @@ function Import-NestingToCorel($payload) {
       foreach ($part in $sh["placements"]) {
         $outer = $part["outer"]
         if (-not $outer -or $outer.Count -lt 3) { continue }
+        $grp = "body"
+        if ($part.ContainsKey("partGroup") -and $part["partGroup"]) { $grp = [string]$part["partGroup"] }
+
         $crv = $doc.CreateCurve()
         $sp = $crv.CreateSubPath($ox + [double]$outer[0]["x"], $oy + [double]$outer[0]["y"])
         for ($k = 1; $k -lt $outer.Count; $k++) {
@@ -494,7 +498,8 @@ function Import-NestingToCorel($payload) {
         $sp.Closed = $true
 
         $holes = $part["holes"]
-        if ($holes) {
+        $separateHoleLayer = ($distinctHoleColor -and $grp -ne "file_frame")
+        if ($holes -and (-not $separateHoleLayer)) {
           foreach ($hole in $holes) {
             if (-not $hole -or $hole.Count -lt 3) { continue }
             $hsp = $crv.CreateSubPath($ox + [double]$hole[0]["x"], $oy + [double]$hole[0]["y"])
@@ -505,8 +510,6 @@ function Import-NestingToCorel($payload) {
           }
         }
 
-        $grp = "body"
-        if ($part.ContainsKey("partGroup") -and $part["partGroup"]) { $grp = [string]$part["partGroup"] }
         $targetLayer = $lParts
         if ($grp -eq "file_frame") {
           if (-not $groupLayers.ContainsKey("FILE_CERCEVE")) { $groupLayers["FILE_CERCEVE"] = $page.CreateLayer("FILE_CERCEVE") }
@@ -526,12 +529,12 @@ function Import-NestingToCorel($payload) {
 
         $shape = $targetLayer.CreateCurve($crv)
         $shape.Name = [string]$part["label"]
-        $shape.Fill.ApplyUniformFill($corel.CreateRGBColor([int]$pRgb[0], [int]$pRgb[1], [int]$pRgb[2]))
-        $shape.Outline.Width = 0.1
-        $shape.Outline.Color.RGBAssign(30, 35, 42)
+        $shape.Fill.ApplyNoFill()
+        $shape.Outline.Width = 0.2
+        $shape.Outline.Color.RGBAssign([int]$pRgb[0], [int]$pRgb[1], [int]$pRgb[2])
         $partsCount++
 
-        if ($distinctHoleColor -and $grp -ne "file_frame" -and $holes) {
+        if ($separateHoleLayer -and $holes) {
           foreach ($hole in $holes) {
             if (-not $hole -or $hole.Count -lt 3) { continue }
             $hCrv = $doc.CreateCurve()
@@ -542,9 +545,9 @@ function Import-NestingToCorel($payload) {
             $hp.Closed = $true
             $hShape = $lHoles.CreateCurve($hCrv)
             $hShape.Name = "$($part['label']) - Ic Bosluk"
-            $hShape.Fill.ApplyUniformFill($corel.CreateRGBColor([int]$holesRgb[0], [int]$holesRgb[1], [int]$holesRgb[2]))
-            $hShape.Outline.Width = 0.1
-            $hShape.Outline.Color.RGBAssign(30, 35, 42)
+            $hShape.Fill.ApplyNoFill()
+            $hShape.Outline.Width = 0.2
+            $hShape.Outline.Color.RGBAssign([int]$holesRgb[0], [int]$holesRgb[1], [int]$holesRgb[2])
           }
         }
       }

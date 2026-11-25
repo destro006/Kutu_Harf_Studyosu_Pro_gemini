@@ -11,7 +11,7 @@ import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v15';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v17';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v19';
 import {nextNestingSelection,deleteNestingParts,moveNestingParts} from './manufacturing/NestingSelection.js?v=nest7';
 import { generateNestedGcode, generateNestedHpgl,validateNestedProduction,MACHINE_PROFILES,getMachineProfile } from './export/CncGcodeExporter.js';
 import { HistoryManager } from './core/history.js';
@@ -34,7 +34,7 @@ import { LIGHT_COLOR_PRESETS, LIGHTING_MODES } from './render/LightingSystem.js'
 import {detectVectorFormat} from './manufacturing/VectorFormatDetect.js';
 import { BACKGROUND_SCENES } from './photomontage/BackgroundLibrary.js';
 import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js?v=20261125-v15';
-import { renderNestingSvg } from './ui/NestingView.js';
+import { renderNestingSvg } from './ui/NestingView.js?v=20261126-v19';
 import { applySurfaceMaterialPreset, getDisplayedSurfaceMaterial } from './core/MaterialActions.js';
 import { getExportSelection } from './export/ExportScope.js';
 import { EXPORT_FORMAT_GROUPS, getExportFormat, formatSupportsSource } from './export/ExportFormatCatalog.js';
@@ -48,7 +48,7 @@ import {
   sendNestingToCorel,
   pullSelectionFromCorel,
   wakeCorelBridgeProtocol,
-} from './export/CorelDrawBridge.js?v=20261126-v18';
+} from './export/CorelDrawBridge.js?v=20261126-v19';
 import {
   CNC_TRANSPORT_MODES,
   loadMachineConnection,
@@ -3310,7 +3310,17 @@ function selectNestingPart(id,{toggle=false,range=false,addRange=false,preserve=
  const paint=(pid,on)=>{
   if(!root)return;
   const g=root.querySelector('[data-pid="'+CSS.escape(pid)+'"]');
-  if(g){g.classList.toggle('nest-picked',on);const path=g.querySelector('[data-nest-body]');if(path&&!g.classList.contains('nest-collision')){const restColor=g.dataset.partColor||state.nesting.previewColors?.body||'#c89343';path.setAttribute('stroke',on?'#ffffff':restColor);path.setAttribute('stroke-width',on?'4':'2');path.setAttribute('fill-opacity',on?'0.83':'0.58');}if(!on)g.querySelector('text')?.remove();}
+  if(g){
+   g.classList.toggle('nest-picked',on);
+   if(!g.classList.contains('nest-collision')){
+    const restColor=g.dataset.partColor||state.nesting.previewColors?.body||'#c89343';
+    const restHoleColor=g.dataset.holeColor||state.nesting.previewColors?.holes||'#c89343';
+    const path=g.querySelector('[data-nest-body]');
+    if(path){path.setAttribute('stroke',on?'#ffffff':restColor);path.setAttribute('stroke-width',on?'4.5':'2.8');}
+    for(const hp of g.querySelectorAll('[data-nest-hole]')){hp.setAttribute('stroke',on?'#ffffff':restHoleColor);hp.setAttribute('stroke-width',on?'4':'2.6');}
+   }
+   if(!on)g.querySelector('text')?.remove();
+  }
   const row=root.querySelector('[data-cws-pid="'+CSS.escape(pid)+'"]');
   if(row){row.classList.toggle('on',on);row.setAttribute('aria-selected',String(on));const cb=row.querySelector('[data-cws-check]');if(cb)cb.checked=on;}
  };

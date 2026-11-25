@@ -1,7 +1,7 @@
 import {normalizeDisplayUnit,formatMmAsUnit,formatDimensions,formatPresetLabel} from '../core/units.js';
 import { renderDetailedCostCenter } from './CostCenterView.js?v=qa8';
 import { ringLength, SHEET_PRESETS } from '../manufacturing/NestingEngine.js';
-import { renderNestingSvg } from './NestingView.js?v=20261126-v17';
+import { renderNestingSvg } from './NestingView.js?v=20261126-v19';
 import { renderNestingSourceTabs, renderNestingImportPane } from './NestingImportView.js?v=units6';
 import { MACHINE_PROFILES, MACHINE_PROFILE_CATEGORIES, getMachineProfile, validateNestedProduction } from '../export/CncGcodeExporter.js';
 import { formatMoney } from '../manufacturing/CostEngine.js';
@@ -183,10 +183,10 @@ export function renderNestingCenter(state, ctx) {
         </details>
         <h3 class="sec-title" style="margin-top:14px">Önizleme Renkleri</h3>
         <div class="nesting-preview-palette">
-          <label class="nesting-palette-option"><span>Tüm harf gövdeleri</span><input id="cwsNestBodyColor" type="color" value="${/^#[a-f0-9]{6}$/i.test(n.previewColors?.body || '') ? n.previewColors.body : '#c89343'}" title="Tüm harfler için tek renk"></label>
-          <label class="nesting-palette-option"><span>A / O / R iç boşlukları</span><input id="cwsNestHoleColor" type="color" value="${/^#[a-f0-9]{6}$/i.test(n.previewColors?.holes || '') ? n.previewColors.holes : '#c89343'}" title="Bütün iç boşluklar için tek renk"></label>
+          <label class="nesting-palette-option"><span>Dış çizgi rengi (Gövde)</span><input id="cwsNestBodyColor" type="color" value="${/^#[a-f0-9]{6}$/i.test(n.previewColors?.body || '') ? n.previewColors.body : '#c89343'}" title="Tüm harf dış çizgileri için tek renk"></label>
+          <label class="nesting-palette-option"><span>İç boşluk çizgi rengi (A / O / R)</span><input id="cwsNestHoleColor" type="color" value="${/^#[a-f0-9]{6}$/i.test(n.previewColors?.holes || '') ? n.previewColors.holes : '#c89343'}" title="Bütün iç boşluk çizgileri için tek renk"></label>
           <button type="button" id="cwsNestResetColors" class="sec-btn">Renkleri Sıfırla</button>
-          <small>Bu renkler yalnızca nesting önizlemesidir; CNC, DXF ve SVG kesim konturları değişmez.</small>
+          <small>Bu renkler yalnızca dış ve iç çizgi renkleridir (iç dolgu uygulanmaz); CorelDRAW aktarımında da çizgi rengi olarak gider.</small>
         </div>
         ${renderNestedCncPanel(state,activeSheet)}
         <h3 class="sec-title" style="margin-top:12px">Nesting Dışa Aktar</h3>

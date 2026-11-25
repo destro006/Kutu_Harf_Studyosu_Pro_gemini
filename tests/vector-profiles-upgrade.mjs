@@ -201,10 +201,10 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v8'));
-assert(rootHtml.includes('./src/main.js?v=20261126-v18'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v18'));
+assert(rootHtml.includes('./src/main.js?v=20261126-v19'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v19'));
 assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
-assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v17'));
+assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v19'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -384,14 +384,15 @@ assert.equal(corelPayload.sheets[0].heightMm, 1500);
 const corelSvg = generateCorelColoredSvg(corelSheets, corelColors, 'DenemeTabela');
 assert(corelSvg.includes('width="3000.000mm" height="1500.000mm"'));
 assert(corelSvg.includes('id="PLAKA_EBATI_1"'));
-assert(corelSvg.includes('fill="#e11d48"') && corelSvg.includes('fill="#0ea5e9"'));
-assert(corelSvg.includes('fill-rule="evenodd"'));
+assert(corelSvg.includes('fill="none"') && !corelSvg.includes('fill="#e11d48"') && !corelSvg.includes('fill="#0ea5e9"'));
+assert(corelSvg.includes('stroke="#e11d48"') && corelSvg.includes('stroke="#0ea5e9"'));
 
 const corelBas = generateCorelVbaMacro(corelPayload);
 assert(corelBas.includes('Sub KutuHarf_Nesting_Aktar()'));
 assert(corelBas.includes('doc.Unit = cdrMillimeter'));
 assert(corelBas.includes('p.SetSize 3000.000, 1500.000'));
-assert(corelBas.includes('CreateRGBColor(225, 29, 72)') && corelBas.includes('CreateRGBColor(14, 165, 233)'));
+assert(corelBas.includes('sh.Fill.ApplyNoFill') && !corelBas.includes('ApplyUniformFill'));
+assert(corelBas.includes('sh.Outline.Color.RGBAssign 225, 29, 72') && corelBas.includes('sh.Outline.Color.RGBAssign 14, 165, 233'));
 
 const launcherBat = generateCorelBridgeLauncherBat();
 assert(launcherBat.includes('PS1_B64_START###') && launcherBat.includes('PS1_B64_END###'));
@@ -400,7 +401,7 @@ const b64Block = launcherBat.match(/::###PS1_B64_START###\r?\n([\s\S]*?)\r?\n::#
 const decodedPs1 = Buffer.from(b64Block, 'base64').toString('utf8');
 assert.equal(decodedPs1, getCorelBridgePs1Script());
 assert(decodedPs1.includes('127.0.0.1:$($port)/') && decodedPs1.includes('Access-Control-Allow-Private-Network'));
-assert(decodedPs1.includes('CorelDRAW.Application') && decodedPs1.includes('ApplyUniformFill'));
+assert(decodedPs1.includes('CorelDRAW.Application') && decodedPs1.includes('ApplyNoFill()') && !decodedPs1.includes('ApplyUniformFill') && decodedPs1.includes('Outline.Color.RGBAssign'));
 assert(decodedPs1.includes('Mutex') && decodedPs1.includes('NotifyIcon') && decodedPs1.includes('/api/pull-from-corel') && decodedPs1.includes('/api/import-latest') && decodedPs1.includes('FILE_CERCEVE'));
 
 const instB64Block = launcherBat.match(/::###INSTALLER_B64_START###\r?\n([\s\S]*?)\r?\n::###INSTALLER_B64_END###/)[1].replace(/^::/gm, '').replace(/\s+/g, '');
@@ -538,5 +539,6 @@ for (const gid of Object.keys(FILELI_NESTING_GROUPS)) {
 assert(grpUiHtml.includes('data-nest-group-select') && grpUiHtml.includes('data-nest-group-focus') && grpUiHtml.includes('data-nest-group-color'));
 const grpSvg = renderNestingSvg(grpSheet, null, fState.nesting.previewColors, 'mm', { activeGroup: 'fileli_acrylic' });
 assert(grpSvg.includes('nest-group-dimmed'), 'Non-active color groups must be visually isolated on SVG');
+assert(grpSvg.includes('fill="none"') && !grpSvg.includes('fill-opacity'), 'Nesting SVG must use stroke-only outlines with zero interior fills');
 assert(mainJs.includes('async function repackNestingSettings(label,updateNesting,quickImport=false)'));
 console.log('✓ Fileli 3-color grouped nesting, non-fileli exclusion, left-panel group controls & repack true-shape fix verified');
