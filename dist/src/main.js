@@ -40,6 +40,14 @@ import { getExportSelection } from './export/ExportScope.js';
 import { EXPORT_FORMAT_GROUPS, getExportFormat, formatSupportsSource } from './export/ExportFormatCatalog.js';
 import { runProfessionalExport } from './export/ProfessionalExportController.js';
 import {
+  buildCorelNestingPayload,
+  generateCorelColoredSvg,
+  generateCorelVbaMacro,
+  generateCorelBridgeLauncherBat,
+  checkCorelBridgeStatus,
+  sendNestingToCorel,
+} from './export/CorelDrawBridge.js';
+import {
   assignMaterialToSelected,
   deleteSelectedLayers,
   duplicateSelectedLayers,
@@ -2896,7 +2904,7 @@ function updateCenterWorkspaces(state) {
         if (tabs && nextTabs) tabs.replaceWith(nextTabs);
         syncNestingSettingsControls(grid.querySelector('.cws-side-r'), state.nesting,state.pageLayout?.displayUnit);
         const oldCnc=grid.querySelector('#nestCncPanel'),newCnc=template.content.querySelector('#nestCncPanel');
-        for(const id of ['cwsExpSvg','cwsExpDxf','cwsExpCsv']){const old=grid.querySelector('#'+id),fresh=template.content.querySelector('#'+id);if(old&&fresh)old.disabled=fresh.disabled;}
+        for(const id of ['cwsSendCorel','cwsExpCorel','cwsExpSvg','cwsExpDxf','cwsExpCsv']){const old=grid.querySelector('#'+id),fresh=template.content.querySelector('#'+id);if(old&&fresh)old.disabled=fresh.disabled;}
         if(oldCnc&&newCnc){
           for(const fresh of newCnc.querySelectorAll('input,select')){const el=oldCnc.querySelector('#'+fresh.id);if(!el||el===document.activeElement)continue;if(el.type==='checkbox')el.checked=fresh.checked;else el.value=fresh.value;}
           const oldStatus=oldCnc.querySelector('#nestCncStatus'),newStatus=newCnc.querySelector('#nestCncStatus');if(oldStatus&&newStatus)oldStatus.replaceWith(newStatus);
@@ -3324,6 +3332,9 @@ function bindNestingCenterEvents(root) {
   root.querySelector('#cwsNestResetColors')?.addEventListener('click', () => mutateData('Nesting renklerini sıfırla', s => {
     s.nesting.previewColors = { body: '#c89343', holes: '#c89343' };
   }, false));
+  root.querySelector('#cwsSendCorel')?.addEventListener('click', () => triggerSendToCorel(true));
+  root.querySelector('#cwsExpCorel')?.addEventListener('click', () => triggerSendToCorel(true));
+  root.querySelector('#cwsCorelSetup')?.addEventListener('click', () => openCorelBridgeModal());
   root.querySelector('#cwsExpSvg')?.addEventListener('click', () => {
     const sh = store.get().nesting.sheets[activeSheetIdx];
     if (sh) downloadBlob(`${store.get().projectName}_levha${activeSheetIdx + 1}.svg`, generateNestedSvg([sh]), 'image/svg+xml');
@@ -4167,6 +4178,7 @@ function init() {
   if (railSc) railSc.onclick = openShortcuts;
   document.getElementById('btnCloseShortcuts').onclick = () => modal.classList.add('hidden');
 
+  bindCorelBridgeModal();
   bindAlignmentRail();
   // Left CAD Rail Tools & Actions
   document.querySelectorAll('.cad-rail [data-tool]').forEach(b => b.onclick = () => activateTool(b.dataset.tool));
@@ -4626,6 +4638,98 @@ function runCadAction(action) {
   } else if (action === 'paste' && objectClipboard) {
     pasteSelectionFromClipboard();
   }
+}
+
+async function refreshCorelBridgeStatusUI() {
+  const badge = document.getElementById('corelBridgeStatusBadge');
+  if (!badge) return { online: false };
+  badge.textContent = 'Köprü kontrol ediliyor...';
+  badge.className = 'corel-status-pill';
+  const status = await checkCorelBridgeStatus(900);
+  if (status.online) {
+    badge.textContent = status.corelRunning
+      ? '✓ Canlı Köprü Bağlı · CorelDRAW Açık'
+      : '✓ Canlı Köprü Bağlı (CorelDRAW Hazır)';
+    badge.className = 'corel-status-pill online';
+  } else {
+    badge.textContent = '○ Yerel Köprü Kapalı (Tek Seferlik .bat Başlatın)';
+    badge.className = 'corel-status-pill offline';
+  }
+  return status;
+}
+
+function openCorelBridgeModal() {
+  const modal = document.getElementById('corelBridgeModal');
+  if (!modal) return;
+  const s = store.get();
+  const sheets = s.nesting?.sheets || [];
+  const partsCount = sheets.reduce((sum, sh) => sum + (sh.placements?.length || 0), 0);
+  const summary = document.getElementById('corelBridgeSummary');
+  if (summary) {
+    const bodyHex = s.nesting?.previewColors?.body || '#c89343';
+    const holeHex = s.nesting?.previewColors?.holes || '#c89343';
+    summary.textContent = `${sheets.length} levha · ${partsCount} parça · Gövde: ${bodyHex} · İç Boşluk: ${holeHex} (1:1 mm CorelDRAW aktarımı)`;
+  }
+  modal.classList.remove('hidden');
+  refreshCorelBridgeStatusUI();
+}
+
+async function triggerSendToCorel(openModalOnOffline = true) {
+  const s = store.get();
+  const sheets = (s.nesting?.sheets || []).filter(sh => (sh.placements?.length || 0) > 0);
+  if (!sheets.length) {
+    studioToast('CorelDRAW’a göndermek için önce en az bir yerleştirilmiş levha gerekir.', true);
+    return;
+  }
+  const res = await sendNestingToCorel(sheets, s.nesting?.previewColors || {}, s.projectName || 'KutuHarf_Nesting');
+  if (res.ok) {
+    document.getElementById('corelBridgeModal')?.classList.add('hidden');
+    studioToast(`✓ CorelDRAW'a aktarıldı: ${res.sheetsImported} levha, ${res.partsImported} parça (plaka ebatı + seçili renkler)!`);
+    return;
+  }
+  if (res.bridgeOffline && openModalOnOffline) {
+    openCorelBridgeModal();
+  } else {
+    studioToast(res.error || 'CorelDRAW aktarımı başarısız.', true);
+    if (openModalOnOffline) openCorelBridgeModal();
+  }
+}
+
+function bindCorelBridgeModal() {
+  const modal = document.getElementById('corelBridgeModal');
+  if (!modal) return;
+  document.getElementById('btnCloseCorelModal')?.addEventListener('click', () => modal.classList.add('hidden'));
+  document.getElementById('btnCorelCheckStatus')?.addEventListener('click', () => refreshCorelBridgeStatusUI());
+  document.getElementById('btnCorelDownloadBat')?.addEventListener('click', () => {
+    downloadBlob('KutuHarf_CorelDRAW_Kopru.bat', generateCorelBridgeLauncherBat(), 'application/x-bat');
+    studioToast('İndirilen KutuHarf_CorelDRAW_Kopru.bat dosyasına çift tıklayıp köprüyü başlatın.');
+  });
+  document.getElementById('btnCorelRetrySend')?.addEventListener('click', () => triggerSendToCorel(true));
+  document.getElementById('btnCorelDownloadSvg')?.addEventListener('click', () => {
+    const s = store.get();
+    const sheets = s.nesting?.sheets || [];
+    if (!sheets.length) return;
+    downloadBlob(`${s.projectName || 'KutuHarf'}_CorelDRAW.svg`, generateCorelColoredSvg(sheets, s.nesting?.previewColors, s.projectName), 'image/svg+xml');
+  });
+  document.getElementById('btnCorelCopySvg')?.addEventListener('click', async () => {
+    const s = store.get();
+    const sheets = s.nesting?.sheets || [];
+    if (!sheets.length) return;
+    const svg = generateCorelColoredSvg(sheets, s.nesting?.previewColors, s.projectName);
+    try {
+      await navigator.clipboard.writeText(svg);
+      studioToast('✓ CorelDRAW Renkli 1:1 mm SVG panoya kopyalandı — CorelDRAW içinde Ctrl+V yapabilirsiniz.');
+    } catch {
+      downloadBlob(`${s.projectName || 'KutuHarf'}_CorelDRAW.svg`, svg, 'image/svg+xml');
+    }
+  });
+  document.getElementById('btnCorelDownloadBas')?.addEventListener('click', () => {
+    const s = store.get();
+    const sheets = s.nesting?.sheets || [];
+    if (!sheets.length) return;
+    const payload = buildCorelNestingPayload(sheets, s.nesting?.previewColors, s.projectName);
+    downloadBlob(`${s.projectName || 'KutuHarf'}_CorelMakro.bas`, generateCorelVbaMacro(payload), 'text/plain');
+  });
 }
 
 function escapeHtml(s) {

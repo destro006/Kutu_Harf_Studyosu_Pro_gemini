@@ -78,7 +78,8 @@ export function renderNestingCenter(state, ctx) {
             `).join('')}
             <button type="button" id="cwsAddSheet" class="sheet-tab">+ Yeni Levha</button>
           </div>
-          <div style="display:flex;gap:6px">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" id="cwsSendCorel" class="corel-btn" ${totalParts?'':'disabled'} title="Nesting parçalarını, plaka ebatını ve seçili renkleri tek tıkla CorelDRAW'a gönder">✦ CorelDRAW'a Gönder</button>
             <button type="button" id="cwsRunNesting" class="cta-btn" style="padding:5px 12px" title="İçe aktarmadan sonra hassas true-shape optimizasyonu; işlem sürerken tekrar tıklayarak iptal edin">Otomatik Yerleştir</button>
             <button type="button" id="cwsReoptUnlocked" class="sec-btn">Kilitsizleri Optimize Et</button>
             <button type="button" id="cwsDeletePart" class="sec-btn" ${removableCount?'':'disabled'} title="Seçilen parçaları yalnızca bu nesting işinden sil">${removableCount>1?'Seçilenleri Sil ('+removableCount+')':'Parçayı Sil'}</button>
@@ -148,6 +149,8 @@ export function renderNestingCenter(state, ctx) {
         ${renderNestedCncPanel(state,activeSheet)}
         <h3 class="sec-title" style="margin-top:12px">Nesting Dışa Aktar</h3>
         <div style="display:flex;flex-direction:column;gap:6px">
+          <button type="button" id="cwsExpCorel" class="corel-btn" ${totalParts?'':'disabled'}>✦ CorelDRAW'a Aktar (1 Tık)</button>
+          <button type="button" id="cwsCorelSetup" class="sec-btn">CorelDRAW Köprüsü &amp; Seçenekler</button>
           <button type="button" id="cwsExpSvg" class="sec-btn" ${activeSheet?.placements?.length?'':'disabled'}>Aktif Levhayı SVG İndir</button>
           <button type="button" id="cwsExpDxf" class="sec-btn" ${totalParts?'':'disabled'}>Tüm Levhaları DXF (1:1 mm) İndir</button>
           <button type="button" id="cwsExpCsv" class="sec-btn" ${totalParts?'':'disabled'}>Parça Listesi (CSV) İndir</button>

@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { execFileSync } from 'node:child_process';
 import { MACHINE_PROFILES, MACHINE_PROFILE_CATEGORIES, getMachineProfile, generateNestedGcode, generateNestedHpgl } from '../src/export/CncGcodeExporter.js';
+import {
+  buildCorelNestingPayload,
+  generateCorelColoredSvg,
+  generateCorelVbaMacro,
+  generateCorelBridgeLauncherBat,
+  getCorelBridgePs1Script,
+} from '../src/export/CorelDrawBridge.js';
+import { renderNestingCenter } from '../src/ui/CentralWorkspaces.js';
+import { createDefaultState } from '../src/core/state.js';
 import { postScriptToPdf } from '../src/manufacturing/PostScriptWasmImport.js';
 import { extractAiOutlineFallback } from '../src/manufacturing/LegacyPostScriptImport.js';
 import { detectVectorFormat } from '../src/manufacturing/VectorFormatDetect.js';
@@ -180,7 +190,7 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v7'));
-assert(rootHtml.includes('./src/main.js?v=20261125-v9'));
+assert(rootHtml.includes('./src/main.js?v=20261125-v10'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -329,3 +339,67 @@ assert(noiseDiff(outputs.get('photo_3d_nr')) < noiseDiff(srcBuf), 'photo_3d_nr m
 assert(strokeMinLum(outputs.get('photo_text')) < strokeMinLum(outputs.get('photo_3d_soft')), 'photo_text must deepen ink strokes vs photo_3d_soft');
 assert(strokeMinLum(outputs.get('pixel_line')) < strokeMinLum(outputs.get('photo_3d_soft')), 'pixel_line must deepen ink strokes vs photo_3d_soft');
 console.log('✓ All 8 Image Tracer enhancement presets verified as visually & mathematically distinct');
+
+// 11. 1-Click CorelDRAW Nesting Integration (sheets, plate dims, selected body/hole colors, VBA & PS1 syntax)
+const corelSheets = [{
+  index: 1,
+  name: 'Levha 1',
+  materialGroup: 'Altın Ayna · 2 mm',
+  widthMm: 3000,
+  heightMm: 1500,
+  marginLeftMm: 15,
+  marginRightMm: 15,
+  marginTopMm: 15,
+  marginBottomMm: 15,
+  placements: [{
+    id: 'O1',
+    label: 'O (Gövde)',
+    angleDeg: 0,
+    bounds: { minX: 20, minY: 20, maxX: 220, maxY: 220, width: 200, height: 200 },
+    outer: [{ x: 20, y: 20 }, { x: 220, y: 20 }, { x: 220, y: 220 }, { x: 20, y: 220 }],
+    holes: [[{ x: 70, y: 70 }, { x: 70, y: 170 }, { x: 170, y: 170 }, { x: 170, y: 70 }]],
+  }],
+}];
+const corelColors = { body: '#e11d48', holes: '#0ea5e9' };
+const corelPayload = buildCorelNestingPayload(corelSheets, corelColors, 'DenemeTabela');
+assert.deepEqual(corelPayload.colors.bodyRgb, [225, 29, 72]);
+assert.deepEqual(corelPayload.colors.holesRgb, [14, 165, 233]);
+assert.equal(corelPayload.sheets[0].widthMm, 3000);
+assert.equal(corelPayload.sheets[0].heightMm, 1500);
+
+const corelSvg = generateCorelColoredSvg(corelSheets, corelColors, 'DenemeTabela');
+assert(corelSvg.includes('width="3000.000mm" height="1500.000mm"'));
+assert(corelSvg.includes('id="PLAKA_EBATI_1"'));
+assert(corelSvg.includes('fill="#e11d48"') && corelSvg.includes('fill="#0ea5e9"'));
+assert(corelSvg.includes('fill-rule="evenodd"'));
+
+const corelBas = generateCorelVbaMacro(corelPayload);
+assert(corelBas.includes('Sub KutuHarf_Nesting_Aktar()'));
+assert(corelBas.includes('doc.Unit = cdrMillimeter'));
+assert(corelBas.includes('p.SetSize 3000.000, 1500.000'));
+assert(corelBas.includes('CreateRGBColor(225, 29, 72)') && corelBas.includes('CreateRGBColor(14, 165, 233)'));
+
+const launcherBat = generateCorelBridgeLauncherBat();
+assert(launcherBat.includes('PS1_B64_START###') && launcherBat.includes('PS1_B64_END###'));
+const b64Block = launcherBat.match(/::###PS1_B64_START###\r?\n([\s\S]*?)\r?\n::###PS1_B64_END###/)[1].replace(/^::/gm, '').replace(/\s+/g, '');
+const decodedPs1 = Buffer.from(b64Block, 'base64').toString('utf8');
+assert.equal(decodedPs1, getCorelBridgePs1Script());
+assert(decodedPs1.includes('127.0.0.1:$port/') && decodedPs1.includes('Access-Control-Allow-Private-Network'));
+assert(decodedPs1.includes('CorelDRAW.Application') && decodedPs1.includes('ApplyUniformFill'));
+
+// Verify zero PowerShell syntax errors in the embedded CorelDRAW COM bridge script
+if (process.platform === 'win32') {
+  const psCheck = execFileSync('powershell.exe', [
+    '-NoProfile',
+    '-Command',
+    "$code=[Console]::In.ReadToEnd(); $errs=$null; [void][System.Management.Automation.Language.Parser]::ParseInput($code,[ref]$null,[ref]$errs); if($errs.Count -gt 0){$errs | ForEach-Object {Write-Error $_.Message}; exit 1}",
+  ], { input: decodedPs1, encoding: 'utf8' });
+  assert.equal(typeof psCheck, 'string');
+}
+
+const cwsState = createDefaultState();
+cwsState.nesting.sheets = corelSheets;
+const cwsHtml = renderNestingCenter(cwsState, { activeSheetIdx: 0 });
+assert(cwsHtml.includes('id="cwsSendCorel"') && cwsHtml.includes('id="cwsExpCorel"') && cwsHtml.includes('id="cwsCorelSetup"'));
+assert(rootHtml.includes('id="corelBridgeModal"'));
+console.log('✓ CorelDRAW 1-click live COM bridge, colored SVG, VBA macro, and UI controls verified');

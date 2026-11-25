@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Kutu Harf Stüdyosu — Profesyonel 3D Tabela CAD/CAM &amp; İmalat Stüdyosu</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Crect x='9' y='7' width='14' height='18' rx='3' fill='%23ffb547'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./src/styles/studio.css?v=qa10">
+  <link rel="stylesheet" href="./src/styles/studio.css?v=qa11">
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -286,6 +286,44 @@
     </div>
   </div>
 
+  <!-- CorelDRAW 1-Click Live Integration Modal -->
+  <div id="corelBridgeModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="corelBridgeTitle">
+    <div class="modal-card corel-modal-card">
+      <div class="modal-head">
+        <h3 id="corelBridgeTitle">✦ CorelDRAW Canlı Entegrasyonu</h3>
+        <button type="button" id="btnCloseCorelModal" class="close-btn">✕</button>
+      </div>
+      <div class="modal-body corel-modal-body">
+        <div class="corel-status-row">
+          <span id="corelBridgeStatusBadge" class="corel-status-pill">Bağlantı kontrol ediliyor...</span>
+          <button type="button" id="btnCorelCheckStatus" class="sec-btn">Yenile</button>
+        </div>
+        <p id="corelBridgeSummary" class="dock-helper" style="margin:6px 0 10px">
+          Nesting yaptığınız tüm parçalar, 1:1 mm gerçek ölçüler, plaka ebatı (sayfa ölçüsü + kenar sınırı) ve seçili gövde/iç boşluk renkleriyle doğrudan CorelDRAW'a aktarılır.
+        </p>
+        <div class="corel-step-box">
+          <strong>Canlı Tek Tıkla CorelDRAW'a Gönderme (Önerilen)</strong>
+          <ol>
+            <li>Aşağıdaki <b>CorelDRAW Köprüsünü İndir (.bat)</b> dosyasını indirin ve çift tıklayarak çalıştırın (kurulumsuz, yalnızca yerel <code>127.0.0.1:47891</code> portunu açar).</li>
+            <li>Ardından <b>CorelDRAW'a Şimdi Gönder</b> butonuna basın — parçalar plaka ebatı ve renkleriyle açık CorelDRAW belgenize otomatik eklenir.</li>
+          </ol>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            <button type="button" id="btnCorelDownloadBat" class="sec-btn">⬇ CorelDRAW Köprüsünü İndir (.bat)</button>
+            <button type="button" id="btnCorelRetrySend" class="corel-btn">✦ CorelDRAW'a Şimdi Gönder</button>
+          </div>
+        </div>
+        <div class="corel-step-box" style="margin-top:10px">
+          <strong>Köprü Olmadan Hızlı Aktarım Seçenekleri</strong>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            <button type="button" id="btnCorelDownloadSvg" class="sec-btn">⬇ Corel Renkli SVG (1:1 mm)</button>
+            <button type="button" id="btnCorelCopySvg" class="sec-btn">⧉ Corel SVG Panoya Kopyala</button>
+            <button type="button" id="btnCorelDownloadBas" class="sec-btn">⬇ Corel VBA Makrosu (.bas)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="exportDialog" class="export-modal hidden" role="dialog" aria-modal="true" aria-labelledby="exportDialogTitle">
     <div class="export-modal-card">
       <div class="export-modal-head">
@@ -336,6 +374,6 @@
   <div id="quotePreviewModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Teklif önizleme"><div class="quote-preview-shell"><header><strong>Teklif Önizleme</strong><button type="button" id="quoteNewTab" class="tb-btn">Yeni Sekmede Aç</button><button type="button" id="quotePrint" class="tb-btn">Yazdır / PDF</button><button type="button" id="quoteClose" class="tb-btn" aria-label="Kapat">✕</button></header><iframe id="quotePreviewFrame" sandbox="allow-same-origin allow-modals" title="Müşteri teklif önizlemesi"></iframe></div></div>
   <div id="floatingWindowsLayer" class="floating-windows-layer"></div>
   <script defer src="./public/vendor/pdfjs/pdf.min.js"></script>
-  <script type="module" src="./src/main.js?v=20261125-v9"></script>
+  <script type="module" src="./src/main.js?v=20261125-v10"></script>
 </body>
 </html>
