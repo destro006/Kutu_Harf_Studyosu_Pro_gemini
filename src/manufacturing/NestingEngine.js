@@ -1,5 +1,7 @@
 import {
+  computeFileliContours,
   computeFileliAcrylicCutContours,
+  computeFileliDekotaCutContours,
   ensureWinding,
   expandAcrylicContoursWithOverlap,
   minDistanceBetweenPolygons,
@@ -229,20 +231,36 @@ export function extractNestingItems(metricsList, state) {
       };
 
       if (cType === 'fileli') {
+        const obj = (state.objects || []).find(o => o.id === m.objectId);
         const fileThick = state.fileli?.fileThicknessMm || 2;
         const acThick = state.fileli?.acrylicThicknessMm || 3;
         const dekThick = state.fileli?.dekotaThicknessMm || 5;
         const overlapMm = Math.max(0, Number(state.fileli?.acrylicOverlapMm ?? 3));
-        const overlapLabel = Number.isInteger(overlapMm) ? String(overlapMm) : overlapMm.toFixed(1).replace(/\.0$/, '');
+        const dekotaInsetMm = Math.max(0, Number(state.fileli?.dekotaInsetMm ?? 2));
+        const fmtNum = v => Number.isInteger(v) ? String(v) : v.toFixed(1).replace(/\.0$/, '');
+        const overlapLabel = fmtNum(overlapMm);
+        const dekotaInsetLabel = fmtNum(dekotaInsetMm);
         const wallMm = Math.max(0.4, Number(m.metalThicknessMm ?? state.fileli?.metalThicknessMm ?? 1));
+        const targetFileW = Math.max(0, Number(obj?.fileWidthMm ?? state.fileli?.fileWidthMm ?? m.fileWidthMm ?? 5));
+        const fileWidthChanged = m.fileWidthMm != null && Math.abs(targetFileW - m.fileWidthMm) > 1e-4;
 
         const fileGroupName = `File Çerçeve · ${fileThick} mm`;
         const acrylicGroupName = overlapMm > 0.01
           ? `Pleksi (+${overlapLabel} mm Pay) · ${acThick} mm`
           : `Pleksi (Akrilik) · ${acThick} mm`;
-        const dekotaGroupName = `Arka Dekota · ${dekThick} mm`;
+        const dekotaGroupName = dekotaInsetMm > 0.01
+          ? `Arka Dekota (-${dekotaInsetLabel} mm) · ${dekThick} mm`
+          : `Arka Dekota · ${dekThick} mm`;
 
-        const fileRings = m.exportContours?.file?.length ? m.exportContours.file : m.polygonsMm;
+        let fileRings = m.exportContours?.file?.length ? m.exportContours.file : m.polygonsMm;
+        if (fileWidthChanged && targetFileW > 0.05 && m.polygonsMm?.length) {
+          const recomputedFile = [];
+          for (const poly of m.polygonsMm) {
+            const fRes = computeFileliContours(poly.outer, poly.holes, targetFileW);
+            if (fRes.ok && fRes.fileRings?.length) recomputedFile.push(...fRes.fileRings);
+          }
+          if (recomputedFile.length) fileRings = recomputedFile;
+        }
         const fileMat = state.fileli?.fileMaterial || 'aynaAltin';
         if (targetPart === 'all' || targetPart === 'file') {
           for (const poly of fileRings) {
@@ -257,11 +275,11 @@ export function extractNestingItems(metricsList, state) {
         }
         if (targetPart === 'all' || targetPart === 'acrylic') {
           let acrylicCutPolys = [];
-          if (m.exportContours?.acrylicCut?.length && Math.abs((m.exportContours.acrylicOverlapMm ?? overlapMm) - overlapMm) < 1e-4) {
+          if (!fileWidthChanged && m.exportContours?.acrylicCut?.length && Math.abs((m.exportContours.acrylicOverlapMm ?? overlapMm) - overlapMm) < 1e-4) {
             acrylicCutPolys = m.exportContours.acrylicCut;
           } else if (m.fileWidthMm != null && m.polygonsMm?.length) {
             for (const poly of m.polygonsMm) {
-              const cutRes = computeFileliAcrylicCutContours(poly.outer, poly.holes, m.fileWidthMm, overlapMm, wallMm);
+              const cutRes = computeFileliAcrylicCutContours(poly.outer, poly.holes, targetFileW, overlapMm, wallMm);
               if (cutRes.ok && cutRes.acrylicPolys.length) acrylicCutPolys.push(...cutRes.acrylicPolys);
             }
           } else if (m.exportContours?.acrylic?.length) {
@@ -280,9 +298,21 @@ export function extractNestingItems(metricsList, state) {
             });
           }
         }
-        const backingRings = m.exportContours?.backing?.length ? m.exportContours.backing : m.polygonsMm;
         if (targetPart === 'all' || targetPart === 'outer' || targetPart === 'dekota') {
-          for (const poly of backingRings) {
+          let backingCutPolys = [];
+          if (m.exportContours?.backingCut?.length && Math.abs((m.exportContours.dekotaInsetMm ?? dekotaInsetMm) - dekotaInsetMm) < 1e-4) {
+            backingCutPolys = m.exportContours.backingCut;
+          } else {
+            const baseBacking = m.exportContours?.backing?.length ? m.exportContours.backing : m.polygonsMm;
+            for (const poly of baseBacking) {
+              const dekRes = computeFileliDekotaCutContours(poly.outer, poly.holes, dekotaInsetMm);
+              if (dekRes.ok && dekRes.dekotaPolys?.length) backingCutPolys.push(...dekRes.dekotaPolys);
+            }
+          }
+          if (!backingCutPolys.length) {
+            backingCutPolys = m.exportContours?.backing?.length ? m.exportContours.backing : m.polygonsMm;
+          }
+          for (const poly of backingCutPolys) {
             addRing(poly.outer, poly.holes, 'Arka Dekota', 'dekota', dekThick, 'CUT_OUTER', {
               partGroup: FILELI_NESTING_GROUPS.fileli_dekota.id,
               partGroupLabel: FILELI_NESTING_GROUPS.fileli_dekota.label,

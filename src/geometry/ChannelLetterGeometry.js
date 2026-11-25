@@ -2,6 +2,7 @@ import THREE from '../vendor/three.js';
 import {
   computeFileliContours,
   computeFileliAcrylicCutContours,
+  computeFileliDekotaCutContours,
   ensureWinding,
   healPolygonWithHoles,
   polygonArea,
@@ -90,6 +91,7 @@ export function buildChannelComponent(shapesMm, config) {
     acrylicInsetMm = 2.5,
     acrylicThicknessMm = 3,
     acrylicOverlapMm = 3,
+    dekotaInsetMm = 2,
     includeBacking = false,
   } = config;
 
@@ -104,8 +106,10 @@ export function buildChannelComponent(shapesMm, config) {
   const exportFileContours = [];
   const exportAcrylicContours = [];
   const exportAcrylicCutContours = [];
+  const exportBackingCutContours = [];
   const exportSidewallStrips = [];
   const safeOverlapMm = Math.max(0, Number(acrylicOverlapMm) || 0);
+  const safeDekotaInsetMm = Math.max(0, Number(dekotaInsetMm) || 0);
 
   let outerAreaMm2 = 0;
   let acrylicAreaMm2 = 0;
@@ -151,6 +155,10 @@ export function buildChannelComponent(shapesMm, config) {
     });
 
     if (constructionType === 'fileli') {
+      const dekRes = computeFileliDekotaCutContours(poly.outer, poly.holes, safeDekotaInsetMm);
+      const dekPolys = (dekRes.ok && dekRes.dekotaPolys.length) ? dekRes.dekotaPolys : [{ outer: poly.outer, holes: poly.holes }];
+      for (const dp of dekPolys) exportBackingCutContours.push({ outer: dp.outer, holes: dp.holes || [] });
+
       const bodyShapeM = polygonMmToThreeShape(poly.outer, poly.holes, MM_TO_M);
       const rimThick = Math.max(1.0, fileThicknessMm);
       const bodyDepthMm = Math.max(4, depthMm - rimThick);
@@ -275,6 +283,8 @@ export function buildChannelComponent(shapesMm, config) {
       acrylicOverlapMm: safeOverlapMm,
       sidewallStrips: exportSidewallStrips,
       backing: includeBacking ? exportOuterContours : [],
+      backingCut: exportBackingCutContours,
+      dekotaInsetMm: safeDekotaInsetMm,
     },
     metrics: {
       boundsMm,
@@ -287,6 +297,7 @@ export function buildChannelComponent(shapesMm, config) {
       fileWidthMm,
       metalThicknessMm: Math.max(0.2, Math.min(3, metalThicknessMm)),
       acrylicOverlapMm: safeOverlapMm,
+      dekotaInsetMm: safeDekotaInsetMm,
     },
     warnings,
   };

@@ -673,6 +673,34 @@ export function expandAcrylicContoursWithOverlap(acrylicContours, overlapMm = 3,
 }
 
 /**
+ * Computes the inset Arka Dekota backing cutting contour for Fileli letters.
+ * Offsets outer contours inward and internal hole contours outward by `dekotaInsetMm`
+ * so the Dekota backing sits cleanly inside the metal return sidewalls.
+ */
+export function computeFileliDekotaCutContours(outerCCW, holesCW, dekotaInsetMm = 2) {
+  const safeInset = Math.max(0, Number(dekotaInsetMm) || 0);
+  const healed = healPolygonWithHoles(outerCCW, holesCW, 0.025);
+  const outer = healed.outer.length >= 3 ? healed.outer : ensureWinding(outerCCW, true);
+  const holes = healed.holes || [];
+
+  if (outer.length < 3) {
+    return { ok: false, dekotaPolys: [], insetMm: safeInset, warning: 'Geçersiz kontur.' };
+  }
+  if (safeInset <= 0.05) {
+    return { ok: true, dekotaPolys: [{ outer, holes }], insetMm: 0, warning: null };
+  }
+
+  let res = computeFileliContours(outer, holes, safeInset);
+  if ((!res.ok || !res.acrylicPolys?.length) && safeInset > 1) {
+    res = computeFileliContours(outer, holes, Math.min(safeInset, 1));
+  }
+  if (res.ok && res.acrylicPolys?.length) {
+    return { ok: true, dekotaPolys: res.acrylicPolys, insetMm: safeInset, warning: null };
+  }
+  return { ok: true, dekotaPolys: [{ outer, holes }], insetMm: 0, warning: res.warning || null };
+}
+
+/**
  * 2D Polygon Boolean Operations (Union, Difference, Intersection)
  * via Sutherland-Hodgman / Weiler-Atherton-style contour clipping for CAD tools.
  */

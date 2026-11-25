@@ -1695,7 +1695,18 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .cws-side-mini-btn:hover {border-color:var(--accent);color:#fff;}
 .nest-group-caret {display:inline-block;font-size:11px;color:var(--muted);transition:transform .15s ease;flex:none;}
 .nest-group-box[open] > .nest-group-head .nest-group-caret {transform:rotate(90deg);color:var(--accent);}
-.nest-overlap-hint {display:block;font-size:10.5px;color:var(--muted);line-height:1.35;margin:-2px 0 6px;}
+.nest-overlap-hint {display:block;font-size:10.5px;color:var(--muted);line-height:1.35;margin:2px 0 6px;}
+.cws-left-tabs {display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px;padding:3px;border-radius:7px;background:rgba(255,255,255,.04);border:1px solid var(--line);}
+.cws-left-tab {padding:5px 6px;border-radius:5px;border:none;background:transparent;color:var(--muted);font-size:11px;font-weight:500;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .15s,color .15s;}
+.cws-left-tab:hover {color:var(--text);}
+.cws-left-tab.on {background:rgba(255,181,71,.16);color:var(--accent);font-weight:600;box-shadow:inset 0 0 0 1px rgba(255,181,71,.4);}
+.cws-fileli-panel {display:flex;flex-direction:column;gap:8px;}
+.cws-fileli-card {border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.025);padding:8px;}
+.cws-fileli-card-head {display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--text);margin-bottom:6px;}
+.cws-fileli-card .field-row {margin-bottom:5px;}
+.cws-fileli-card .field-row:last-child {margin-bottom:0;}
+.cws-fileli-summary {display:flex;flex-direction:column;gap:4px;padding:7px 9px;border-radius:7px;border:1px solid var(--line);background:rgba(0,0,0,.18);font-size:11px;color:var(--muted);}
+.cws-fileli-summary-row {display:flex;align-items:center;gap:6px;}
 
 /* Static file actions aligned with the contextual Ortala property toolbar. */
 .numeric-toolbar-row{display:flex;align-items:stretch;min-width:0;flex-shrink:0;background:#141b25;border-bottom:1px solid #35404c;}

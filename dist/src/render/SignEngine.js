@@ -822,11 +822,12 @@ export class SignEngine {
         acrylicInsetMm: state.fileli?.acrylicInsetMm ?? 2.5,
         acrylicThicknessMm: state.fileli?.acrylicThicknessMm ?? 3,
         acrylicOverlapMm: state.fileli?.acrylicOverlapMm ?? 3,
+        dekotaInsetMm: state.fileli?.dekotaInsetMm ?? 2,
       };
       const cfgKey = [
         cType, buildCfg.depthMm, buildCfg.bevelMm, buildCfg.fileWidthMm,
         buildCfg.fileThicknessMm, buildCfg.metalThicknessMm, buildCfg.borderBevelMm,
-        buildCfg.acrylicInsetMm, buildCfg.acrylicThicknessMm, buildCfg.acrylicOverlapMm, scaleX, scaleY,
+        buildCfg.acrylicInsetMm, buildCfg.acrylicThicknessMm, buildCfg.acrylicOverlapMm, buildCfg.dekotaInsetMm, scaleX, scaleY,
       ].join('|');
 
       for (let gIdx = 0; gIdx < shapesMmGroups.length; gIdx++) {

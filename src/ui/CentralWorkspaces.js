@@ -55,6 +55,11 @@ export function renderNestingCenter(state, ctx) {
   const partGroups = [...partGroupsMap.values()];
   const activeGroup = (ctx.activePartGroup && partGroupsMap.has(ctx.activePartGroup)) ? ctx.activePartGroup : null;
   const leftCollapsed = Boolean(ctx.leftPanelCollapsed);
+  const activeLeftTab = ctx.leftTab === 'fileli' ? 'fileli' : 'parts';
+  const fileliObjWidth = (state.objects || []).find(o => (o.constructionType || state.constructionType) === 'fileli')?.fileWidthMm ?? state.fileli?.fileWidthMm ?? 5;
+  const acOverlapMm = state.fileli?.acrylicOverlapMm ?? 3;
+  const dekInsetMm = state.fileli?.dekotaInsetMm ?? 2;
+  const dekThickMm = state.fileli?.dekotaThicknessMm ?? 5;
   const openGroupsSet = ctx.openGroups instanceof Set
     ? ctx.openGroups
     : new Set(Array.isArray(ctx.openGroups) ? ctx.openGroups : []);
@@ -80,13 +85,45 @@ export function renderNestingCenter(state, ctx) {
     <div class="nesting-workspace" data-nesting-tab="${n.activeTabId || 'design'}" data-display-unit="${unit}">
     ${renderNestingSourceTabs(n)}
     <div class="center-ws-grid ${leftCollapsed ? 'cws-left-collapsed' : ''}">
-      <!-- Left: Part List & Color Groups (Collapsible) -->
+      <!-- Left: Part List & Fileli Material Settings Tabs (Collapsible) -->
       <div class="cws-side">
         <div class="cws-side-header">
-          <h3 class="sec-title">İmalat Parçaları (${totalParts}) <small id="nestingSelectedCount">${selectedIds.size?selectedIds.size+' seçili':''}</small></h3>
-          ${!leftCollapsed && sheets.length ? `<button type="button" id="cwsToggleAllGroups" class="cws-side-mini-btn" title="${anyGroupOpen ? 'Tüm parça gruplarını daralt' : 'Tüm parça gruplarını aç'}">${anyGroupOpen ? 'Tümünü Kapat' : 'Tümünü Aç'}</button>` : ''}
-          <button type="button" id="cwsToggleLeftPanel" class="cws-side-mini-btn" aria-expanded="${!leftCollapsed}" title="${leftCollapsed ? 'Parça panelini aç' : 'Parça panelini daralt (tuvali genişlet)'}">${leftCollapsed ? '»' : '«'}</button>
+          <h3 class="sec-title">${activeLeftTab === 'fileli' ? 'File Malzeme Ayarları' : `İmalat Parçaları (${totalParts})`} <small id="nestingSelectedCount">${activeLeftTab === 'parts' && selectedIds.size ? selectedIds.size + ' seçili' : ''}</small></h3>
+          ${!leftCollapsed && activeLeftTab === 'parts' && sheets.length ? `<button type="button" id="cwsToggleAllGroups" class="cws-side-mini-btn" title="${anyGroupOpen ? 'Tüm parça gruplarını daralt' : 'Tüm parça gruplarını aç'}">${anyGroupOpen ? 'Tümünü Kapat' : 'Tümünü Aç'}</button>` : ''}
+          <button type="button" id="cwsToggleLeftPanel" class="cws-side-mini-btn" aria-expanded="${!leftCollapsed}" title="${leftCollapsed ? 'Sol paneli aç' : 'Sol paneli daralt (tuvali genişlet)'}">${leftCollapsed ? '»' : '«'}</button>
         </div>
+        <div class="cws-left-tabs" role="group" aria-label="Sol Panel Sekmeleri">
+          <button type="button" aria-pressed="${activeLeftTab === 'parts'}" class="cws-left-tab ${activeLeftTab === 'parts' ? 'on' : ''}" data-cws-left-tab="parts">Parçalar (${totalParts})</button>
+          <button type="button" aria-pressed="${activeLeftTab === 'fileli'}" class="cws-left-tab ${activeLeftTab === 'fileli' ? 'on' : ''}" data-cws-left-tab="fileli">File Malzeme Ayarları</button>
+        </div>
+        ${activeLeftTab === 'fileli' ? `
+          <div id="cwsFileliSettingsPanel" class="cws-fileli-panel">
+            <div class="cws-fileli-card">
+              <div class="cws-fileli-card-head"><i class="nest-part-dot" style="background:#d4a24c"></i><span>Ön File Çerçeve (Metal)</span></div>
+              <div class="field-row"><label for="cwsFileliWidth">File Genişliği (${unit})</label><input id="cwsFileliWidth" type="number" min="0" max="${show(60)}" step="${show(0.5)}" value="${show(fileliObjWidth)}"></div>
+              <div class="field-row"><label for="cwsFileliThick">File Metal Kalınlığı (${unit})</label><input id="cwsFileliThick" type="number" min="${show(0.5)}" max="${show(10)}" step="${show(0.2)}" value="${show(state.fileli?.fileThicknessMm ?? 2)}"></div>
+              <div class="field-row"><label for="cwsFileliWallThick">Yanak Sac Kalınlığı (${unit})</label><input id="cwsFileliWallThick" type="number" min="${show(0.2)}" max="${show(3)}" step="${show(0.1)}" value="${show(state.fileli?.metalThicknessMm ?? 1)}"></div>
+            </div>
+            <div class="cws-fileli-card">
+              <div class="cws-fileli-card-head"><i class="nest-part-dot" style="background:#38bdf8"></i><span>Pleksi (Akrilik) Kesim</span></div>
+              <div class="field-row"><label for="cwsFileliAcrylicOverlap">Pleksi Binme Payı (${unit})</label><input id="cwsFileliAcrylicOverlap" type="number" min="0" max="${show(25)}" step="${show(0.5)}" value="${show(acOverlapMm)}"></div>
+              <small class="nest-overlap-hint">Filenin iç boşluğundan her kenarda kaç ${unit} büyük kesileceği (önerilen: min. 3 mm).</small>
+              <div class="field-row"><label for="cwsFileliAcrylicThick">Pleksi Kalınlığı (${unit})</label><input id="cwsFileliAcrylicThick" type="number" min="${show(1)}" max="${show(20)}" step="${show(0.5)}" value="${show(state.fileli?.acrylicThicknessMm ?? 3)}"></div>
+            </div>
+            <div class="cws-fileli-card">
+              <div class="cws-fileli-card-head"><i class="nest-part-dot" style="background:#34d399"></i><span>Arka Dekota Kesim</span></div>
+              <div class="field-row"><label for="cwsFileliDekotaInset">Dekota İçe Küçültme (${unit})</label><input id="cwsFileliDekotaInset" type="number" min="0" max="${show(25)}" step="${show(0.5)}" value="${show(dekInsetMm)}"></div>
+              <small class="nest-overlap-hint">Harf dış hattından her kenarda kaç ${unit} içe doğru küçük kesileceği (yanak içine oturması için).</small>
+              <div class="field-row"><label for="cwsFileliDekotaThick">Dekota Kalınlığı (${unit})</label><input id="cwsFileliDekotaThick" type="number" min="${show(1)}" max="${show(30)}" step="${show(0.5)}" value="${show(dekThickMm)}"></div>
+            </div>
+            <div class="cws-fileli-summary">
+              <div class="cws-fileli-summary-row"><i class="nest-part-dot" style="background:#d4a24c"></i><span>File Çerçeve: ${show(fileliObjWidth)} ${unit} kenar</span></div>
+              <div class="cws-fileli-summary-row"><i class="nest-part-dot" style="background:#38bdf8"></i><span>Pleksi: +${show(acOverlapMm)} ${unit} binme</span></div>
+              <div class="cws-fileli-summary-row"><i class="nest-part-dot" style="background:#34d399"></i><span>Dekota: -${show(dekInsetMm)} ${unit} küçültme</span></div>
+            </div>
+            <button type="button" id="cwsFileliApplyRepack" class="cta-btn" style="width:100%">Levhaları Güncelle</button>
+          </div>
+        ` : `
         ${isSidewallMode ? `
           <div class="cws-sidewall-banner">
             <div>
@@ -146,6 +183,7 @@ export function renderNestingCenter(state, ctx) {
             ${n.unplaced.map(u => `<div>• ${escapeHtml(u.item?.label||u.label)} (${escapeHtml(u.reason || 'Sığmadı')})</div>`).join('')}
           </div>
         ` : ''}
+        `}
       </div>
 
       <!-- Center: Sheet Tabs + True-Shape SVG Canvas -->
@@ -206,8 +244,6 @@ export function renderNestingCenter(state, ctx) {
         <div class="field-row"><label>Levha Yüksekliği (${unit})</label><input id="cwsNestH" type="number" step="any" value="${show(n.sheetHeightMm)}"></div>
         <div class="field-row"><label>Parça Aralığı (${unit})</label><input id="cwsNestSp" type="number" step="any" value="${show(n.clearanceMm??5)}"></div>
         <div class="field-row"><label>Kenar Payı (${unit})</label><input id="cwsNestMg" type="number" step="any" value="${show(n.marginLeftMm)}"></div>
-        <div class="field-row" id="cwsNestAcrylicOverlapRow" title="Fileli harflerde pleksi kesiminin filenin iç boşluğundan her kenarda kaç mm büyük kesileceği (en az 3 mm önerilir)"><label for="cwsNestAcrylicOverlap">Pleksi Binme Payı (${unit})</label><input id="cwsNestAcrylicOverlap" type="number" min="0" max="${show(25)}" step="${show(0.5)}" value="${show(state.fileli?.acrylicOverlapMm ?? 3)}"></div>
-        <small class="nest-overlap-hint">Fileli harf pleksisi, file iç boşluğundan her kenarda bu değer kadar büyük kesilir (en az 3 mm önerilir).</small>
         <div class="field-row"><label>Delik İçi Yerleştirme</label><input id="cwsNestHoles" type="checkbox" ${n.allowHoleNesting ? 'checked' : ''}></div>
         <div class="field-row"><label>Fırça Yönü Kısıtı (0° Sabit)</label><input id="cwsNestGrain" type="checkbox" ${n.enforceGrainDirection ? 'checked' : ''}></div>
         <details class="nesting-advanced-details" id="cwsNestAdvanced" ${ctx.advancedOpen ? 'open' : ''}>

@@ -35,6 +35,8 @@ export function createDefaultState() {
       acrylicThicknessMm: 3,
       acrylicOverlapMm: 3, // Pleksinin filenin iç boşluğundan her kenarda taşma (binme) payı (mm)
       acrylicColor: '#f3f3ee',
+      dekotaThicknessMm: 5,
+      dekotaInsetMm: 2, // Arka dekotanın harf dış hattından her kenarda içe küçültme payı (mm)
     },
 
     materials: {

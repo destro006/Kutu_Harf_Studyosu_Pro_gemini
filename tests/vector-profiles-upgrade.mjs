@@ -216,10 +216,10 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v8'));
-assert(rootHtml.includes('./src/main.js?v=20261126-v25'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v25'));
+assert(rootHtml.includes('./src/main.js?v=20261126-v26'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v26'));
 assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
-assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v25'));
+assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v26'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -550,6 +550,8 @@ const fileliMetric = [{
 }];
 const fState = createDefaultState();
 assert.equal(fState.fileli.acrylicOverlapMm, 3, 'Default Fileli acrylic overlap must be 3 mm');
+assert.equal(fState.fileli.dekotaInsetMm, 2, 'Default Fileli dekota inset must be 2 mm');
+assert.equal(fState.fileli.dekotaThicknessMm, 5, 'Default Fileli dekota thickness must be 5 mm');
 const fileliItems = extractNestingItems(fileliMetric, fState);
 assert.equal(fileliItems.length, 3);
 assert.deepEqual(fileliItems.map(i => i.partGroup), ['file_frame', 'fileli_acrylic', 'fileli_dekota']);
@@ -562,32 +564,63 @@ const acBounds3 = polygonBounds(fileliItems[1].outer);
 assert(Math.abs(acBounds3.width - 76) < 0.15 && Math.abs(acBounds3.height - 76) < 0.15,
   `Expected 76x76 mm Pleksi (+3 mm per side over 70x70 mm file inner hole), got ${acBounds3.width.toFixed(2)}x${acBounds3.height.toFixed(2)}`);
 
-// Verify customer-adjustable overlap (5 mm -> 80x80 mm)
+// Verify Arka Dekota shrinks inward by dekotaInsetMm per side (default -2 mm -> 96x96 mm)
+const dekBounds2 = polygonBounds(fileliItems[2].outer);
+assert(Math.abs(dekBounds2.width - 96) < 0.15 && Math.abs(dekBounds2.height - 96) < 0.15,
+  `Expected 96x96 mm Arka Dekota (-2 mm per side from 100x100 mm), got ${dekBounds2.width.toFixed(2)}x${dekBounds2.height.toFixed(2)}`);
+
+// Verify customer-adjustable overlap (5 mm -> 80x80 mm) & dekota inset (5 mm -> 90x90 mm, 0 mm -> 100x100 mm)
 const customOverlapState = createDefaultState();
 customOverlapState.fileli.acrylicOverlapMm = 5;
+customOverlapState.fileli.dekotaInsetMm = 5;
 const customItems = extractNestingItems(fileliMetric, customOverlapState);
 const acBounds5 = polygonBounds(customItems[1].outer);
+const dekBounds5 = polygonBounds(customItems[2].outer);
 assert(Math.abs(acBounds5.width - 80) < 0.15 && Math.abs(acBounds5.height - 80) < 0.15,
   `Expected 80x80 mm Pleksi (+5 mm per side), got ${acBounds5.width.toFixed(2)}x${acBounds5.height.toFixed(2)}`);
+assert(Math.abs(dekBounds5.width - 90) < 0.15 && Math.abs(dekBounds5.height - 90) < 0.15,
+  `Expected 90x90 mm Arka Dekota (-5 mm per side), got ${dekBounds5.width.toFixed(2)}x${dekBounds5.height.toFixed(2)}`);
+customOverlapState.fileli.dekotaInsetMm = 0;
+const dekZero = polygonBounds(extractNestingItems(fileliMetric, customOverlapState)[2].outer);
+assert(Math.abs(dekZero.width - 100) < 0.15, `Expected 100x100 mm Arka Dekota at 0 mm inset, got ${dekZero.width.toFixed(2)}`);
 
-// Verify separate sheet tabs created by runTrueShapeNesting (File, Pleksi, Dekota)
+// Verify separate sheet tabs created by runTrueShapeNesting (File, Pleksi, Dekota) & left File Malzeme Ayarları tab
 const splitNested = runTrueShapeNesting(fileliItems, fState.nesting);
 assert.equal(splitNested.sheets.length, 3, 'Fileli must produce 3 separate sheet tabs (File Çerçeve, Pleksi, Arka Dekota)');
 assert.deepEqual(splitNested.sheets.map(s => s.placements[0].partGroup), ['file_frame', 'fileli_acrylic', 'fileli_dekota']);
 fState.nesting.sheets = splitNested.sheets;
-const splitUiHtml = renderNestingCenter(fState, { activeSheetIdx: 1 });
-assert(splitUiHtml.includes('id="cwsNestAcrylicOverlap"'), 'Nesting settings must expose customer-adjustable Pleksi binme payı input');
+const splitUiHtml = renderNestingCenter(fState, { activeSheetIdx: 1, leftTab: 'parts' });
+assert(splitUiHtml.includes('data-cws-left-tab="parts"') && splitUiHtml.includes('data-cws-left-tab="fileli"'), 'Left sidebar must have Parçalar and File Malzeme Ayarları tabs');
+assert(splitUiHtml.includes('File Malzeme Ayarları'));
 assert(splitUiHtml.includes('sheet-tab-dot'), 'Separate sheet tabs must display group color indicators');
 assert(splitUiHtml.includes('File Çerçeve') && splitUiHtml.includes('Pleksi') && splitUiHtml.includes('Arka Dekota'));
 
-// Verify real buildChannelComponent emits larger acrylicCut than file inner opening & respects sidewall clamp
+const fileliTabHtml = renderNestingCenter(fState, { activeSheetIdx: 1, leftTab: 'fileli' });
+assert(fileliTabHtml.includes('id="cwsFileliSettingsPanel"') && fileliTabHtml.includes('id="cwsFileliAcrylicOverlap"')
+  && fileliTabHtml.includes('id="cwsFileliDekotaInset"') && fileliTabHtml.includes('id="cwsFileliDekotaThick"')
+  && fileliTabHtml.includes('id="cwsFileliWidth"') && fileliTabHtml.includes('id="cwsFileliApplyRepack"'),
+  'Left File Malzeme Ayarları tab must render all File/Pleksi/Dekota controls');
+
+// Verify real buildChannelComponent emits larger acrylicCut, inset backingCut (outer shrunk & hole expanded), & respects sidewall clamp
 const sqShape = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(100, 0), new THREE.Vector2(100, 100), new THREE.Vector2(0, 100)]);
-const builtSq3 = buildChannelComponent([sqShape], { constructionType: 'fileli', depthMm: 80, fileWidthMm: 8, metalThicknessMm: 1, acrylicOverlapMm: 3 });
+const builtSq3 = buildChannelComponent([sqShape], { constructionType: 'fileli', depthMm: 80, fileWidthMm: 8, metalThicknessMm: 1, acrylicOverlapMm: 3, dekotaInsetMm: 2 });
 const cutB3 = polygonBounds(builtSq3.exportContours.acrylicCut[0].outer);
 const visB3 = polygonBounds(builtSq3.exportContours.acrylic[0].outer);
+const backB3 = polygonBounds(builtSq3.exportContours.backingCut[0].outer);
 assert(Math.abs(visB3.width - 84) < 0.15 && Math.abs(cutB3.width - 90) < 0.15,
   `File inner opening 84 mm + 3 mm overlap/side must yield 90 mm acrylicCut (got ${cutB3.width.toFixed(2)} mm)`);
+assert(Math.abs(backB3.width - 96) < 0.15 && Math.abs(backB3.height - 96) < 0.15,
+  `Expected 96x96 mm backingCut with 2 mm dekotaInsetMm (got ${backB3.width.toFixed(2)})`);
 assert(builtSq3.metrics.acrylicAreaMm2 + builtSq3.metrics.fileAreaMm2 <= builtSq3.metrics.outerAreaMm2 * 1.025);
+
+const holedSq = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(100, 0), new THREE.Vector2(100, 100), new THREE.Vector2(0, 100)]);
+holedSq.holes.push(new THREE.Path([new THREE.Vector2(30, 30), new THREE.Vector2(30, 70), new THREE.Vector2(70, 70), new THREE.Vector2(70, 30)]));
+const builtHoleDek = buildChannelComponent([holedSq], { constructionType: 'fileli', depthMm: 80, fileWidthMm: 8, metalThicknessMm: 1, dekotaInsetMm: 2 });
+const dekOuterHole = polygonBounds(builtHoleDek.exportContours.backingCut[0].outer);
+const dekInnerHole = polygonBounds(builtHoleDek.exportContours.backingCut[0].holes[0]);
+assert(Math.abs(dekOuterHole.width - 96) < 0.15, 'Holed glyph Dekota outer must shrink by 2 mm/side to 96 mm');
+assert(Math.abs(dekInnerHole.width - 44) < 0.15, `Holed glyph Dekota inner hole must expand by 2 mm/side to 44 mm (got ${dekInnerHole.width.toFixed(2)})`);
+
 const builtSqClamped = buildChannelComponent([sqShape], { constructionType: 'fileli', depthMm: 80, fileWidthMm: 4, metalThicknessMm: 1, acrylicOverlapMm: 10 });
 const cutBClamp = polygonBounds(builtSqClamped.exportContours.acrylicCut[0].outer);
 assert(cutBClamp.width <= 98.15, `Excessive overlap must clamp inside 1 mm metal sidewall (<= 98 mm, got ${cutBClamp.width.toFixed(2)})`);
