@@ -3,7 +3,7 @@ import { renderDetailedCostCenter } from './CostCenterView.js?v=qa8';
 import { ringLength, SHEET_PRESETS } from '../manufacturing/NestingEngine.js';
 import { renderNestingSvg } from './NestingView.js?v=units6';
 import { renderNestingSourceTabs, renderNestingImportPane } from './NestingImportView.js?v=units6';
-import { MACHINE_PROFILES, validateNestedProduction } from '../export/CncGcodeExporter.js';
+import { MACHINE_PROFILES, MACHINE_PROFILE_CATEGORIES, getMachineProfile, validateNestedProduction } from '../export/CncGcodeExporter.js';
 import { formatMoney } from '../manufacturing/CostEngine.js';
 import { buildQuoteHtml } from '../manufacturing/QuoteGenerator.js';
 
@@ -160,12 +160,21 @@ export function renderNestingCenter(state, ctx) {
 
 function renderCncFields(state,prefix){
  const cnc=state.cnc||{},unit=normalizeDisplayUnit(state.pageLayout?.displayUnit),show=mm=>formatMmAsUnit(mm,unit);
+ const activeProfile=getMachineProfile(cnc.profile);
+ const profileGroups=MACHINE_PROFILE_CATEGORIES.map(cat=>{
+  const opts=MACHINE_PROFILES.filter(p=>p.category===cat).map(p=>`<option value="${p.id}" ${activeProfile.id===p.id?'selected':''}>${escapeHtml(p.label)}</option>`).join('');
+  return `<optgroup label="${escapeHtml(cat)}">${opts}</optgroup>`;
+ }).join('');
  return `
         <div class="field-row">
-          <label>Makine Profili</label>
+          <label>Makine Profili (${MACHINE_PROFILES.length})</label>
           <select id="${prefix}Profile">
-            ${MACHINE_PROFILES.map(p => `<option value="${p.id}" ${cnc.profile === p.id ? 'selected' : ''}>${p.label}</option>`).join('')}
+            ${profileGroups}
           </select>
+        </div>
+        <div class="field-hint" id="${prefix}ProfileHint" style="font-size:11px;color:var(--muted);margin:-2px 0 8px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+          <span>${escapeHtml(activeProfile.notes || '')} · Önerilen kerf: <b>${show(activeProfile.defaultKerfMm ?? 0.2)} ${unit}</b>, takım: <b>${show(activeProfile.defaultToolDiaMm ?? 3)} ${unit}</b></span>
+          <button type="button" id="${prefix}ApplyDefaults" class="sec-btn" style="padding:3px 8px;font-size:11px">Varsayılanları Uygula</button>
         </div>
         <div class="field-row"><label>Kesim Kerfi (${unit})</label><input id="${prefix}Kerf" type="number" step="${show(0.05)}" value="${show(cnc.kerfMm ?? 0.2)}"></div>
         <div class="field-row"><label>Takım Çapı (${unit})</label><input id="${prefix}ToolDia" type="number" step="${show(0.5)}" value="${show(cnc.toolDiameterMm ?? 3.0)}"></div>
@@ -190,14 +199,14 @@ function renderCncFields(state,prefix){
 `;
 }
 function renderNestedCncPanel(state,activeSheet){
- const cnc=state.cnc||{},profile=MACHINE_PROFILES.find(p=>p.id===cnc.profile)||MACHINE_PROFILES[0];
+ const cnc=state.cnc||{},profile=getMachineProfile(cnc.profile);
  const val=validateNestedProduction(activeSheet?[activeSheet]:[],cnc);
  return `<div id="nestCncPanel">
  <h3 class="sec-title" style="margin-top:14px">CNC Makine ve Ayarları</h3>
  ${renderCncFields(state,'nestCnc')}
  <div id="nestCncStatus" style="font-size:11px;margin:6px 0;color:var(--muted)">${val.valid?'Konturlar doğrulandı · aktif levha':escapeHtml(val.issues[0]?.msg||'Üretim kontrolü gerekli.')}
  ${profile.kind==='gcode'?'<p>G-code taslağı: hız, güç ve Z değerleri sabittir; telafi, lead-in ve mikro köprüler CAM programında doğrulanıp uygulanmalıdır.</p>':''}</div>
- <button type="button" id="nestCncExport" class="sec-btn" style="width:100%" ${val.valid?'':'disabled'}>Aktif Levha · ${profile.kind==='gcode'?'G-code Taslağı':profile.ext.toUpperCase()} İndir</button>
+ <button type="button" id="nestCncExport" class="sec-btn" style="width:100%" ${val.valid?'':'disabled'}>Aktif Levha · ${profile.kind==='gcode'?'G-code Taslağı (.'+profile.ext+')':profile.ext.toUpperCase()} İndir</button>
  </div>`;
 }
 
@@ -206,6 +215,8 @@ export function renderCncCenter(state) {
   const cnc = state.cnc || {};
   const unit=normalizeDisplayUnit(state.pageLayout?.displayUnit),show=mm=>formatMmAsUnit(mm,unit);
   const val = validateNestedProduction(sheets, cnc);
+  const activeProfile = getMachineProfile(cnc.profile);
+  const gcodeExt = activeProfile.kind === 'gcode' ? activeProfile.ext : 'nc';
 
   return `
     <div style="padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:1180px;margin:0 auto">
@@ -223,7 +234,7 @@ export function renderCncCenter(state) {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <button type="button" id="cncBtnNestNow" class="sec-btn">Nesting Hesapla / Yenile</button>
           <button type="button" id="cncBtnExportDxf" class="cta-btn" ${!val.valid ? 'disabled' : ''}>Nesting DXF (1:1 mm) İndir</button>
-          <button type="button" id="cncBtnExportGcode" class="cta-btn" ${!val.valid ? 'disabled' : ''}>Makine G-Code (.nc) İndir</button>
+          <button type="button" id="cncBtnExportGcode" class="cta-btn" ${!val.valid ? 'disabled' : ''}>Makine G-Code (.${gcodeExt}) İndir</button>
           <button type="button" id="cncBtnExportSvg" class="sec-btn" ${!val.valid ? 'disabled' : ''}>Nesting SVG İndir</button>
           <button type="button" id="cncBtnExportPlt" class="sec-btn" ${!val.valid ? 'disabled' : ''}>Plotter HPGL (.plt) İndir</button>
           <button type="button" id="cncBtnExportCsv" class="sec-btn">Parça Listesi (CSV) İndir</button>

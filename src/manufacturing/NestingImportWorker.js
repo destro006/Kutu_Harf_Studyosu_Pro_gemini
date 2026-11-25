@@ -1,7 +1,7 @@
 /** Runs geometry decoding and true-shape nesting away from the interactive UI thread. */
 import {detectVectorFormat,extractPostScript} from './VectorFormatDetect.js';
 import {binaryDxfToText} from './BinaryDxfImport.js';
-import {importLegacyPostScript} from './LegacyPostScriptImport.js';
+import {importLegacyPostScript,extractAiOutlineFallback} from './LegacyPostScriptImport.js';
 import { importVectorText, groupRings } from './VectorFileImport.js';
 import { pdfOperatorRings } from './PdfVectorImport.js';
 import { optimizeNesting } from './NestingOptimizer.js?v=pro3-fast3';
@@ -69,16 +69,33 @@ if(typeof self!=='undefined'&&typeof self.addEventListener==='function'){
           const imported=await importNativeCad(job.bytes,job.filename,kind,job.options||{},status=>self.postMessage({jobId:job.jobId,status}));
           self.postMessage({jobId:job.jobId,result:processJob({...job,operation:'nest',imported,nesting:{...job.nesting,quickImport:imported.items.length>60,optimizationBudgetMs:3000}})});return;
         }
+        if(['wmf','emf'].includes(kind)){
+          const {importWmfEmf}=await import('./WmfEmfImport.js');
+          const imported=importWmfEmf(job.bytes,job.filename,kind,job.options||{});
+          self.postMessage({jobId:job.jobId,result:processJob({...job,operation:'nest',imported,nesting:{...job.nesting,quickImport:imported.items.length>60,optimizationBudgetMs:3000}})});return;
+        }
       }
       try{self.postMessage({jobId:job.jobId,result:processJob(job,p=>self.postMessage({jobId:job.jobId,status:'Nesting v3 Pro · '+p.attempts+' deneme · '+Math.min(99,Math.floor(100*p.elapsedMs/p.budgetMs))+'% zaman bütçesi'}))});}
       catch(original){
-        if(job.operation!=='importBinary'||!['postscript','eps-binary'].includes(detectVectorFormat(new Uint8Array(job.bytes),job.filename)))throw original;
+        const kind=job.operation==='importBinary'?detectVectorFormat(new Uint8Array(job.bytes),job.filename):'';
+        if(job.operation!=='importBinary'||!['postscript','eps-binary','ai','eps','ps'].includes(kind))throw original;
         self.postMessage({jobId:job.jobId,status:'AI/EPS için gelişmiş yerel PostScript motoru yükleniyor…'});
-        const {postScriptToPdf}=await import('./PostScriptWasmImport.js');
-        const pdf=await postScriptToPdf(job.bytes);
-        self.postMessage({jobId:job.jobId,result:{convertedPdf:pdf}},[pdf.buffer]);
+        try{
+          const {postScriptToPdf}=await import('./PostScriptWasmImport.js');
+          const pdf=await postScriptToPdf(job.bytes);
+          self.postMessage({jobId:jobIdOrFallback(job),result:{convertedPdf:pdf}},[pdf.buffer]);
+        }catch(gsErr){
+          self.postMessage({jobId:job.jobId,status:'AI/EPS uyumluluk kontur kurtarıcısı deneniyor…'});
+          try{
+            const imported=extractAiOutlineFallback(extractPostScript(job.bytes),job.filename,job.options||{});
+            self.postMessage({jobId:job.jobId,result:processJob({...job,operation:'nest',imported,nesting:{...job.nesting,quickImport:imported.items.length>60,optimizationBudgetMs:3000}})});
+          }catch(fbErr){
+            throw Error(String(gsErr?.message||original?.message||'AI/EPS dosyası açılamadı')+' (Yedek okuyucu: '+String(fbErr?.message||fbErr)+')');
+          }
+        }
       }
     }
     catch(err){self.postMessage({jobId:job.jobId,error:String(err?.message||err)});}
   });
 }
+function jobIdOrFallback(job){return job.jobId;}

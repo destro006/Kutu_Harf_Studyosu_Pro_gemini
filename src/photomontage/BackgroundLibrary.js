@@ -8,21 +8,21 @@ import THREE from '../vendor/three.js';
  */
 
 export const BACKGROUND_SCENES = [
-  { id:'studioPremium',label:'Premium Grafit Stüdyo',category:'studio',roughness:.77,bump:.12,tileM:4 },
-  { id:'traverten',label:'Bej Traverten',category:'luxury',roughness:.83,bump:.45,tileM:2.2 },
-  { id:'kompozit',label:'Antrasit Kompozit Panel',category:'storefront',roughness:.43,bump:.28,tileM:3 },
-  { id:'siyahMermer',label:'Nero Mermer',category:'luxury',roughness:.26,bump:.12,tileM:2.5 },
-  { id:'cevizPanel',label:'Ceviz Ahşap Panel',category:'interior',roughness:.56,bump:.38,tileM:2.2 },
-  { id:'beyazSiva',label:'Kırık Beyaz Mikrobeton',category:'wall',roughness:.86,bump:.22,tileM:3 },
-  { id: 'tugla', label: 'Tuğla', category: 'wall', roughness: 0.92, bump: 1.4, tileM: 2.0 },
-  { id: 'beton', label: 'Brüt Beton', category: 'wall', roughness: 0.88, bump: 0.8, tileM: 2.4 },
-  { id: 'ahsap', label: 'Ahşap Çıta', category: 'wall', roughness: 0.62, bump: 1.6, tileM: 1.2 },
-  { id: 'siva', label: 'Antrasit Sıva', category: 'wall', roughness: 0.8, bump: 0.6, tileM: 2.0 },
-  { id: 'mermer', label: 'Mermer Duvar', category: 'luxury', roughness: 0.22, bump: 0.3, tileM: 2.2 },
-  { id: 'vitrin', label: 'Modern Mağaza Cephesi', category: 'storefront', roughness: 0.45, bump: 0.4, tileM: 2.6 },
-  { id: 'resepsiyon', label: 'Ofis Resepsiyon', category: 'interior', roughness: 0.55, bump: 0.5, tileM: 2.2 },
-  { id: 'karanlikCephe', label: 'Koyu Dış Cephe', category: 'luxury', roughness: 0.68, bump: 0.7, tileM: 2.4 },
-  { id: 'studioNotr', label: 'Nötr Stüdyo Fonu', category: 'studio', roughness: 0.85, bump: 0.1, tileM: 3.0 },
+  { id:'studioPremium',label:'Premium Grafit Stüdyo',category:'studio',roughness:.82,bump:.18,tileM:3.2,metalness:0,envMapIntensity:.45 },
+  { id:'traverten',label:'Bej Traverten',category:'luxury',roughness:.74,bump:.55,tileM:2.2,metalness:0,envMapIntensity:.55 },
+  { id:'kompozit',label:'Antrasit Kompozit Panel',category:'storefront',roughness:.36,bump:.30,tileM:2.6,metalness:.42,envMapIntensity:.85 },
+  { id:'siyahMermer',label:'Nero Mermer',category:'luxury',roughness:.18,bump:.14,tileM:2.5,metalness:.04,envMapIntensity:.95 },
+  { id:'cevizPanel',label:'Ceviz Ahşap Panel',category:'interior',roughness:.44,bump:.65,tileM:1.8,metalness:0,envMapIntensity:.60 },
+  { id:'beyazSiva',label:'Venedik Kırık Beyaz Sıva',category:'wall',roughness:.78,bump:.24,tileM:2.8,metalness:0,envMapIntensity:.50 },
+  { id: 'tugla', label: 'Loft Tuğla', category: 'wall', roughness: 0.90, bump: 1.35, tileM: 2.0, metalness: 0, envMapIntensity: 0.38 },
+  { id: 'beton', label: 'Brüt Beton', category: 'wall', roughness: 0.88, bump: 0.80, tileM: 2.4, metalness: 0, envMapIntensity: 0.42 },
+  { id: 'ahsap', label: 'Meşe Çıta Panel', category: 'wall', roughness: 0.56, bump: 1.30, tileM: 1.4, metalness: 0, envMapIntensity: 0.55 },
+  { id: 'siva', label: 'Antrasit Mikrobeton', category: 'wall', roughness: 0.78, bump: 0.50, tileM: 2.2, metalness: 0, envMapIntensity: 0.48 },
+  { id: 'mermer', label: 'Calacatta Mermer', category: 'luxury', roughness: 0.18, bump: 0.22, tileM: 2.4, metalness: 0.04, envMapIntensity: 0.95 },
+  { id: 'vitrin', label: 'Bronz Mağaza Cephesi', category: 'storefront', roughness: 0.36, bump: 0.38, tileM: 2.4, metalness: 0.38, envMapIntensity: 0.90 },
+  { id: 'resepsiyon', label: 'Yivli Taş Resepsiyon', category: 'interior', roughness: 0.62, bump: 0.95, tileM: 2.0, metalness: 0, envMapIntensity: 0.55 },
+  { id: 'karanlikCephe', label: 'Bazalt Taş Cephe', category: 'luxury', roughness: 0.72, bump: 0.95, tileM: 2.2, metalness: 0.05, envMapIntensity: 0.52 },
+  { id: 'studioNotr', label: 'Grej Galeri Stüdyosu', category: 'studio', roughness: 0.84, bump: 0.14, tileM: 3.0, metalness: 0, envMapIntensity: 0.48 },
 ];
 
 // Only selected backgrounds are generated. Keep at most three recently
@@ -71,5 +71,14 @@ export function createWallTextures(wallId,widthM,heightM,pixels){
    tex.wrapS=tex.wrapT=THREE.RepeatWrapping;tex.repeat.set(Math.max(1,widthM/meta.tileM),Math.max(1,heightM/meta.tileM));tex.anisotropy=8;
    tex._disposeOnClear=true;return tex;
  };
- return {map:make(pixels.color,true),bumpMap:make(pixels.bump,false),roughness:meta.roughness,bumpScale:meta.bump*.015};
+ const roughnessMap=pixels.roughness?make(pixels.roughness,false):null;
+ return {
+   map:make(pixels.color,true),
+   bumpMap:make(pixels.bump,false),
+   roughnessMap,
+   roughness:roughnessMap?1.0:meta.roughness,
+   bumpScale:meta.bump*.015,
+   metalness:meta.metalness||0,
+   envMapIntensity:meta.envMapIntensity??0.55,
+ };
 }

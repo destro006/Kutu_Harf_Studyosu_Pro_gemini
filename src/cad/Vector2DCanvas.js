@@ -3,6 +3,111 @@ import { restoreLogoShape } from '../geometry/LogoTracer.js';
 import { layoutTextMm } from '../geometry/FontManager.js';
 import { polygonBounds } from '../geometry/PolygonOffset.js';
 
+const _localPolyCache = new WeakMap();
+const _textPolyCache = new Map();
+
+function getLocalObjectPolys(obj, fontMap) {
+  if (obj.kind === 'polygon' && obj.polygonsMm?.length) {
+    return obj.polygonsMm;
+  }
+  if (obj.kind === 'rect') {
+    const hw = (obj.widthMm || 320) * 0.5;
+    const hh = (obj.heightMm || 160) * 0.5;
+    const r = Math.min(hw, hh, Math.max(0, obj.cornerRadiusMm || 0));
+    const key = `rect|${hw}|${hh}|${r}`;
+    const cached = _localPolyCache.get(obj);
+    if (cached && cached.key === key) return cached.polys;
+    const pts = [];
+    if (r > 0.5) {
+      const corners = [
+        { cx: hw - r, cy: -hh + r, a0: -Math.PI / 2 },
+        { cx: hw - r, cy: hh - r, a0: 0 },
+        { cx: -hw + r, cy: hh - r, a0: Math.PI / 2 },
+        { cx: -hw + r, cy: -hh + r, a0: Math.PI },
+      ];
+      for (const c of corners) {
+        for (let i = 0; i <= 4; i++) {
+          const a = c.a0 + (i / 4) * (Math.PI / 2);
+          pts.push({ x: c.cx + Math.cos(a) * r, y: c.cy + Math.sin(a) * r });
+        }
+      }
+    } else {
+      pts.push({ x: -hw, y: -hh }, { x: hw, y: -hh }, { x: hw, y: hh }, { x: -hw, y: hh });
+    }
+    const polys = [{ outer: pts, holes: [] }];
+    _localPolyCache.set(obj, { key, polys });
+    return polys;
+  }
+  if (obj.kind === 'ellipse') {
+    const rx = (obj.widthMm || 240) * 0.5;
+    const ry = (obj.heightMm || 240) * 0.5;
+    const key = `ellipse|${rx}|${ry}`;
+    const cached = _localPolyCache.get(obj);
+    if (cached && cached.key === key) return cached.polys;
+    const pts = [];
+    for (let i = 0; i < 36; i++) {
+      const a = (i / 36) * Math.PI * 2;
+      pts.push({ x: Math.cos(a) * rx, y: Math.sin(a) * ry });
+    }
+    const polys = [{ outer: pts, holes: [] }];
+    _localPolyCache.set(obj, { key, polys });
+    return polys;
+  }
+  if (obj.kind === 'text' && fontMap) {
+    const fl = fontMap.get(obj.fontId || 'cinzel');
+    if (!fl) return [];
+    const key = `${obj.fontId || 'cinzel'}|${obj.text || ''}|${obj.heightMm || 400}|${obj.letterSpacingMm || 0}|${obj.lineSpacingMult ?? 1.25}|${obj.textAlign || 'center'}`;
+    const cached = _textPolyCache.get(key);
+    if (cached && cached.fl === fl) return cached.polys;
+    const layout = layoutTextMm(fl, obj.text || '', obj.heightMm || 400, obj.letterSpacingMm || 0, obj.lineSpacingMult ?? 1.25, obj.textAlign || 'center');
+    const allPts = layout.glyphs.flatMap(g => g.shapes.flatMap(s => s.getPoints(6)));
+    const b = allPts.length ? polygonBounds(allPts) : { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+    const cx = (b.minX + b.maxX) * 0.5;
+    const cy = (b.minY + b.maxY) * 0.5;
+    const polys = [];
+    for (const g of layout.glyphs) {
+      for (const s of g.shapes) {
+        polys.push({
+          outer: s.getPoints(6).map(p => ({ x: p.x - cx, y: p.y - cy })),
+          holes: (s.holes || []).map(h => h.getPoints(6).map(p => ({ x: p.x - cx, y: p.y - cy }))),
+        });
+      }
+    }
+    if (_textPolyCache.size >= 128) _textPolyCache.delete(_textPolyCache.keys().next().value);
+    _textPolyCache.set(key, { fl, polys });
+    return polys;
+  }
+  if (obj.kind === 'logo' && obj.logoData?.parts?.length) {
+    const hMm = obj.heightMm || 500;
+    const cached = _localPolyCache.get(obj.logoData);
+    if (cached && cached.hMm === hMm) return cached.polys;
+    const rawPolys = [];
+    const allPts = [];
+    for (const part of obj.logoData.parts) {
+      for (const raw of part.shapes) {
+        const s = restoreLogoShape(raw);
+        const outer = s.getPoints(6).map(p => {
+          const pt = { x: p.x * hMm, y: p.y * hMm };
+          allPts.push(pt);
+          return pt;
+        });
+        const holes = (s.holes || []).map(h => h.getPoints(6).map(p => ({ x: p.x * hMm, y: p.y * hMm })));
+        rawPolys.push({ outer, holes });
+      }
+    }
+    const b = allPts.length ? polygonBounds(allPts) : { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+    const cx = (b.minX + b.maxX) * 0.5;
+    const cy = (b.minY + b.maxY) * 0.5;
+    const polys = rawPolys.map(p => ({
+      outer: p.outer.map(pt => ({ x: pt.x - cx, y: pt.y - cy })),
+      holes: p.holes.map(h => h.map(pt => ({ x: pt.x - cx, y: pt.y - cy }))),
+    }));
+    _localPolyCache.set(obj.logoData, { hMm, polys });
+    return polys;
+  }
+  return [];
+}
+
 /**
  * Interactive 2D Vector CAD Canvas for Workspace 1 ("2D Tasarım")
  * Operates on the exact same millimeter object data as the 3D SignEngine.
@@ -91,75 +196,11 @@ export class Vector2DCanvas {
       return { x: ox + lx * cos - ly * sin, y: oy + lx * sin + ly * cos };
     };
 
-    const polys = [];
-    if (obj.kind === 'polygon' && obj.polygonsMm?.length) {
-      for (const p of obj.polygonsMm) {
-        polys.push({
-          outer: p.outer.map(pt => xf(pt.x, pt.y)),
-          holes: (p.holes || []).map(h => h.map(pt => xf(pt.x, pt.y))),
-        });
-      }
-    } else if (obj.kind === 'rect') {
-      const hw = (obj.widthMm || 320) * 0.5;
-      const hh = (obj.heightMm || 160) * 0.5;
-      const r = Math.min(hw, hh, Math.max(0, obj.cornerRadiusMm || 0));
-      const pts = [];
-      if (r > 0.5) {
-        const corners = [
-          { cx: hw - r, cy: -hh + r, a0: -Math.PI / 2 },
-          { cx: hw - r, cy: hh - r, a0: 0 },
-          { cx: -hw + r, cy: hh - r, a0: Math.PI / 2 },
-          { cx: -hw + r, cy: -hh + r, a0: Math.PI },
-        ];
-        for (const c of corners) {
-          for (let i = 0; i <= 4; i++) {
-            const a = c.a0 + (i / 4) * (Math.PI / 2);
-            pts.push(xf(c.cx + Math.cos(a) * r, c.cy + Math.sin(a) * r));
-          }
-        }
-      } else {
-        pts.push(xf(-hw, -hh), xf(hw, -hh), xf(hw, hh), xf(-hw, hh));
-      }
-      polys.push({ outer: pts, holes: [] });
-    } else if (obj.kind === 'ellipse') {
-      const rx = (obj.widthMm || 240) * 0.5;
-      const ry = (obj.heightMm || 240) * 0.5;
-      const pts = [];
-      for (let i = 0; i < 36; i++) {
-        const a = (i / 36) * Math.PI * 2;
-        pts.push(xf(Math.cos(a) * rx, Math.sin(a) * ry));
-      }
-      polys.push({ outer: pts, holes: [] });
-    } else if (obj.kind === 'text' && fontMap) {
-      const fl = fontMap.get(obj.fontId || 'cinzel');
-      if (fl) {
-        const layout = layoutTextMm(fl, obj.text || '', obj.heightMm || 400, obj.letterSpacingMm || 0, obj.lineSpacingMult ?? 1.25, obj.textAlign || 'center');
-        const allPts = layout.glyphs.flatMap(g => g.shapes.flatMap(s => s.getPoints(6)));
-        const b = allPts.length ? polygonBounds(allPts) : { minX: 0, maxX: 0, minY: 0, maxY: 0 };
-        const cx = (b.minX + b.maxX) * 0.5;
-        const cy = (b.minY + b.maxY) * 0.5;
-        for (const g of layout.glyphs) {
-          for (const s of g.shapes) {
-            polys.push({
-              outer: s.getPoints(6).map(p => xf(p.x - cx, p.y - cy)),
-              holes: (s.holes || []).map(h => h.getPoints(6).map(p => xf(p.x - cx, p.y - cy))),
-            });
-          }
-        }
-      }
-    } else if (obj.kind === 'logo' && obj.logoData?.parts?.length) {
-      const hMm = obj.heightMm || 500;
-      for (const part of obj.logoData.parts) {
-        for (const raw of part.shapes) {
-          const s=restoreLogoShape(raw);
-          polys.push({
-            outer: s.getPoints(6).map(p => xf(p.x * hMm, p.y * hMm)),
-            holes: (s.holes || []).map(h => h.getPoints(6).map(p => xf(p.x * hMm, p.y * hMm))),
-          });
-        }
-      }
-    }
-    return polys;
+    const local = getLocalObjectPolys(obj, fontMap);
+    return local.map(p => ({
+      outer: p.outer.map(pt => xf(pt.x, pt.y)),
+      holes: (p.holes || []).map(h => h.map(pt => xf(pt.x, pt.y))),
+    }));
   }
 
   render(state, fontMap) {
@@ -181,20 +222,16 @@ export class Vector2DCanvas {
 
     let gridSvg = '';
     if (gridOn) {
-      const x0 = Math.floor(vbX / gStep) * gStep;
-      const x1 = vbX + vbW;
-      const y0 = Math.floor(vbY / gStep) * gStep;
-      const y1 = vbY + vbH;
-      const lines = [];
-      for (let gx = x0; gx <= x1; gx += gStep) {
-        const major = Math.abs(gx) < 0.01;
-        lines.push(`<line x1="${gx}" y1="${vbY}" x2="${gx}" y2="${vbY + vbH}" stroke="${major ? 'rgba(255,181,71,0.28)' : 'rgba(255,255,255,0.05)'}" stroke-width="${(major ? 1.5 : 1) / z}" />`);
-      }
-      for (let gy = y0; gy <= y1; gy += gStep) {
-        const major = Math.abs(gy) < 0.01;
-        lines.push(`<line x1="${vbX}" y1="${gy}" x2="${vbX + vbW}" y2="${gy}" stroke="${major ? 'rgba(255,181,71,0.28)' : 'rgba(255,255,255,0.05)'}" stroke-width="${(major ? 1.5 : 1) / z}" />`);
-      }
-      gridSvg = lines.join('');
+      gridSvg = `
+        <defs>
+          <pattern id="v2dGridPat" width="${gStep}" height="${gStep}" patternUnits="userSpaceOnUse">
+            <path d="M ${gStep} 0 L 0 0 0 ${gStep}" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="${1 / z}" />
+          </pattern>
+        </defs>
+        <rect x="${vbX}" y="${vbY}" width="${vbW}" height="${vbH}" fill="url(#v2dGridPat)" pointer-events="none" />
+        <line x1="0" y1="${vbY}" x2="0" y2="${vbY + vbH}" stroke="rgba(255,181,71,0.28)" stroke-width="${1.5 / z}" pointer-events="none" />
+        <line x1="${vbX}" y1="0" x2="${vbX + vbW}" y2="0" stroke="rgba(255,181,71,0.28)" stroke-width="${1.5 / z}" pointer-events="none" />
+      `;
     }
 
     const pageSvg = `<rect x="${-pw / 2}" y="${-ph / 2}" width="${pw}" height="${ph}" fill="rgba(255,255,255,0.015)" stroke="rgba(255,181,71,0.45)" stroke-dasharray="${8 / z} ${6 / z}" stroke-width="${1.5 / z}" />`;

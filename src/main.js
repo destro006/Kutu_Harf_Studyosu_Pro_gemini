@@ -13,7 +13,7 @@ import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, f
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
 import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=qa8';
 import {nextNestingSelection,deleteNestingParts,moveNestingParts} from './manufacturing/NestingSelection.js?v=nest7';
-import { generateNestedGcode, generateNestedHpgl,validateNestedProduction,MACHINE_PROFILES } from './export/CncGcodeExporter.js';
+import { generateNestedGcode, generateNestedHpgl,validateNestedProduction,MACHINE_PROFILES,getMachineProfile } from './export/CncGcodeExporter.js';
 import { HistoryManager } from './core/history.js';
 import {
   deserializeProject,
@@ -356,6 +356,25 @@ function mutate(label, fn, renderWorkspace = true, rebuildScene=true) {
   if (renderWorkspace && store.get().mainWorkspace!=='nesting') renderActiveWorkspace();
 }
 function mutateData(label,fn,renderWorkspace=false){return mutate(label,fn,renderWorkspace,false);}
+function mutateRender(label, fn, renderWorkspace = false) {
+  history.push(store.get(), label);
+  store.update(s => {
+    fn(s);
+    syncActiveNestingTab(s.nesting);
+  });
+  docManager.markDirty();
+  updateUndoRedoButtons();
+  const state = store.get();
+  if (is3DWorkspace(state) && signEngine && !signEngine.isDisposed && typeof signEngine.updateRenderSettings === 'function') {
+    signEngine.updateRenderSettings(state);
+    updateStageChrome(state);
+    updateNumericBar(state);
+    writeAutosave(state);
+  } else {
+    scheduleRebuild(true);
+  }
+  if (renderWorkspace && state.mainWorkspace !== 'nesting') renderActiveWorkspace();
+}
 
 function updateUndoRedoButtons() {
   const u = document.getElementById('btnUndo');
@@ -423,7 +442,9 @@ function updateStageChrome(state) {
   document.getElementById('btnNight').classList.toggle('on', state.scene.night);
   const lightBtn = document.getElementById('btnLightToggle');
   lightBtn.classList.toggle('on', state.lighting.enabled);
-  document.getElementById('lightDot').style.setProperty('--c', state.lighting.colorHex);
+  const selLight = resolveObjectLighting(selObj, state);
+  const dotColor = selLight.mode === 'front' ? selLight.frontColor : selLight.backColor;
+  document.getElementById('lightDot').style.setProperty('--c', dotColor || state.lighting.colorHex);
   document.getElementById('lightToggleLabel').textContent = state.lighting.enabled ? 'Işık açık' : 'Işık kapalı';
 
   // Wall buttons
@@ -581,13 +602,15 @@ function drawCadOverlay(state) {
   const canvas = document.getElementById('cadOverlay');
   const wrap = document.getElementById('stageWrap');
   if (!canvas || !wrap) return;
-  canvas.width = wrap.clientWidth;
-  canvas.height = wrap.clientHeight;
+  const tool = state.activeTool;
+  const needsOverlay = state.scene.showRuler || tool === 'pen' || tool === 'measure' || tool === 'node';
+  canvas.classList.toggle('interactive', ['pen', 'node', 'measure'].includes(tool));
+  if (!needsOverlay && canvas.dataset.clean === '1') return;
+  if (canvas.width !== wrap.clientWidth) canvas.width = wrap.clientWidth;
+  if (canvas.height !== wrap.clientHeight) canvas.height = wrap.clientHeight;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  const tool = state.activeTool;
-  canvas.classList.toggle('interactive', ['pen', 'node', 'measure'].includes(tool));
+  canvas.dataset.clean = needsOverlay ? '0' : '1';
 
   // Ruler & Guides
   if (state.scene.showRuler) {
@@ -1232,6 +1255,14 @@ function renderDesignWs(state) {
     <section class="sec">
       <h3 class="sec-title">2. Seçili Nesne: ${escapeHtml(obj.name)}</h3>
       <p style="font-size:12px;color:var(--muted);margin:0">Ölçü ve pozisyon ayarlarını aşağıdan veya üst çubuktan düzenleyebilirsiniz.</p>
+      ${(obj.kind === 'logo' && obj.logoData?.parts?.some(p => p.color)) ? `
+      <div class="field-row" style="margin-top:8px">
+        <label>Logo Yüzey Rengi</label>
+        <div class="chips" style="margin:0">
+          <button type="button" class="chip ${(obj.logoColorMode || 'finish') === 'finish' ? 'on' : ''}" data-logo-cmode="finish">Harflerle aynı kaplama</button>
+          <button type="button" class="chip ${obj.logoColorMode === 'original' ? 'on' : ''}" data-logo-cmode="original">Orijinal SVG renkleri</button>
+        </div>
+      </div>` : ''}
     </section>`}
 
     <section class="sec">
@@ -1889,6 +1920,13 @@ function bindWorkspaceEvents(ws, root) {
       }
     });
 
+    root.querySelectorAll('[data-logo-cmode]').forEach(b => b.onclick = () => {
+      mutate('Logo renk modu', s => {
+        const o = getSelectedOrFirst(s);
+        if (o && o.kind === 'logo' && !o.locked) o.logoColorMode = b.dataset.logoCmode;
+      });
+    });
+
     const bindNum = (id, fn) => root.querySelector('#' + id)?.addEventListener('change', e => {
       const units=['wsHeightMm','wsWidthMm','wsDepthMm','wsSpacingMm','wsFileWidthMm','wsFileThickMm','wsWallThicknessMm','wsBorderBevelMm','wsAcrylicInsetMm','wsAcrylicThickMm'];
       const value=units.includes(id)?displayToMm(e.target.value,store.get().pageLayout?.displayUnit):Number(e.target.value);
@@ -2023,30 +2061,36 @@ function bindWorkspaceEvents(ws, root) {
     });
 
     const bindOvr = (id, fn) => root.querySelector('#' + id)?.addEventListener('change', e => mutate('Materyal ayarı', s => fn(s, id==='ovrBevel'?displayToMm(e.target.value,store.get().pageLayout?.displayUnit):Number(e.target.value)), false));
+    const bindRenderOvr = (id, fn) => root.querySelector('#' + id)?.addEventListener('change', e => mutateRender('Görünüm ayarı', s => fn(s, Number(e.target.value)), false));
     bindOvr('ovrMetalness', (s, v) => { s.materialOverrides.metalness = v; });
     bindOvr('ovrRoughness', (s, v) => { s.materialOverrides.roughness = v; });
     bindOvr('ovrRefl', (s, v) => { s.render.reflectionIntensity = v; });
-    bindOvr('ovrExposure', (s, v) => { s.render.exposure = v; });
+    bindRenderOvr('ovrExposure', (s, v) => { s.render.exposure = v; });
     bindOvr('ovrBrushDir', (s, v) => { s.materialOverrides.brushDirection = v; });
     bindOvr('ovrBrushScale', (s, v) => { s.materialOverrides.brushScale = v; });
     bindOvr('ovrBrushInt', (s, v) => { s.materialOverrides.brushIntensity = v; });
     root.querySelector('#chkExploded')?.addEventListener('change', e => mutate('Patlatılmış görünüm', s => { s.render.explodedView = e.target.checked; }, false));
     bindOvr('ovrBevel', (s, v) => { s.materialOverrides.bevelMm = v; });
     bindOvr('ovrAcOpacity', (s, v) => { s.materialOverrides.acrylicOpacity = v; });
-    bindOvr('ovrEnvRot', (s, v) => { s.render.envRotationDeg = v; });
-    bindOvr('ovrEnvPitch', (s, v) => { s.render.envPitchDeg = v; });
+    bindRenderOvr('ovrEnvRot', (s, v) => { s.render.envRotationDeg = v; });
+    bindRenderOvr('ovrEnvPitch', (s, v) => { s.render.envPitchDeg = v; });
     root.querySelector('#ovrCardScale')?.addEventListener('change', e => {
       const val = Math.max(0.3, Math.min(2.5, Number(e.target.value) || 1.0));
       store.update(st => { st.render.customCardScale = val; });
-      if (store.get().render.useCustomEnv && is3DWorkspace(store.get())) ensureSignEngine()?.envManager?.rebuildCustomCardEnvironment({ areaScale: val });
-      scheduleRebuild(true);
+      if (store.get().render.useCustomEnv && is3DWorkspace(store.get())) {
+        const eng = ensureSignEngine();
+        eng?.envManager?.rebuildCustomCardEnvironment({ areaScale: val });
+        eng?.updateRenderSettings(store.get());
+      } else {
+        scheduleRebuild(true);
+      }
     });
 
     root.querySelectorAll('[data-env]').forEach(b => b.onclick = () => {
-      mutate('Yansıma ortamı', s => {
+      mutateRender('Yansıma ortamı', s => {
         s.render.envPreset = b.dataset.env;
         s.render.useCustomEnv = false;
-      });
+      }, true);
     });
     root.querySelector('#customEnvUpload')?.addEventListener('change', async e => {
       const f = e.target.files?.[0];
@@ -3189,16 +3233,21 @@ function bindNestedCncPanel(root){
     mutateData('CNC ayarı',s=>{s.cnc[key]=v;});
   });
  }
+ panel.querySelector('#nestCncApplyDefaults')?.addEventListener('click',()=>{
+  const s=store.get(),p=getMachineProfile(s.cnc?.profile);
+  mutateData('Profil varsayılanları',st=>{st.cnc.kerfMm=p.defaultKerfMm??st.cnc.kerfMm;st.cnc.toolDiameterMm=p.defaultToolDiaMm??st.cnc.toolDiameterMm;});
+  studioToast(`${p.label} varsayılan kerf ve takım çapı uygulandı.`);
+ });
  panel.querySelector('#nestCncExport')?.addEventListener('click',()=>{
-  const s=store.get(),sh=s.nesting.sheets?.[activeSheetIdx],profile=MACHINE_PROFILES.find(p=>p.id===s.cnc.profile);
+  const s=store.get(),sh=s.nesting.sheets?.[activeSheetIdx],profile=getMachineProfile(s.cnc.profile);
   if(!sh||!profile||!validateNestedProduction([sh],s.cnc).valid)return;
   const base=s.projectName+'_levha'+(activeSheetIdx+1);
   if(profile.kind==='dxf')downloadBlob(base+'.dxf',generateNestedDxf([sh]),'application/dxf');
   else if(profile.kind==='svg')downloadBlob(base+'.svg',generateNestedSvg([sh]),'image/svg+xml');
-  else if(profile.kind==='plt')downloadBlob(base+'.plt',generateNestedHpgl([sh]),'text/plain');
+  else if(profile.kind==='plt')downloadBlob(base+'.plt',generateNestedHpgl([sh],s.cnc),'text/plain');
   else if(profile.kind==='gcode'){
-    if(!window.confirm('G-code taslağı: mevcut post-processor sabit hız, güç ve Z değerleri kullanır. Kerf/takım telafisi, giriş/çıkış ve mikro köprüler otomatik uygulanmaz. Makinenize uygun CAM doğrulaması olmadan çalıştırmayın. Taslağı indir?'))return;
-    downloadBlob(base+'_CAM_kontrol.nc',generateNestedGcode([sh],s.cnc),'text/plain');
+    if(!window.confirm('G-code taslağı: mevcut post-processor seçili makine profilinin hız, güç ve Z değerlerini kullanır. Kerf/takım telafisi, giriş/çıkış ve mikro köprüler otomatik uygulanmaz. Makinenize uygun CAM doğrulaması olmadan çalıştırmayın. Taslağı indir?'))return;
+    downloadBlob(`${base}_CAM_kontrol.${profile.ext||'nc'}`,generateNestedGcode([sh],s.cnc),'text/plain');
   }
  });
 }
@@ -3207,6 +3256,14 @@ function bindCncCenterEvents(root) {
     mutateData('CNC ayarı', s => fn(s.cnc, isChk ? e.target.checked : ['cncKerf','cncToolDia','cncLeadIn','cncTol'].includes(id)?displayToMm(e.target.value,s.pageLayout?.displayUnit):e.target.value));
   });
   upd('cncProfile', (c, v) => { c.profile = v; });
+  root.querySelector('#cncApplyDefaults')?.addEventListener('click', () => {
+    const s = store.get(), p = getMachineProfile(s.cnc?.profile);
+    mutateData('Profil varsayılanları', st => {
+      st.cnc.kerfMm = p.defaultKerfMm ?? st.cnc.kerfMm;
+      st.cnc.toolDiameterMm = p.defaultToolDiaMm ?? st.cnc.toolDiameterMm;
+    });
+    studioToast(`${p.label} varsayılan kerf ve takım çapı uygulandı.`);
+  });
   upd('cncKerf', (c, v) => { c.kerfMm = Number(v); });
   upd('cncToolDia', (c, v) => { c.toolDiameterMm = Number(v); });
   upd('cncComp', (c, v) => { c.compensation = v; });
@@ -3221,8 +3278,9 @@ function bindCncCenterEvents(root) {
     downloadBlob(`${s.projectName}_nesting_1to1.dxf`, generateNestedDxf(s.nesting.sheets || []), 'application/dxf');
   });
   root.querySelector('#cncBtnExportGcode')?.addEventListener('click', () => {
-    const s = store.get();
-    downloadBlob(`${s.projectName}_cnc.nc`, generateNestedGcode(s.nesting.sheets || [], s.cnc), 'text/plain');
+    const s = store.get(), p = getMachineProfile(s.cnc?.profile);
+    const ext = p.kind === 'gcode' ? (p.ext || 'nc') : 'nc';
+    downloadBlob(`${s.projectName}_cnc.${ext}`, generateNestedGcode(s.nesting.sheets || [], s.cnc), 'text/plain');
   });
   root.querySelector('#cncBtnExportSvg')?.addEventListener('click', () => {
     const s = store.get();
@@ -3230,7 +3288,7 @@ function bindCncCenterEvents(root) {
   });
   root.querySelector('#cncBtnExportPlt')?.addEventListener('click', () => {
     const s = store.get();
-    downloadBlob(`${s.projectName}_plotter.plt`, generateNestedHpgl(s.nesting.sheets || []), 'text/plain');
+    downloadBlob(`${s.projectName}_plotter.plt`, generateNestedHpgl(s.nesting.sheets || [], s.cnc), 'text/plain');
   });
   root.querySelector('#cncBtnExportCsv')?.addEventListener('click', () => {
     const s = store.get();
@@ -3931,7 +3989,7 @@ function init() {
   if (document.getElementById('projectNameInput')) document.getElementById('projectNameInput').onchange = (e) => store.update(s => { s.projectName = e.target.value; });
   document.getElementById('qualitySelect').onchange = (e) => {
     if (!QUALITY_PROFILES[e.target.value]) return;
-    mutate('Gerçek render kalitesi', s => { s.quality = e.target.value; }, false);
+    mutateRender('Gerçek render kalitesi', s => { s.quality = e.target.value; }, false);
   };
 
   // Undo / Redo

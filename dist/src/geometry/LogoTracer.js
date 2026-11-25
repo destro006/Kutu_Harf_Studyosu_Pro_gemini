@@ -1,4 +1,4 @@
-import { ShapePath, ShapeHelpers, normalizeParts } from '../vendor/three.js';
+import THREE, { ShapePath, ShapeHelpers, normalizeParts } from '../vendor/three.js';
 
 /**
  * Logo Tracing & SVG Vector Import Engine
@@ -6,6 +6,16 @@ import { ShapePath, ShapeHelpers, normalizeParts } from '../vendor/three.js';
  * with adjustable threshold/tolerance, background removal, smoothing, and multi-component support.
  */
 
+const restoredShapes=new WeakMap();
+// JSON/IndexedDB store a Three.js Shape's serialized curves, not its methods.
+// Resolve those curves consistently in 2D, 3D and CAD conversions.
+export function restoreLogoShape(value){
+  if(value?.getPoints)return value;
+  if(!value||typeof value!=='object')throw Error('Geçersiz logo konturu.');
+  let shape=restoredShapes.get(value);
+  if(!shape){shape=new THREE.Shape().fromJSON(value);restoredShapes.set(value,shape);}
+  return shape;
+}
 export function parseSvgLogo(svgText) {
   return ShapeHelpers.parseSvgLogo(svgText);
 }

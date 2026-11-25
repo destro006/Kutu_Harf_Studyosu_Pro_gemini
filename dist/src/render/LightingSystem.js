@@ -1,10 +1,10 @@
 import THREE from '../vendor/three.js';
 
 /**
- * Complete 4-Mode Illumination & Halo System
+ * Complete 4-Mode Illumination & Shape-Accurate Halo System
  * Modes:
- *  - 'front' : İçten / Önden Işıklı (yalnızca pleksi yüz parlar)
- *  - 'halo'  : Arkadan / Halo Işıklı (harf şekline göre duvara vuran gerçekçi halo)
+ *  - 'front' : Önden Işıklı (yalnızca pleksi yüz parlar, arkadan halo çizilmez)
+ *  - 'halo'  : Arkadan / Halo Işıklı (her harf ve logonun gerçek siluetini takip eden net arka duvar halosu)
  *  - 'both'  : Ön + Arka Çift Yönlü Işıklı
  *  - 'none'  : Işıksız
  */
@@ -31,8 +31,9 @@ export const LIGHTING_MODES = {
 };
 
 /**
- * Creates a shape-accurate soft blurred halo texture on a Canvas for wall projection.
- * Reflects wall distance, halo spread, and falloff so the glow is never a flat uniform outline.
+ * Creates a crisp, letter/logo-accurate wall halo texture.
+ * Preserves recognizable letter & logo contours (e.g. M, A, R, K) while reflecting
+ * wall distance, halo spread, and falloff.
  */
 export function createHaloTexture(shapesM, boundsM, options = {}) {
   const {
@@ -42,12 +43,12 @@ export function createHaloTexture(shapesM, boundsM, options = {}) {
     letterHeightM = 0.4,
   } = options;
 
-  const distFactor = Math.max(0.35, Math.min(2.5, wallDistanceMm / 35));
-  const padM = Math.max(0.08, letterHeightM * 0.55 * haloSpread * distFactor);
+  const distFactor = Math.max(0.35, Math.min(2.2, wallDistanceMm / 35));
+  const padM = Math.max(0.06, letterHeightM * 0.45 * haloSpread * distFactor);
 
   const wM = Math.max(0.05, boundsM.maxX - boundsM.minX + padM * 2);
   const hM = Math.max(0.05, boundsM.maxY - boundsM.minY + padM * 2);
-  const scale = Math.min(1024 / wM, 1024 / hM);
+  const scale = Math.min(512 / wM, 512 / hM);
   const pw = Math.max(16, Math.round(wM * scale));
   const ph = Math.max(16, Math.round(hM * scale));
 
@@ -79,14 +80,14 @@ export function createHaloTexture(shapesM, boundsM, options = {}) {
   outCanvas.height = ph;
   const oCtx = outCanvas.getContext('2d');
 
-  const blurPx = Math.max(2, letterHeightM * 0.085 * haloSpread * distFactor * scale);
-  // Two-pass natural falloff blur (outer soft spread + inner core glow)
-  oCtx.filter = `blur(${(blurPx * (1.8 + falloff * 0.8)).toFixed(1)}px)`;
-  oCtx.globalAlpha = 0.82;
+  // Lush two-pass Claude-calibrated halo: wide soft ambient wash + crisp contour core
+  const baseBlur = Math.max(1.5, letterHeightM * 0.068 * haloSpread * distFactor * scale);
+  oCtx.filter = `blur(${(baseBlur * (1.8 + falloff * 0.45)).toFixed(1)}px)`;
+  oCtx.globalAlpha = 0.85;
   oCtx.drawImage(srcCanvas, 0, 0);
 
-  oCtx.filter = `blur(${(blurPx * 0.65).toFixed(1)}px)`;
-  oCtx.globalAlpha = 0.95;
+  oCtx.filter = `blur(${(baseBlur * 0.65).toFixed(1)}px)`;
+  oCtx.globalAlpha = 1.0;
   oCtx.drawImage(srcCanvas, 0, 0);
 
   const tex = new THREE.CanvasTexture(outCanvas);
@@ -102,34 +103,40 @@ export function createHaloTexture(shapesM, boundsM, options = {}) {
   };
 }
 
-/**
- * Creates Day / Night architectural studio lighting rig.
- */
 export function buildSceneLights(night, sizeM) {
   const group = new THREE.Group();
   const w = Math.max(1, sizeM.w || 2);
   const h = Math.max(0.4, sizeM.h || 0.4);
 
   if (night) {
-    const amb = new THREE.AmbientLight('#9fb0d0', 0.08);
+    const amb = new THREE.AmbientLight('#9fb0d0', 0.06);
     group.add(amb);
 
-    const spot = new THREE.SpotLight('#ffd6a3', 22 + w * 14, 0, Math.min(1.05, 0.52 + w * 0.08), 1.0, 2.0);
-    spot.position.set(0, h / 2 + 1 + w * 0.15, 2 + w * 0.3);
-    spot.target.position.set(0, -h * 0.1, 0);
-    spot.castShadow = true;
-    spot.shadow.mapSize.set(2048, 2048);
-    spot.shadow.bias = -0.0004;
-    spot.shadow.normalBias = 0.015;
-    spot.shadow.radius = 6;
-    group.add(spot);
-    group.add(spot.target);
+    // Primary warm architectural gallery key light (directional: no circular spot hotspot)
+    const dir = new THREE.DirectionalLight('#ffd6a3', 1.65);
+    dir.position.set(0.15, h / 2 + 1.4 + w * 0.15, 2.4 + w * 0.3);
+    dir.castShadow = true;
+    const frustum = Math.max(2, w) * 0.85;
+    dir.shadow.camera.left = -frustum;
+    dir.shadow.camera.right = frustum;
+    dir.shadow.camera.top = frustum;
+    dir.shadow.camera.bottom = -frustum;
+    dir.shadow.mapSize.set(2048, 2048);
+    dir.shadow.bias = -0.0004;
+    dir.shadow.normalBias = 0.015;
+    dir.shadow.radius = 6;
+    group.add(dir);
+
+    // Subtle cool edge rim to sculpt dark metallic returns at night
+    const rim = new THREE.DirectionalLight('#c8dcff', 0.25);
+    rim.position.set(-w * 0.8 - 1.5, h * 0.5 + 1.0, 2.5);
+    group.add(rim);
   } else {
-    const hemi = new THREE.HemisphereLight('#fff8ee', '#5d5045', 0.95);
+    const hemi = new THREE.HemisphereLight('#fff8ee', '#5d5045', 0.9);
     group.add(hemi);
 
     const frustum = Math.max(w, 2) * 0.75;
-    const dir = new THREE.DirectionalLight('#fff3e2', 2.65);
+    const dir = new THREE.DirectionalLight('#fff3e2', 2.6);
     dir.position.set(-w * 0.6 - 1.5, h / 2 + 3, 4);
     dir.castShadow = true;
     dir.shadow.mapSize.set(2048, 2048);
@@ -141,6 +148,10 @@ export function buildSceneLights(night, sizeM) {
     dir.shadow.camera.bottom = -frustum;
     dir.shadow.radius = 4;
     group.add(dir);
+
+    const fill = new THREE.DirectionalLight('#e8f0ff', 0.32);
+    fill.position.set(w * 0.6 + 1.5, -h * 0.3, 3.0);
+    group.add(fill);
   }
 
   return group;

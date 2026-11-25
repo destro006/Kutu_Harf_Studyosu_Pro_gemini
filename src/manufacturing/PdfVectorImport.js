@@ -1,3 +1,4 @@
+import {slicePdfBytes} from './VectorFormatDetect.js';
 /**
  * Local, on-device PDF vector contour importer using self-hosted PDF.js.
  * It intentionally rejects image-only pages and un-outlined text for CNC use.
@@ -48,9 +49,10 @@ export function pdfOperatorRings(list, OPS, opts={}) {
   if(points.length){subpaths.push({points,closed});points=[];}
   const group=[];
   for(const sub of subpaths){
-   if(sub.points.length<3||(!fill&&!sub.closed))continue;
+   const implicitlyClosed=sub.points.length>=4&&Math.hypot(sub.points[0].x-sub.points.at(-1).x,sub.points[0].y-sub.points.at(-1).y)<0.05;
+   if(sub.points.length<3||(!fill&&!sub.closed&&!implicitlyClosed))continue;
    const pts=sub.points.slice();
-   if(pts.length>2&&closeEnough(pts[0],pts.at(-1)))pts.pop();
+   if(pts.length>2&&Math.hypot(pts[0].x-pts.at(-1).x,pts[0].y-pts.at(-1).y)<0.05)pts.pop();
    const scaled=pts.map(p=>({x:p.x*POINT_TO_MM,y:p.y*POINT_TO_MM}));
    if(scaled.length>=3&&area(scaled)>.0001){completed.push(scaled);group.push(scaled);}
   }
@@ -95,7 +97,8 @@ export async function importPdfFile(file, options={}, progress=()=>{},signal){
  if(signal?.aborted)throw new DOMException('PDF içe aktarma iptal edildi.','AbortError');
  if(!lib?.getDocument)throw Error('Yerel PDF motoru yüklenemedi. PDF.js paketini kontrol edin.');
  lib.GlobalWorkerOptions.workerSrc = new URL('../../public/vendor/pdfjs/pdf.worker.min.js',import.meta.url).href;
- const data=new Uint8Array(await file.arrayBuffer());
+ const raw=new Uint8Array(await file.arrayBuffer());
+ const data=slicePdfBytes(raw);
  progress('PDF sayfaları çözülüyor…');
  const task=lib.getDocument({data,isEvalSupported:false,disableFontFace:true});
  const warnings=[],pages=[];

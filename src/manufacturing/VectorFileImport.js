@@ -1,18 +1,21 @@
 /**
  * Safe, browser-only manufacturing contour import. All returned coordinates are millimeters.
- * No silent fallback for CDR/AI/PDF/EPS/DWG: those need verified native converters.
+ * No silent fallback for CDR/DWG: those run via verified local WASM converters.
  */
 import {importLegacyPostScript} from './LegacyPostScriptImport.js';
 export const VECTOR_INPUT_FORMATS=[
  {id:'svg',ext:'.svg',label:'SVG · Gerçek vektör',ready:true},
+ {id:'svgz',ext:'.svgz',label:'SVGZ · Sıkıştırılmış SVG vektör',ready:true},
  {id:'pdf',ext:'.pdf',label:'PDF · Yerel PDF.js vektör konturları',ready:true},
  {id:'dxf',ext:'.dxf',label:'AutoCAD DXF · Kesim konturları',ready:true},
  {id:'plt',ext:'.plt',label:'HPGL/PLT · Plotter konturları',ready:true},
  {id:'hpgl',ext:'.hpgl',label:'HPGL · Plotter konturları',ready:true},
- ...['eps','ps','ai'].map(id=>({id,ext:'.'+id,label:id.toUpperCase()+' · Statik konturlar',ready:true})),
+ ...['eps','ps','ai'].map(id=>({id,ext:'.'+id,label:id.toUpperCase()+' · Yerel vektör & PostScript motoru',ready:true})),
  {id:'cdr',ext:'.cdr',label:'CorelDRAW · libcdr WASM (ilk sayfa)',ready:true},
  {id:'dwg',ext:'.dwg',label:'AutoCAD DWG · LibreDWG WASM (2B konturlar)',ready:true},
- ...['wmf','emf','cgm','cmx','svgz','afdesign','sketch'].map(id=>({id,ext:'.'+id,label:id.toUpperCase()+' · Harici dönüştürme gerekli',ready:false})),
+ {id:'wmf',ext:'.wmf',label:'WMF · Windows Metafile vektör konturları',ready:true},
+ {id:'emf',ext:'.emf',label:'EMF · Enhanced Metafile vektör konturları',ready:true},
+ ...['cgm','cmx','afdesign','sketch'].map(id=>({id,ext:'.'+id,label:id.toUpperCase()+' · Harici dönüştürme gerekli',ready:false})),
 ];
 const D=1e-9;
 const round=v=>Math.round(v*1000)/1000;
@@ -54,19 +57,21 @@ function sampleArc(a,rx,ry,angle,large,sweep,b){
  const steps=Math.min(256,Math.max(8,Math.ceil(Math.abs(delta)*Math.max(rx,ry)/2)));
  return Array.from({length:steps},(_,i)=>{let z=start+delta*(i+1)/steps;return {x:cx+cp*rx*Math.cos(z)-sp*ry*Math.sin(z),y:cy+sp*rx*Math.cos(z)+cp*ry*Math.sin(z)}});
 }
-/** Pure SVG path-data flattener supporting M/L/H/V/C/S/Q/T/A/Z, including holes. */
+/** Pure SVG path-data flattener supporting M/L/H/V/C/S/Q/T/A/Z and implicit start==end closure. */
 export function svgPathRings(d, tolerance=1.5) {
  const tokens=(d.match(/[a-zA-Z]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g)||[]);
  let i=0,cmd='',curr={x:0,y:0},start={x:0,y:0},pts=[],rings=[],prevCmd='',prevC=null,prevQ=null,guard=0;
  const isCmd=t=>/^[a-zA-Z]$/.test(t||'');const count=n=>i+n<=tokens.length&&tokens.slice(i,i+n).every(x=>!isCmd(x));
  const nums=n=>{if(!count(n))throw Error('Eksik SVG path koordinatı.');return Array.from({length:n},()=>Number(tokens[i++]));};
  const point=(x,y,rel)=>({x:x+(rel?curr.x:0),y:y+(rel?curr.y:0)});
+ const closeTol=Math.max(0.05,tolerance*0.25);
  const endRing=()=>{const cleaned=clean(pts);if(cleaned.length>=3&&Math.abs(signedArea(cleaned))>0.0001)rings.push(cleaned);pts=[]};
+ const maybeCloseImplicit=()=>{if(pts.length>=4&&Math.hypot(pts[0].x-pts.at(-1).x,pts[0].y-pts.at(-1).y)<=closeTol){endRing();return true;}pts=[];return false;};
  const push=p=>{pts.push(p);curr=p};
  while(i<tokens.length){if(++guard>5000000)throw Error('SVG path birincil kontur başına çok karmaşık; dosyayı daha küçük üretim parçalara ayırın.');if(isCmd(tokens[i]))cmd=tokens[i++];if(!cmd)throw Error('SVG path komutu bulunamadı.');
  const lower=cmd.toLowerCase(),rel=cmd!==cmd.toUpperCase();
  if(lower==='z'){if(pts.length)endRing();curr={...start};prevC=prevQ=null;prevCmd='z';cmd='';continue;}
- if(lower==='m'){const [x,y]=nums(2);const p=point(x,y,rel);if(pts.length)pts=[];push(p);start=p;cmd=rel?'l':'L';prevC=prevQ=null;prevCmd='m';continue;}
+ if(lower==='m'){const [x,y]=nums(2);const p=point(x,y,rel);if(pts.length)maybeCloseImplicit();push(p);start=p;cmd=rel?'l':'L';prevC=prevQ=null;prevCmd='m';continue;}
  if(lower==='l'){const [x,y]=nums(2);push(point(x,y,rel));}
  else if(lower==='h'){const [x]=nums(1);push({x:rel?curr.x+x:x,y:curr.y});}
  else if(lower==='v'){const [y]=nums(1);push({x:curr.x,y:rel?curr.y+y:y});}
@@ -75,13 +80,15 @@ export function svgPathRings(d, tolerance=1.5) {
  else if(lower==='a'){const a=nums(7),p=point(a[5],a[6],rel);for(const x of sampleArc(curr,a[0],a[1],a[2],!!a[3],!!a[4],p))push(x);}
  else if(!['c','s','q','t'].includes(lower))throw Error('Desteklenmeyen SVG path komutu: '+cmd);
  if(!['c','s'].includes(lower))prevC=null;if(!['q','t'].includes(lower))prevQ=null;prevCmd=lower;
- }return rings;
+ }
+ if(pts.length)maybeCloseImplicit();
+ return rings;
 }
 const svgNums=s=>[...(s||'').matchAll(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g)].map(x=>+x[0]);
 function svgLength(v){if(!v)return null;const m=String(v).trim().match(/^([-+]?(?:\d+(?:\.\d*)?|\.\d+))(mm|cm|m|in|pt|pc|px)?$/i);if(!m)return null;const k={mm:1,cm:10,m:1000,in:25.4,pt:25.4/72,pc:25.4/6,px:25.4/96};return Number(m[1])*(k[m[2]?.toLowerCase()||'px']);}
 export function groupRings(input,fileName,format,unitFactor,warnings=[]){
  const valid=input.map((ring)=>clean(ring)).filter(r=>r.length>=3&&Math.abs(signedArea(r))>0.001);
- if(!valid.length)throw Error('İçe aktarılan dosyada kapalı vektör kesim konturu bulunamadı. Açık çizgileri CorelDRAW’da kapatıp SVG/DXF olarak dışa aktarın.');
+ if(!valid.length)throw Error('İçe aktarılan dosyada kapalı vektör kesim konturu bulunamadı. Açık çizgileri CorelDRAW/Illustrator içinde kapatıp tekrar deneyin.');
  if(valid.length>10000)warnings.push('Büyük iş: '+valid.length+' kontur analiz ediliyor; optimizasyon cihazınıza bağlı olarak uzun sürebilir.');
  const scaled=valid.map(r=>r.map(p=>({x:p.x*unitFactor,y:p.y*unitFactor})));
  const candidates=scaled.map((r,i)=>({ring:r,index:i,area:Math.abs(signedArea(r)),bbox:bounds(r),parent:null,depth:0})).sort((a,b)=>b.area-a.area);
@@ -126,12 +133,14 @@ export function groupRings(input,fileName,format,unitFactor,warnings=[]){
 }
 
 /** Worker-safe strict SVG tag reader (DOMParser is not available in Web Workers).
- * Only geometry and transforms are accepted; scripts/external references are rejected.
+ * Only geometry and local #id transforms are accepted; scripts/external references are rejected.
  */
 function parseSvgXmlInWorker(xml){
- if(/<!DOCTYPE|<!ENTITY|<\?xml-stylesheet/i.test(xml))throw Error('SVG içindeki DTD/harici varlıklar güvenlik nedeniyle engellendi.');
+ if(/<!ENTITY|<\?xml-stylesheet/i.test(xml))throw Error('SVG içindeki DTD/harici varlıklar güvenlik nedeniyle engellendi.');
+ if(/<!DOCTYPE\b[^>]*\[/i.test(xml))throw Error('SVG içindeki DTD/harici varlıklar güvenlik nedeniyle engellendi.');
+ const safeXml=xml.replace(/<!DOCTYPE\s+svg(?:\s+(?:PUBLIC|SYSTEM)\s+(?:"[^"]*"|'[^']*')(?:\s+(?:"[^"]*"|'[^']*'))?)?\s*>/gi,'');
  let root=null,stack=[],total=0;
- const tags=xml.matchAll(/<(?:"[^"]*"|'[^']*'|[^'">])*>/g);
+ const tags=safeXml.matchAll(/<(?:"[^"]*"|'[^']*'|[^'">])*>/g);
  for(const match of tags){
    const token=match[0];
    if(token.startsWith('<!--')||token.startsWith('<?')||token.startsWith('<!'))continue;
@@ -157,21 +166,51 @@ function parseSvgXmlInWorker(xml){
  }
  if(stack.length)throw Error('SVG XML kapatılmamış öğeler içeriyor.');
  if(root?.localName!=='svg')throw Error('Geçerli SVG kök elementi bulunamadı.');
- const forbidden=new Set(['script','foreignobject','image','use','iframe','animation','animate','set']);
- function querySelector(selectors){
+ const forbidden=new Set(['script','foreignobject','image','iframe','animation','animate','set']);
+ function findAll(selectors){
    const patterns=new Set(selectors.toLowerCase().split(',').map(s=>s.trim()));
-   const pending=[root];while(pending.length){const a=pending.pop();if(patterns.has(a.localName))return a;pending.push(...a.children);}
-   return null;
+   const out=[],pending=[root];
+   while(pending.length){const a=pending.shift();if(patterns.has(a.localName))out.push(a);pending.push(...a.children);}
+   return out;
  }
+ function querySelector(selectors){return findAll(selectors)[0]||null;}
  for(const tag of forbidden)if(querySelector(tag))throw Error('SVG harici referans/çalışan içerik içeriyor: '+tag+'. Tüm öğeleri eğriye dönüştürün.');
- return {documentElement:root,querySelector};
+ for(const u of findAll('use')){
+   const ref=(u.getAttribute('href')||u.getAttribute('xlink:href')||'').trim();
+   if(!ref.startsWith('#'))throw Error('SVG harici referans/çalışan içerik içeriyor: use. Tüm öğeleri eğriye dönüştürün.');
+ }
+ return {documentElement:root,querySelector,querySelectorAll:findAll};
+}
+function sampleRoundedRect(x,y,w,h,rx,ry){
+ rx=Math.min(w/2,Math.max(0,rx));ry=Math.min(h/2,Math.max(0,ry));
+ if(rx<1e-6&&ry<1e-6)return [{x,y},{x:x+w,y},{x:x+w,y:y+h},{x,y:y+h}];
+ if(rx<1e-6)rx=ry;if(ry<1e-6)ry=rx;
+ const pts=[],segs=10,corners=[
+  {cx:x+w-rx,cy:y+ry,a0:-Math.PI/2,a1:0},
+  {cx:x+w-rx,cy:y+h-ry,a0:0,a1:Math.PI/2},
+  {cx:x+rx,cy:y+h-ry,a0:Math.PI/2,a1:Math.PI},
+  {cx:x+rx,cy:y+ry,a0:Math.PI,a1:1.5*Math.PI},
+ ];
+ for(const c of corners)for(let i=0;i<=segs;i++){const a=c.a0+(c.a1-c.a0)*(i/segs);pts.push({x:c.cx+rx*Math.cos(a),y:c.cy+ry*Math.sin(a)});}
+ return pts;
 }
 export function importSvgText(text,filename='vektor.svg', options={}){
- const doc=typeof globalThis.DOMParser==='function'?new DOMParser().parseFromString(text,'image/svg+xml'):parseSvgXmlInWorker(text);
+ let doc;
+ if(typeof globalThis.DOMParser==='function'){
+  if(/<!ENTITY|<\?xml-stylesheet|<!DOCTYPE\b[^>]*\[/i.test(text))throw Error('SVG içindeki DTD/harici varlıklar güvenlik nedeniyle engellendi.');
+  const safeXml=text.replace(/<!DOCTYPE\s+svg(?:\s+(?:PUBLIC|SYSTEM)\s+(?:"[^"]*"|'[^']*')(?:\s+(?:"[^"]*"|'[^']*'))?)?\s*>/gi,'');
+  doc=new DOMParser().parseFromString(safeXml,'image/svg+xml');
+ }else{
+  doc=parseSvgXmlInWorker(text);
+ }
  if(doc.querySelector('parsererror'))throw Error('SVG XML dosyası bozuk.');
  const svg=doc.documentElement;if(svg.localName!=='svg')throw Error('Geçerli SVG kök elementi bulunamadı.');
- const forbidden=doc.querySelector('script, foreignObject, image, use, iframe, animation, animate, set');
+ const forbidden=doc.querySelector('script, foreignObject, image, iframe, animation, animate, set');
  if(forbidden)throw Error('SVG içinde harici görsel, referans veya çalışan içerik var. Önce tüm öğeleri eğriye dönüştürüp saf SVG olarak kaydedin.');
+ for(const u of (doc.querySelectorAll?doc.querySelectorAll('use'):[])){
+  const ref=(u.getAttribute('href')||u.getAttribute('xlink:href')||'').trim();
+  if(!ref.startsWith('#'))throw Error('SVG içinde harici görsel, referans veya çalışan içerik var. Harici <use> bağlantıları engellendi.');
+ }
  const vb=svgNums(svg.getAttribute('viewBox'));const mw=svgLength(svg.getAttribute('width')),mh=svgLength(svg.getAttribute('height'));
  const unit=options.unit||'auto';const units={mm:1,cm:10,m:1000,in:25.4,px:25.4/96};
  let fx=1,fy=1;const warnings=[];
@@ -179,81 +218,341 @@ export function importSvgText(text,filename='vektor.svg', options={}){
  else if(vb.length===4&&mw&&mh){fx=mw/vb[2];fy=mh/vb[3];}
  else {fx=fy=25.4/96;warnings.push('SVG fiziksel boyut içermiyor: 96 DPI piksel ölçeği kullanıldı. Gerçek mm ölçüsünü doğrulayın.');}
  const scale=Number(options.scale??1);if(!(scale>0&&scale<=1000))throw Error('Ölçek 0 ile 1000 arasında olmalıdır.');
+ const idMap=new Map();
+ (function indexIds(el){
+  const id=el.getAttribute?.('id');
+  if(id)idMap.set(id,el);
+  for(const c of [...(el.children||[])])indexIds(c);
+ })(svg);
  const view=vb.length===4?[1,0,0,1,-vb[0],-vb[1]]:I,all=[];
- function visit(el,m,depth=0){if(depth>60)throw Error('SVG grup derinliği çok büyük.');
+ function visit(el,m,depth=0,useDepth=0,allowSkipContainers=true){if(depth>60||useDepth>8)throw Error('SVG grup derinliği çok büyük.');
   const tag=el.localName?.toLowerCase();if(!tag)return;
-  if(['defs','clipPath','mask','pattern','symbol','metadata','style','title','desc','linearGradient','radialGradient'].includes(tag))return;
+  if(allowSkipContainers&&['defs','clippath','mask','pattern','symbol','metadata','style','title','desc','lineargradient','radialgradient'].includes(tag))return;
   if(el.getAttribute('display')==='none'||el.getAttribute('visibility')==='hidden')return;
-  const mm=matMul(m,svgTransform(el.getAttribute('transform')));
-  let shapes=[];const num=(name,def=0)=>Number(el.getAttribute(name)??def)||0;
+  let mm=matMul(m,svgTransform(el.getAttribute('transform')));
+  const num=(name,def=0)=>Number(el.getAttribute(name)??def)||0;
+  if(tag==='use'){
+   const ref=(el.getAttribute('href')||el.getAttribute('xlink:href')||'').trim().replace(/^#/,'');
+   const target=idMap.get(ref);
+   if(target){
+    const ux=num('x'),uy=num('y');
+    if(ux||uy)mm=matMul(mm,[1,0,0,1,ux,uy]);
+    visit(target,mm,depth+1,useDepth+1,false);
+   }
+   return;
+  }
+  let shapes=[];
   if(tag==='path'){const physicalScale=Math.max(Math.hypot(mm[0]*fx,mm[1]*fy),Math.hypot(mm[2]*fx,mm[3]*fy))*scale;shapes=svgPathRings(el.getAttribute('d')||'',(Number(options.tolerance)||1)/Math.max(physicalScale,1e-8));}
   if(tag==='polygon'||tag==='polyline'){
-    const pts=svgNums(el.getAttribute('points'));if(pts.length>=6&&pts.length%2===0&&(tag==='polygon'||/\bclosed\b/i.test(el.getAttribute('class')||''))){shapes=[Array.from({length:pts.length/2},(_,i)=>({x:pts[i*2],y:pts[i*2+1]}))];}
+    const pts=svgNums(el.getAttribute('points'));
+    if(pts.length>=6&&pts.length%2===0){
+     const poly=Array.from({length:pts.length/2},(_,i)=>({x:pts[i*2],y:pts[i*2+1]}));
+     const autoClosed=Math.hypot(poly[0].x-poly.at(-1).x,poly[0].y-poly.at(-1).y)<0.05;
+     if(tag==='polygon'||autoClosed||/\bclosed\b/i.test(el.getAttribute('class')||''))shapes=[poly];
+    }
   }
-  if(tag==='rect'){const x=num('x'),y=num('y'),w=num('width'),h=num('height');if(w>0&&h>0)shapes=[[{x,y},{x:x+w,y},{x:x+w,y:y+h},{x,y:y+h}]];}
+  if(tag==='rect'){const x=num('x'),y=num('y'),w=num('width'),h=num('height'),rx=num('rx'),ry=num('ry');if(w>0&&h>0)shapes=[sampleRoundedRect(x,y,w,h,rx,ry)];}
   if(tag==='circle'||tag==='ellipse'){
     const cx=num('cx'),cy=num('cy'),rx=tag==='circle'?num('r'):num('rx'),ry=tag==='circle'?num('r'):num('ry');
     if(rx>0&&ry>0){const count=Math.min(720,Math.max(36,Math.ceil(2*Math.PI*Math.max(rx,ry)/1.5)));shapes=[Array.from({length:count},(_,i)=>({x:cx+rx*Math.cos(2*Math.PI*i/count),y:cy+ry*Math.sin(2*Math.PI*i/count)}))];}
   }
   all.push(...shapes.map(r=>r.map(p=>apply(mm,p))));
-  for(const child of [...el.children])visit(child,mm,depth+1);
+  for(const child of [...el.children])visit(child,mm,depth+1,useDepth,true);
  }
  visit(svg,view);
  const transformed=all.map(r=>r.map(p=>({x:p.x*fx,y:p.y*fy})));const ret=groupRings(transformed,filename,'svg',scale,warnings);return ret;
 }
-function arcBulge(a,b,bulge){if(Math.abs(bulge)<1e-8)return[b];const chord=Math.hypot(b.x-a.x,b.y-a.y),theta=4*Math.atan(bulge),radius=chord/(2*Math.sin(Math.abs(theta)/2)),mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2};const h=chord/(2*Math.tan(theta/2));const normal={x:-(b.y-a.y)/chord,y:(b.x-a.x)/chord};const center={x:mid.x+normal.x*h,y:mid.y+normal.y*h};const start=Math.atan2(a.y-center.y,a.x-center.x),steps=Math.min(720,Math.max(8,Math.ceil(Math.abs(theta)*Math.abs(radius)/1.5)));return Array.from({length:steps},(_,i)=>{const ang=start+theta*(i+1)/steps;return {x:center.x+Math.abs(radius)*Math.cos(ang),y:center.y+Math.abs(radius)*Math.sin(ang)}})}
+function arcBulge(a,b,bulge){if(Math.abs(bulge)<1e-8)return[b];const chord=Math.hypot(b.x-a.x,b.y-a.y);if(chord<1e-9)return[b];const theta=4*Math.atan(bulge),radius=chord/(2*Math.sin(Math.abs(theta)/2)),mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2};const h=chord/(2*Math.tan(theta/2));const normal={x:-(b.y-a.y)/chord,y:(b.x-a.x)/chord};const center={x:mid.x+normal.x*h,y:mid.y+normal.y*h};const start=Math.atan2(a.y-center.y,a.x-center.x),steps=Math.min(720,Math.max(8,Math.ceil(Math.abs(theta)*Math.abs(radius)/1.5)));return Array.from({length:steps},(_,i)=>{const ang=start+theta*(i+1)/steps;return {x:center.x+Math.abs(radius)*Math.cos(ang),y:center.y+Math.abs(radius)*Math.sin(ang)}})}
 const dxfUnitFactor=u=>({1:25.4,2:304.8,4:1,5:10,6:1000,7:1000000,8:0.0000254,9:0.0254,10:914.4,11:0.0000001,12:0.000001,13:0.001,14:100,15:10000,16:100000})[u];
-/** Supports closed LWPOLYLINE/POLYLINE (including bulge curves), CIRCLE, ELLIPSE and assembled LINE loops. */
+
+function sampleDxfArc(cx,cy,r,startDeg,endDeg){
+ if(!(r>0))return [];
+ let s=startDeg*Math.PI/180,e=endDeg*Math.PI/180;
+ while(e<=s)e+=2*Math.PI;
+ const delta=e-s;
+ const steps=Math.min(720,Math.max(8,Math.ceil(delta*r/1.5)));
+ return Array.from({length:steps+1},(_,k)=>{const a=s+delta*(k/steps);return {x:cx+r*Math.cos(a),y:cy+r*Math.sin(a)};});
+}
+
+function sampleDxfEllipse(cx,cy,mx,my,ratio,startParam,endParam){
+ const a=Math.hypot(mx,my);if(!(a>1e-9&&ratio>1e-9))return {closed:false,pts:[]};
+ const b=a*ratio,rot=Math.atan2(my,mx),cr=Math.cos(rot),sr=Math.sin(rot);
+ let s=Number.isFinite(startParam)?startParam:0,e=Number.isFinite(endParam)?endParam:2*Math.PI;
+ while(e<=s)e+=2*Math.PI;
+ const delta=e-s,full=Math.abs(delta-2*Math.PI)<1e-3||delta>=2*Math.PI-1e-3;
+ const steps=Math.min(720,Math.max(24,Math.ceil(delta*Math.max(a,b)/1.5)));
+ const n=full?steps:steps+1;
+ const pts=Array.from({length:n},(_,k)=>{
+  const t=s+(full?delta*(k/steps):delta*(k/steps));
+  const lx=a*Math.cos(t),ly=b*Math.sin(t);
+  return {x:cx+lx*cr-ly*sr,y:cy+lx*sr+ly*cr};
+ });
+ return {closed:full,pts};
+}
+
+function evalBSplinePoint(t,degree,knots,ctrlPts,weights){
+ const n=ctrlPts.length-1,p=degree;
+ let k=p;
+ if(t>=knots[n+1]){k=n;}
+ else{
+  for(let i=p;i<=n;i++){if(t>=knots[i]&&t<knots[i+1]){k=i;break;}}
+ }
+ const d=[];
+ for(let j=0;j<=p;j++){
+  const idx=Math.max(0,Math.min(n,k-p+j));
+  const w=weights?.[idx]??1;
+  d.push({x:ctrlPts[idx].x*w,y:ctrlPts[idx].y*w,w});
+ }
+ for(let r=1;r<=p;r++){
+  for(let j=p;j>=r;j--){
+   const i=k-p+j;
+   const denom=knots[i+1+p-r]-knots[i];
+   const alpha=Math.abs(denom)>1e-12?(t-knots[i])/denom:0;
+   d[j]={
+    x:(1-alpha)*d[j-1].x+alpha*d[j].x,
+    y:(1-alpha)*d[j-1].y+alpha*d[j].y,
+    w:(1-alpha)*d[j-1].w+alpha*d[j].w,
+   };
+  }
+ }
+ const w=d[p].w||1;
+ return {x:d[p].x/w,y:d[p].y/w};
+}
+
+function sampleDxfSpline(degree,flags,knots,ctrlPts,weights,fitPts){
+ const isClosed=(flags&1)!==0;
+ const pts=ctrlPts.length?ctrlPts:fitPts;
+ if(pts.length<2)return {closed:false,pts:[]};
+ if(!ctrlPts.length||knots.length<ctrlPts.length+degree+1){
+  const autoClosed=isClosed||(pts.length>=3&&Math.hypot(pts[0].x-pts.at(-1).x,pts[0].y-pts.at(-1).y)<0.05);
+  return {closed:autoClosed,pts};
+ }
+ const deg=Math.max(1,Math.min(5,degree||3));
+ const tMin=knots[deg],tMax=knots[ctrlPts.length];
+ if(!(tMax>tMin))return {closed:isClosed,pts:ctrlPts};
+ let estLen=0;
+ for(let k=1;k<ctrlPts.length;k++)estLen+=Math.hypot(ctrlPts[k].x-ctrlPts[k-1].x,ctrlPts[k].y-ctrlPts[k-1].y);
+ const samples=Math.min(720,Math.max(24,ctrlPts.length*8,Math.ceil(estLen/1.5)));
+ const out=[];
+ for(let i=0;i<=samples;i++){
+  const t=tMin+(tMax-tMin)*(i/samples);
+  out.push(evalBSplinePoint(t,deg,knots,ctrlPts,weights));
+ }
+ const autoClosed=isClosed||(out.length>=4&&Math.hypot(out[0].x-out.at(-1).x,out[0].y-out.at(-1).y)<0.05);
+ return {closed:autoClosed,pts:out};
+}
+
+/** Supports closed LWPOLYLINE/POLYLINE (including bulge & implicit closure), CIRCLE, ARC, ELLIPSE, SPLINE, BLOCK/INSERT and stitched loops. */
 export function importDxfText(text,filename='vektor.dxf', options={}){
- const lines=text.replace(/\r/g,'').split('\n');if(lines.length>1000000)throw Error('DXF çok büyük.');
+ const lines=text.replace(/\r/g,'').split('\n');if(lines.length>1500000)throw Error('DXF çok büyük.');
  const pairs=[];for(let i=0;i+1<lines.length;i+=2)pairs.push({k:Number(lines[i].trim()),v:lines[i+1].trim()});
  if(!pairs.some(x=>x.k===0&&x.v==='SECTION'))throw Error('Geçerli ASCII DXF dosyası değil. Binary DXF için SVG/ASCII DXF dışa aktarın.');
- let ins=0,all=[],warnings=[],lineSegments=[];
+ let ins=0,all=[],warnings=[],openChains=[];
  for(let i=0;i<pairs.length;i++)if(pairs[i].k===9&&pairs[i].v==='$INSUNITS'&&pairs[i+1]?.k===70)ins=Number(pairs[i+1].v);
  const unit=options.unit||'auto';const custom={mm:1,cm:10,m:1000,in:25.4,px:25.4/96};
  let factor=unit==='auto'?(dxfUnitFactor(ins)||1):custom[unit];if(!(factor>0))throw Error('DXF birimi geçersiz.');
  if(unit==='auto'&&!dxfUnitFactor(ins))warnings.push('DXF $INSUNITS birimi belirtilmemiş; mm kabul edildi. Gerçek ölçüyü doğrulayın.');
- let entityStart=pairs.findIndex((p,i)=>p.k===2&&p.v==='ENTITIES'&&pairs[i-1]?.v==='SECTION');
- if(entityStart<0)entityStart=pairs.findIndex(p=>p.k===0&&['LWPOLYLINE','CIRCLE','LINE','POLYLINE'].includes(p.v));
- let i=entityStart>=0?entityStart+1:pairs.length;
+
  function fields(start){let j=start+1;while(j<pairs.length&&pairs[j].k!==0)j++;return {type:pairs[start].v,fields:pairs.slice(start+1,j),end:j};}
  const find=(f,k,d=0)=>Number(f.find(x=>x.k===k)?.v??d);
- function pushPolyline(vertices,closed){if(!closed||vertices.length<3)return;let ring=[];for(let x=0;x<vertices.length;x++){let a=vertices[x],b=vertices[(x+1)%vertices.length];ring.push({x:a.x,y:a.y});ring.push(...arcBulge(a,b,a.bulge||0).slice(0,-1));}all.push(ring);}
- let guard=0;
- while(i<pairs.length&&guard++<150000){const p=pairs[i];if(p.k!==0){i++;continue}if(p.v==='ENDSEC')break;
-  const ent=fields(i),f=ent.fields;i=ent.end;
-  if(ent.type==='LWPOLYLINE'){
-    const vertices=[];let current=null;for(const v of f){if(v.k===10){current={x:Number(v.v),y:0,bulge:0};vertices.push(current)}else if(v.k===20&&current)current.y=Number(v.v);else if(v.k===42&&current)current.bulge=Number(v.v)}
-    pushPolyline(vertices,(find(f,70)&1)!==0);
-  }else if(ent.type==='POLYLINE'){
-    const closed=(find(f,70)&1)!==0,vertices=[];
-    while(i<pairs.length){if(pairs[i].k!==0){i++;continue}if(pairs[i].v==='SEQEND'){i=fields(i).end;break;}if(pairs[i].v!=='VERTEX')break;const v=fields(i);vertices.push({x:find(v.fields,10),y:find(v.fields,20),bulge:find(v.fields,42)});i=v.end;}
-    pushPolyline(vertices,closed);
-  }else if(ent.type==='CIRCLE'){
-    const cx=find(f,10),cy=find(f,20),r=find(f,40);if(r>0){const count=Math.min(720,Math.max(36,Math.ceil(2*Math.PI*r/1.5)));all.push(Array.from({length:count},(_,j)=>({x:cx+r*Math.cos(j*2*Math.PI/count),y:cy+r*Math.sin(j*2*Math.PI/count)})));}
-  }else if(ent.type==='LINE')lineSegments.push([{x:find(f,10),y:find(f,20)},{x:find(f,11),y:find(f,21)}]);
-  else if(['ARC','SPLINE','HATCH','INSERT'].includes(ent.type))warnings.push('Desteklenmeyen DXF öğesi: '+ent.type+'. Kesim eğrilerini kapalı polylinelara dönüştürün.');
- }
- // Join simple LINE segments into closed cut loops (0.02 drawing-unit tolerance).
- while(lineSegments.length){const [start,end]=lineSegments.shift(),ring=[start,end];let steps=0;
-  while(lineSegments.length&&steps++<10000){const last=ring.at(-1);if(Math.hypot(last.x-start.x,last.y-start.y)<.02)break;
-   const j=lineSegments.findIndex(seg=>seg.some(p=>Math.hypot(p.x-last.x,p.y-last.y)<.02));if(j<0)break;
-   const seg=lineSegments.splice(j,1)[0];ring.push(Math.hypot(seg[0].x-last.x,seg[0].y-last.y)<.02?seg[1]:seg[0]);
+ const findStr=(f,k,d='')=>String(f.find(x=>x.k===k)?.v??d);
+
+ function collectEntities(startIdx,stopTokens){
+  const list=[];let idx=startIdx,guard=0;
+  while(idx<pairs.length&&guard++<250000){
+   const p=pairs[idx];if(p.k!==0){idx++;continue;}
+   if(stopTokens.has(p.v))break;
+   const ent=fields(idx);idx=ent.end;
+   if(ent.type==='POLYLINE'){
+    const verts=[];
+    while(idx<pairs.length){
+     if(pairs[idx].k!==0){idx++;continue;}
+     if(pairs[idx].v==='SEQEND'){idx=fields(idx).end;break;}
+     if(pairs[idx].v!=='VERTEX')break;
+     const v=fields(idx);verts.push({x:find(v.fields,10),y:find(v.fields,20),bulge:find(v.fields,42)});idx=v.end;
+    }
+    ent.polyVertices=verts;
+   }
+   list.push(ent);
   }
-  if(ring.length>=4&&Math.hypot(ring.at(-1).x-start.x,ring.at(-1).y-start.y)<.02)all.push(ring);
+  return {entities:list,endIdx:idx};
  }
+
+ const blocks=new Map();
+ const blocksStart=pairs.findIndex((p,i)=>p.k===2&&p.v==='BLOCKS'&&pairs[i-1]?.v==='SECTION');
+ if(blocksStart>=0){
+  let bi=blocksStart+1,bGuard=0;
+  while(bi<pairs.length&&bGuard++<50000){
+   const p=pairs[bi];if(p.k!==0){bi++;continue;}
+   if(p.v==='ENDSEC')break;
+   if(p.v==='BLOCK'){
+    const hdr=fields(bi);
+    const name=findStr(hdr.fields,2);
+    const baseX=find(hdr.fields,10),baseY=find(hdr.fields,20);
+    const body=collectEntities(hdr.end,new Set(['ENDBLK','ENDSEC']));
+    if(name)blocks.set(name,{baseX,baseY,entities:body.entities});
+    bi=body.endIdx;
+    if(pairs[bi]?.k===0&&pairs[bi].v==='ENDBLK')bi=fields(bi).end;
+   }else{bi=fields(bi).end;}
+  }
+ }
+
+ let entityStart=pairs.findIndex((p,i)=>p.k===2&&p.v==='ENTITIES'&&pairs[i-1]?.v==='SECTION');
+ if(entityStart<0)entityStart=pairs.findIndex(p=>p.k===0&&['LWPOLYLINE','CIRCLE','LINE','POLYLINE','ARC','ELLIPSE','SPLINE','INSERT'].includes(p.v));
+ const mainEntities=entityStart>=0?collectEntities(entityStart+1,new Set(['ENDSEC','EOF'])).entities:[];
+
+ function polyPoints(vertices,closed){
+  const ring=[];
+  const count=closed?vertices.length:vertices.length-1;
+  for(let x=0;x<count;x++){
+   const a=vertices[x],b=vertices[(x+1)%vertices.length];
+   ring.push({x:a.x,y:a.y});
+   ring.push(...arcBulge(a,b,a.bulge||0).slice(0,-1));
+  }
+  if(!closed&&vertices.length)ring.push({x:vertices.at(-1).x,y:vertices.at(-1).y});
+  return ring;
+ }
+
+ function processEntities(list,m,depth=0){
+  if(depth>10)return;
+  for(const ent of list){
+   const f=ent.fields;
+   if(ent.type==='LWPOLYLINE'){
+    const vertices=[];let current=null;
+    for(const v of f){if(v.k===10){current={x:Number(v.v),y:0,bulge:0};vertices.push(current);}else if(v.k===20&&current)current.y=Number(v.v);else if(v.k===42&&current)current.bulge=Number(v.v);}
+    const closedFlag=(find(f,70)&1)!==0;
+    const implicit=vertices.length>=3&&Math.hypot(vertices[0].x-vertices.at(-1).x,vertices[0].y-vertices.at(-1).y)<0.05;
+    if(vertices.length>=3&&(closedFlag||implicit)){
+     all.push(polyPoints(vertices,closedFlag||implicit).map(p=>apply(m,p)));
+    }else if(vertices.length>=2){
+     openChains.push(polyPoints(vertices,false).map(p=>apply(m,p)));
+    }
+   }else if(ent.type==='POLYLINE'){
+    const vertices=ent.polyVertices||[];
+    const closedFlag=(find(f,70)&1)!==0;
+    const implicit=vertices.length>=3&&Math.hypot(vertices[0].x-vertices.at(-1).x,vertices[0].y-vertices.at(-1).y)<0.05;
+    if(vertices.length>=3&&(closedFlag||implicit)){
+     all.push(polyPoints(vertices,closedFlag||implicit).map(p=>apply(m,p)));
+    }else if(vertices.length>=2){
+     openChains.push(polyPoints(vertices,false).map(p=>apply(m,p)));
+    }
+   }else if(ent.type==='CIRCLE'){
+    const cx=find(f,10),cy=find(f,20),r=find(f,40);
+    if(r>0){
+     const count=Math.min(720,Math.max(36,Math.ceil(2*Math.PI*r/1.5)));
+     all.push(Array.from({length:count},(_,j)=>apply(m,{x:cx+r*Math.cos(j*2*Math.PI/count),y:cy+r*Math.sin(j*2*Math.PI/count)})));
+    }
+   }else if(ent.type==='LINE'){
+    openChains.push([apply(m,{x:find(f,10),y:find(f,20)}),apply(m,{x:find(f,11),y:find(f,21)})]);
+   }else if(ent.type==='ARC'){
+    const cx=find(f,10),cy=find(f,20),r=find(f,40),sa=find(f,50,0),ea=find(f,51,360);
+    const pts=sampleDxfArc(cx,cy,r,sa,ea).map(p=>apply(m,p));
+    let span=ea-sa;while(span<=0)span+=360;
+    if(span>=359.9&&pts.length>=3)all.push(pts);
+    else if(pts.length>=2)openChains.push(pts);
+   }else if(ent.type==='ELLIPSE'){
+    const cx=find(f,10),cy=find(f,20),mx=find(f,11),my=find(f,21),ratio=find(f,40,1),sp=find(f,41,0),ep=find(f,42,2*Math.PI);
+    const el=sampleDxfEllipse(cx,cy,mx,my,ratio,sp,ep);
+    const pts=el.pts.map(p=>apply(m,p));
+    if(el.closed&&pts.length>=3)all.push(pts);
+    else if(pts.length>=2)openChains.push(pts);
+   }else if(ent.type==='SPLINE'){
+    const flags=find(f,70,0),deg=find(f,71,3);
+    const knots=[],ctrlPts=[],weights=[],fitPts=[];
+    let curC=null,curF=null;
+    for(const v of f){
+     if(v.k===40)knots.push(Number(v.v));
+     else if(v.k===41)weights.push(Number(v.v));
+     else if(v.k===10){curC={x:Number(v.v),y:0};ctrlPts.push(curC);}
+     else if(v.k===20&&curC)curC.y=Number(v.v);
+     else if(v.k===11){curF={x:Number(v.v),y:0};fitPts.push(curF);}
+     else if(v.k===21&&curF)curF.y=Number(v.v);
+    }
+    const sp=sampleDxfSpline(deg,flags,knots,ctrlPts,weights,fitPts);
+    const pts=sp.pts.map(p=>apply(m,p));
+    if(sp.closed&&pts.length>=3)all.push(pts);
+    else if(pts.length>=2)openChains.push(pts);
+   }else if(ent.type==='SOLID'||ent.type==='3DFACE'){
+    const p1={x:find(f,10),y:find(f,20)},p2={x:find(f,11),y:find(f,21)},p3={x:find(f,12),y:find(f,22)},p4={x:find(f,13,p3.x),y:find(f,23,p3.y)};
+    const quad=[p1,p2,p4,p3].map(p=>apply(m,p));
+    all.push(quad);
+   }else if(ent.type==='INSERT'){
+    const name=findStr(f,2);
+    const blk=blocks.get(name);
+    if(!blk){warnings.push('DXF bloğu bulunamadı: '+name);continue;}
+    const ix=find(f,10),iy=find(f,20),sx=find(f,41,1)||1,sy=find(f,42,1)||1,rotDeg=find(f,50,0);
+    const cols=Math.max(1,Math.min(100,Math.round(find(f,70,1)||1)));
+    const rows=Math.max(1,Math.min(100,Math.round(find(f,71,1)||1)));
+    const colSp=find(f,44,0),rowSp=find(f,45,0);
+    const rad=rotDeg*Math.PI/180,c=Math.cos(rad),s=Math.sin(rad);
+    const blkRotScale=[c*sx,s*sx,-s*sy,c*sy,0,0];
+    const baseNeg=[1,0,0,1,-blk.baseX,-blk.baseY];
+    for(let r=0;r<rows;r++)for(let col=0;col<cols;col++){
+     const tx=[1,0,0,1,ix+col*colSp,iy+r*rowSp];
+     const childMat=matMul(m,matMul(tx,matMul(blkRotScale,baseNeg)));
+     processEntities(blk.entities,childMat,depth+1);
+    }
+   }else if(ent.type==='HATCH')warnings.push('DXF HATCH tarama öğeleri atlandı.');
+  }
+ }
+ processEntities(mainEntities,I,0);
+
+ // Stitch multi-point open chains (LINE, ARC, SPLINE, open LWPOLYLINE) into closed cut loops.
+ const joinTol=0.05;
+ const near=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y)<joinTol;
+ while(openChains.length){
+  const chain=openChains.shift().slice();
+  if(chain.length<2)continue;
+  let steps=0;
+  while(openChains.length&&steps++<10000){
+   const start=chain[0],last=chain.at(-1);
+   if(chain.length>=3&&near(last,start))break;
+   let matchedIdx=-1,appendReversed=false,prepend=false;
+   for(let k=0;k<openChains.length;k++){
+    const seg=openChains[k];
+    if(near(seg[0],last)){matchedIdx=k;appendReversed=false;prepend=false;break;}
+    if(near(seg.at(-1),last)){matchedIdx=k;appendReversed=true;prepend=false;break;}
+    if(near(seg.at(-1),start)){matchedIdx=k;appendReversed=false;prepend=true;break;}
+    if(near(seg[0],start)){matchedIdx=k;appendReversed=true;prepend=true;break;}
+   }
+   if(matchedIdx<0)break;
+   let seg=openChains.splice(matchedIdx,1)[0];
+   if(appendReversed)seg=seg.slice().reverse();
+   if(prepend)chain.unshift(...seg.slice(0,-1));
+   else chain.push(...seg.slice(1));
+  }
+  if(chain.length>=4&&near(chain[0],chain.at(-1)))all.push(chain);
+ }
+
  const scale=Number(options.scale??1);if(!(scale>0&&scale<=1000))throw Error('Ölçek geçersiz.');
  return groupRings(all,filename,'dxf',factor*scale,warnings);
 }
 export function importHpglText(text,filename='vektor.plt',options={}){
  let x=0,y=0,absolute=true,penDown=false,ring=[],rings=[];const warnings=[];
  const command=/([A-Z]{2})([^A-Z;]*)[;]?/ig;let m,guard=0;
- const close=()=>{if(ring.length>=3&&Math.hypot(ring[0].x-ring.at(-1).x,ring[0].y-ring.at(-1).y)<.5)rings.push(ring);ring=[]};
- while((m=command.exec(text))&&guard++<100000){let cmd=m[1].toUpperCase(),n=svgNums(m[2]||'');
+ const close=()=>{if(ring.length>=3&&Math.hypot(ring[0].x-ring.at(-1).x,ring[0].y-ring.at(-1).y)<2)rings.push(ring);ring=[]};
+ while((m=command.exec(text))&&guard++<250000){let cmd=m[1].toUpperCase(),n=svgNums(m[2]||'');
   if(cmd==='IN'){x=y=0;absolute=true;penDown=false;close();continue;}
-  if(cmd==='PA'){absolute=true;if(!n.length)continue;}if(cmd==='PR'){absolute=false;if(!n.length)continue;}
-  if(cmd==='PU'){if(penDown)close();penDown=false;}if(cmd==='PD'){if(!penDown)ring=[{x,y}];penDown=true;}
-  if(['PU','PD','PA','PR'].includes(cmd))for(let i=0;i+1<n.length;i+=2){const nx=absolute?n[i]:x+n[i],ny=absolute?n[i+1]:y+n[i+1];x=nx;y=ny;if(penDown)ring.push({x,y});}
+  if(cmd==='PA'){absolute=true;if(!n.length)continue;}
+  if(cmd==='PR'){absolute=false;if(!n.length)continue;}
+  if(cmd==='PU'){if(penDown)close();penDown=false;}
+  if(cmd==='PD'){if(!penDown)ring=[{x,y}];penDown=true;}
+  if(['PU','PD','PA','PR'].includes(cmd)){
+   for(let i=0;i+1<n.length;i+=2){const nx=absolute?n[i]:x+n[i],ny=absolute?n[i+1]:y+n[i+1];x=nx;y=ny;if(penDown)ring.push({x,y});}
+  }else if(cmd==='CI'&&n.length>=1){
+   const r=Math.abs(n[0]);
+   if(r>0){const steps=Math.min(360,Math.max(36,Math.ceil(2*Math.PI*r/40)));rings.push(Array.from({length:steps},(_,k)=>({x:x+r*Math.cos(2*Math.PI*k/steps),y:y+r*Math.sin(2*Math.PI*k/steps)})));}
+  }else if((cmd==='EA'||cmd==='ER')&&n.length>=2){
+   const tx=cmd==='ER'?x+n[0]:n[0],ty=cmd==='ER'?y+n[1]:n[1];
+   rings.push([{x,y},{x:tx,y},{x:tx,y:ty},{x,y:ty}]);
+  }else if((cmd==='AA'||cmd==='AR')&&n.length>=3&&penDown){
+   const acx=cmd==='AR'?x+n[0]:n[0],acy=cmd==='AR'?y+n[1]:n[1],sweepDeg=n[2];
+   const r=Math.hypot(x-acx,y-acy);
+   if(r>1e-4){
+    const start=Math.atan2(y-acy,x-acx),sweep=sweepDeg*Math.PI/180,steps=Math.min(360,Math.max(8,Math.ceil(Math.abs(sweep)*r/40)));
+    for(let k=1;k<=steps;k++){const a=start+sweep*(k/steps);const nx=acx+r*Math.cos(a),ny=acy+r*Math.sin(a);x=nx;y=ny;ring.push({x,y});}
+   }
+  }
  }
  if(penDown)close();
  const factor=options.unit==='mm'?1:1/40,scale=Number(options.scale??1);
@@ -267,6 +566,7 @@ export function importVectorText(text,filename,options={}){
  if(!meta.ready)throw Error(ext.toUpperCase()+' dosyasını doğrudan okumak için güvenilir dönüştürücü gerekiyor. CorelDRAW/Illustrator/AutoCAD içinden vektörleri SVG veya ASCII DXF biçiminde dışa aktarıp içe aktarın. Dosyanın uzantısını değiştirmek yeterli değildir.');
  // No arbitrary file-byte limit: conversion runs in a cancellable worker.
  if(['cdr','dwg'].includes(ext))throw Error(ext.toUpperCase()+' binary dosyası yerel WASM dönüştürücü ile açılmalıdır.');
+ if(['wmf','emf'].includes(ext))throw Error(ext.toUpperCase()+' binary dosyası yerel metafile okuyucu ile açılmalıdır.');
  if(ext==='pdf')throw Error('PDF dosyası binary olarak yerel PDF.js motoruyla açılmalıdır.');
  if(['ai','eps','ps'].includes(ext))return importLegacyPostScript(text,filename,options);
  if(ext==='svg')return importSvgText(text,filename,options);

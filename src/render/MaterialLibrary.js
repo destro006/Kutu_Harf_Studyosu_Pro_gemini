@@ -14,9 +14,9 @@ export const MATERIAL_PRESETS = {
     kind: 'metal',
     color: '#f5c66a',
     metalness: 1.0,
-    roughness: 0.035,
-    envMapIntensity: 1.35,
-    clearcoat: 0.65,
+    roughness: 0.04,
+    envMapIntensity: 1.15,
+    clearcoat: 0.6,
     clearcoatRoughness: 0.04,
     brushed: false,
     anisotropy: 0,
@@ -29,11 +29,11 @@ export const MATERIAL_PRESETS = {
     shortLabel: 'Saten altın',
     kind: 'metal',
     color: '#e5b963',
-    metalness: 0.98,
+    metalness: 1.0,
     roughness: 0.22,
-    envMapIntensity: 1.2,
-    clearcoat: 0.15,
-    clearcoatRoughness: 0.2,
+    envMapIntensity: 1.15,
+    clearcoat: 0.12,
+    clearcoatRoughness: 0.18,
     brushed: false,
     anisotropy: 0.2,
     swatch: 'linear-gradient(120deg,#a67d2e,#f3d792 45%,#c29642 75%,#9c7429)',
@@ -46,12 +46,12 @@ export const MATERIAL_PRESETS = {
     kind: 'metal',
     color: '#dcaa52',
     metalness: 1.0,
-    roughness: 0.29,
-    envMapIntensity: 1.2,
+    roughness: 0.30,
+    envMapIntensity: 1.15,
     clearcoat: 0.0,
     clearcoatRoughness: 0.1,
     brushed: true,
-    anisotropy: 0.88,
+    anisotropy: 0.85,
     swatch: 'repeating-linear-gradient(0deg,#cfa457 0 2px,#b98f45 2px 3px,#dcb465 3px 5px)',
     multiplier: 1.25,
   },
@@ -61,11 +61,11 @@ export const MATERIAL_PRESETS = {
     shortLabel: 'Şampanya',
     kind: 'metal',
     color: '#e8d2a6',
-    metalness: 0.98,
-    roughness: 0.18,
-    envMapIntensity: 1.25,
-    clearcoat: 0.2,
-    clearcoatRoughness: 0.15,
+    metalness: 1.0,
+    roughness: 0.16,
+    envMapIntensity: 1.15,
+    clearcoat: 0.22,
+    clearcoatRoughness: 0.12,
     brushed: false,
     anisotropy: 0.15,
     swatch: 'linear-gradient(120deg,#b49b6c,#f7ebd2 45%,#cbb384 75%,#9f8759)',
@@ -78,10 +78,10 @@ export const MATERIAL_PRESETS = {
     kind: 'metal',
     color: '#eaa58b',
     metalness: 1.0,
-    roughness: 0.09,
-    envMapIntensity: 1.25,
+    roughness: 0.10,
+    envMapIntensity: 1.15,
     clearcoat: 0.45,
-    clearcoatRoughness: 0.06,
+    clearcoatRoughness: 0.04,
     brushed: false,
     anisotropy: 0,
     swatch: 'linear-gradient(120deg,#9c5f4c,#ffd9c8 35%,#c0806a 60%,#f2b9a2 80%)',
@@ -93,13 +93,13 @@ export const MATERIAL_PRESETS = {
     shortLabel: 'Bronz',
     kind: 'metal',
     color: '#8c5c3c',
-    metalness: 0.96,
+    metalness: 1.0,
     roughness: 0.34,
     envMapIntensity: 1.15,
     clearcoat: 0,
     clearcoatRoughness: 0.1,
     brushed: true,
-    anisotropy: 0.82,
+    anisotropy: 0.85,
     swatch: 'repeating-linear-gradient(0deg,#8f5b37 0 2px,#7a4b2d 2px 3px,#a36b42 3px 5px)',
     multiplier: 1.3,
   },
@@ -111,7 +111,7 @@ export const MATERIAL_PRESETS = {
     color: '#f4f6f8',
     metalness: 1.0,
     roughness: 0.03,
-    envMapIntensity: 1.3,
+    envMapIntensity: 1.15,
     clearcoat: 0.6,
     clearcoatRoughness: 0.04,
     brushed: false,
@@ -125,7 +125,7 @@ export const MATERIAL_PRESETS = {
     shortLabel: 'Mat krom',
     kind: 'metal',
     color: '#d6dade',
-    metalness: 0.98,
+    metalness: 1.0,
     roughness: 0.34,
     envMapIntensity: 1.15,
     clearcoat: 0,
@@ -142,12 +142,12 @@ export const MATERIAL_PRESETS = {
     kind: 'metal',
     color: '#cfd2d5',
     metalness: 1.0,
-    roughness: 0.3,
-    envMapIntensity: 1.18,
+    roughness: 0.30,
+    envMapIntensity: 1.15,
     clearcoat: 0,
     clearcoatRoughness: 0.1,
     brushed: true,
-    anisotropy: 0.88,
+    anisotropy: 0.85,
     swatch: 'repeating-linear-gradient(0deg,#c7cacd 0 2px,#b2b6ba 2px 3px,#d3d6d8 3px 5px),linear-gradient(120deg,#9fa4a9,#e1e3e5)',
     multiplier: 1.08,
   },
@@ -158,10 +158,10 @@ export const MATERIAL_PRESETS = {
     kind: 'metal',
     color: '#2c3036',
     metalness: 1.0,
-    roughness: 0.07,
-    envMapIntensity: 1.35,
+    roughness: 0.06,
+    envMapIntensity: 1.25,
     clearcoat: 0.65,
-    clearcoatRoughness: 0.05,
+    clearcoatRoughness: 0.04,
     brushed: false,
     anisotropy: 0,
     swatch: 'linear-gradient(120deg,#101214,#555b63 35%,#1a1c20 60%,#43484f 85%)',
@@ -173,11 +173,11 @@ export const MATERIAL_PRESETS = {
     shortLabel: 'Mat siyah',
     kind: 'paint',
     color: '#161618',
-    metalness: 0.12,
+    metalness: 0.05,
     roughness: 0.72,
-    envMapIntensity: 0.85,
-    clearcoat: 0.12,
-    clearcoatRoughness: 0.45,
+    envMapIntensity: 0.9,
+    clearcoat: 0.25,
+    clearcoatRoughness: 0.35,
     brushed: false,
     anisotropy: 0,
     swatch: '#18181a',
@@ -191,7 +191,7 @@ export const MATERIAL_PRESETS = {
     color: '#34373b',
     colorable: true,
     palette: 'paint',
-    metalness: 0.08,
+    metalness: 0.05,
     roughness: 0.42,
     envMapIntensity: 0.95,
     clearcoat: 0.25,
@@ -206,7 +206,7 @@ export const MATERIAL_PRESETS = {
     label: 'Beyaz Opal Pleksi',
     shortLabel: 'Opal pleksi',
     kind: 'acrylic',
-    color: '#f8f8f6',
+    color: '#f3f3ee',
     metalness: 0.0,
     roughness: 0.14,
     envMapIntensity: 1.0,
@@ -228,10 +228,10 @@ export const MATERIAL_PRESETS = {
     colorable: true,
     palette: 'pleksi',
     metalness: 0.0,
-    roughness: 0.12,
-    envMapIntensity: 1.05,
+    roughness: 0.14,
+    envMapIntensity: 1.0,
     clearcoat: 1.0,
-    clearcoatRoughness: 0.05,
+    clearcoatRoughness: 0.06,
     opacity: 0.9,
     transmission: 0.24,
     brushed: false,
@@ -286,16 +286,22 @@ function valueNoise(x, y, seed) {
 }
 
 const brushCache = new Map();
+const BRUSH_CACHE_LIMIT = 16;
 
 /**
- * Generates directional brushed metal roughness & bump texture.
+ * Generates silky horizontal brushed metal roughness texture matching Claude's shader response.
  * @param {number} scale
  * @param {number} intensity
  * @param {number} directionDeg
  */
 export function getBrushedTexture(scale = 5, intensity = 0.65, directionDeg = 0) {
   const key = `${scale.toFixed(1)}_${intensity.toFixed(2)}_${Math.round(directionDeg)}`;
-  if (brushCache.has(key)) return brushCache.get(key);
+  if (brushCache.has(key)) {
+    const cached = brushCache.get(key);
+    brushCache.delete(key);
+    brushCache.set(key, cached);
+    return cached;
+  }
 
   const size = 512;
   const canvas = document.createElement('canvas');
@@ -304,19 +310,12 @@ export function getBrushedTexture(scale = 5, intensity = 0.65, directionDeg = 0)
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   const img = ctx.createImageData(size, size);
 
-  // Fine directional grain with subtle lengthwise variation, not cloudy 2D noise.
-  const strength = Math.max(0, Math.min(1, intensity));
+  const strength = Math.max(0, Math.min(1.5, intensity));
   for (let y = 0; y < size; y++) {
-    const fineBand = valueNoise(0, y / 2.2, 77) - 0.5;
-    const hairline = hash2d(0, y, 113) - 0.5;
-    const scratch = Math.pow(hash2d(0, y, 131), 18);
+    const rowHash = hash2d(0, y, 77);
     for (let x = 0; x < size; x++) {
-      const alongGrain = valueNoise(x / 160, y / 3, 79) - 0.5;
-      const microNoise = hash2d(x, y, 83) - 0.5;
-      const base = 0.73 + strength * (
-        fineBand * 0.36 + hairline * 0.18 - scratch * 0.07 +
-        alongGrain * 0.045 + microNoise * 0.018
-      );
+      const f = valueNoise(x / 60, y, 79) * 0.5 + valueNoise(x / 9, y, 83) * 0.25;
+      const base = 0.62 + strength * (rowHash * 0.22 + f * 0.3);
       const val = Math.max(20, Math.min(255, Math.round(base * 255)));
       const idx = (y * size + x) * 4;
       img.data[idx] = val;
@@ -337,6 +336,12 @@ export function getBrushedTexture(scale = 5, intensity = 0.65, directionDeg = 0)
   tex.needsUpdate = true;
 
   brushCache.set(key, tex);
+  while (brushCache.size > BRUSH_CACHE_LIMIT) {
+    const oldKey = brushCache.keys().next().value;
+    const oldTex = brushCache.get(oldKey);
+    brushCache.delete(oldKey);
+    oldTex?.dispose?.();
+  }
   return tex;
 }
 
@@ -365,9 +370,8 @@ export function createSignMaterial(presetId, overrides = {}, lightContext = {}) 
   const envMapIntensity = overrides.envMapIntensity ?? preset.envMapIntensity;
   const brushed = overrides.brushed ?? preset.brushed;
   const brushScale = overrides.brushScale ?? 5;
-  const brushIntensity = overrides.brushIntensity ?? 0.7;
+  const brushIntensity = overrides.brushIntensity ?? 0.82;
   const brushDirection = overrides.brushDirection ?? 0;
-  const textureStrength = overrides.textureStrength ?? 0.22;
 
   if (preset.kind === 'metal' || isOpaqueMetal) {
     const brushMap = brushed ? getBrushedTexture(brushScale, brushIntensity, brushDirection) : null;
@@ -376,8 +380,8 @@ export function createSignMaterial(presetId, overrides = {}, lightContext = {}) 
       metalness: Math.max(0, Math.min(1, metalness)),
       roughness: Math.max(0.015, Math.min(1, roughness)),
       roughnessMap: brushMap,
-      bumpMap: brushMap,
-      bumpScale: brushed ? 0.012 * textureStrength * brushIntensity : 0,
+      bumpMap: null,
+      bumpScale: 0,
       anisotropy: brushed ? Math.min(1, 0.72 + 0.18 * brushIntensity) : (preset.anisotropy || 0),
       anisotropyRotation: (brushDirection * Math.PI) / 180,
       clearcoat: roughness < 0.1 ? (preset.clearcoat ?? 0.6) : (preset.clearcoat ?? 0),
@@ -408,8 +412,8 @@ export function createSignMaterial(presetId, overrides = {}, lightContext = {}) 
     metalness: 0,
     roughness: Math.max(0.04, Math.min(0.8, roughness)),
     clearcoat: 1.0,
-    clearcoatRoughness: 0.05,
-    sheen: 0.25,
+    clearcoatRoughness: 0.06,
+    sheen: 0.2,
     transparent: opacity < 0.99 || transmission > 0.05,
     opacity: lit ? Math.max(0.95, opacity) : opacity,
     transmission: lit ? 0 : transmission * 0.45,
@@ -418,12 +422,13 @@ export function createSignMaterial(presetId, overrides = {}, lightContext = {}) 
   });
 
   if (lit) {
-    const baseEmissive=isOpal?(night ? .92 : .52):(night ? .82 : .42);
-    mat.userData.updateLed=(hex,intensity)=>{
-      mat.color.set(intensity<=0?colorHex:isOpal?mixHex('#ffffff',hex,.75):mixHex(colorHex,hex,.45));
-      mat.emissive.set(isOpal?hex:mixHex(colorHex,hex,.55));mat.emissiveIntensity=baseEmissive*Math.max(0,intensity);
+    const baseEmissive = isOpal ? (night ? 3.2 : 1.35) : (night ? 1.25 : 0.5);
+    mat.userData.updateLed = (hex, intensity) => {
+      mat.color.set(intensity <= 0 ? colorHex : isOpal ? mixHex('#ffffff', hex, 0.35) : colorHex);
+      mat.emissive.set(isOpal ? hex : mixHex(colorHex, hex, 0.12));
+      mat.emissiveIntensity = baseEmissive * Math.max(0, intensity);
     };
-    mat.userData.updateLed(glowHex,lightIntensity);
+    mat.userData.updateLed(glowHex, lightIntensity);
   }
 
   return mat;

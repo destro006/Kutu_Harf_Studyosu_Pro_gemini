@@ -1,26 +1,57 @@
+import {normalizeDisplayUnit,formatMmAsUnit,formatDimensions} from '../core/units.js';
 /**
- * Interactive SVG True-Shape Nesting Preview & Manual Adjustment View
+ * Interactive SVG True-Shape Nesting Preview & Collision Visualizer
+ * Shows exact sheet boundary, usable margin, internal holes, part labels,
+ * locked badges, and red collision highlights.
  */
 
-export function renderNestingSvg(sheet, selectedPlacementId = null) {
+const pathCache=new WeakMap();
+export function renderNestingSvg(sheet, selectedPlacementId = null, colors = {}, displayUnit='mm') {
   if (!sheet) return '';
+  const unit=normalizeDisplayUnit(displayUnit),show=mm=>formatMmAsUnit(mm,unit);
   const w = sheet.widthMm;
   const h = sheet.heightMm;
-  const m = sheet.marginMm;
+  const mL = sheet.marginLeftMm ?? sheet.marginMm ?? 15;
+  const mR = sheet.marginRightMm ?? sheet.marginMm ?? 15;
+  const mT = sheet.marginTopMm ?? sheet.marginMm ?? 15;
+  const mB = sheet.marginBottomMm ?? sheet.marginMm ?? 15;
+  const validColor = (value, fallback) => /^#[0-9a-f]{6}$/i.test(value || '') ? value : fallback;
+  const bodyColor = validColor(colors?.body, '#c89343');
+  const holeColor = validColor(colors?.holes, '#c89343');
+  const toD=pts=>{const cached=pathCache.get(pts);if(cached?.h===h)return cached.d;const d='M '+pts.map(pt=>`${pt.x.toFixed(1)},${(h-pt.y).toFixed(1)}`).join(' L ')+' Z';if(Object.isFrozen(pts))pathCache.set(pts,{h,d});return d;};
+  // Color-code empty interior contours separately. This is only a preview
+  // overlay; holes remain actual holes in the exported manufacturing geometry.
+  const holePreview = holes=>holes.map(pts=>`<path data-nest-hole="true" d="${toD(pts)}" fill="${holeColor}" fill-opacity="0.7" pointer-events="none" />`).join('');
 
+  const selected=selectedPlacementId instanceof Set?selectedPlacementId:new Set(Array.isArray(selectedPlacementId)?selectedPlacementId:selectedPlacementId==null?[]:[selectedPlacementId]);
   const polysSvg = sheet.placements
-    .map((p, idx) => {
-      const hue = (idx * 47) % 360;
-      const isSel = p.id === selectedPlacementId;
-      const toD = (pts) => 'M ' + pts.map(pt => `${pt.x.toFixed(1)},${(h - pt.y).toFixed(1)}`).join(' L ') + ' Z';
+    .map((p) => {
+      const isSel = selected.has(p.id);
+      const isCol = p.hasCollision;
+      const stroke = isCol ? '#ef4444' : isSel ? '#ffffff' : bodyColor;
+      const fill = isCol ? 'rgba(239, 68, 68, 0.45)' : bodyColor;
       const d = [toD(p.outer), ...(p.holes || []).map(toD)].join(' ');
-      return `<path data-pid="${p.id}" d="${d}" fill="hsla(${hue}, 70%, 55%, ${isSel ? 0.55 : 0.32})" stroke="${isSel ? '#ffffff' : `hsl(${hue}, 80%, 65%)`}" stroke-width="${isSel ? 4 : 2}" fill-rule="evenodd" style="cursor:pointer" />`;
+      const cx = ((p.bounds.minX + p.bounds.maxX) * 0.5).toFixed(1);
+      const cy = (h - (p.bounds.minY + p.bounds.maxY) * 0.5).toFixed(1);
+      const label = p.locked ? `🔒 ${p.label}` : p.label;
+
+      return `
+        <g data-pid="${escapeXml(p.id)}" class="${isSel?'nest-picked ':''}${isCol?'nest-collision':''}" style="cursor:pointer">
+          <title>${escapeXml(label)}</title>
+          ${holePreview(p.holes||[])}
+          <path data-nest-body="true" d="${d}" fill="${fill}" fill-opacity="${isSel ? '0.83' : '0.55'}" stroke="${stroke}" stroke-width="${isSel || isCol ? 4 : 2}" fill-rule="evenodd" />
+          ${isSel&&p.bounds.width>70&&p.bounds.height>35?`<text x="${cx}" y="${cy}" fill="#f8fafc" font-size="${Math.min(20,p.bounds.width/7,p.bounds.height/3)}" text-anchor="middle" dominant-baseline="middle" pointer-events="none">${show(p.bounds.width)}×${show(p.bounds.height)} ${unit}</text>`:''}
+        </g>`;
     })
     .join('\n');
 
-  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;background:#0d0f13;border:1px solid #2a2e37;border-radius:8px;display:block">
+  return `<svg class="nesting-sheet-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${formatDimensions(w,h,unit)} nesting levhası">
     <rect x="0" y="0" width="${w}" height="${h}" fill="#12151b" />
-    <rect x="${m}" y="${m}" width="${w - m * 2}" height="${h - m * 2}" fill="none" stroke="#334155" stroke-dasharray="10 8" stroke-width="2" />
+    <rect x="${mL}" y="${mT}" width="${Math.max(10, w - mL - mR)}" height="${Math.max(10, h - mT - mB)}" fill="none" stroke="#334155" stroke-dasharray="10 8" stroke-width="2" />
     ${polysSvg}
   </svg>`;
+}
+
+function escapeXml(s) {
+  return String(s ?? '').replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]));
 }

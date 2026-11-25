@@ -12,16 +12,15 @@ export const ENVIRONMENT_PRESETS = {
     label: 'Lüks Altın Stüdyo',
     bgDay: '#cfc8bc',
     bgNight: '#060607',
-    baseColor: '#1c1813',
+    baseColor: '#0a0a0b',
     panels: [
-      { pos: [0, 5, 2], scale: [10, 3, 1], rot: [Math.PI / 2, 0, 0], color: '#ffffff', intensity: 3.2 },
-      { pos: [-6, 1, 3], scale: [3, 8, 1], rot: [0, Math.PI / 2, 0], color: '#ffffff', intensity: 2.2 },
-      { pos: [6, 0.5, 3], scale: [2, 7, 1], rot: [0, -Math.PI / 2, 0], color: '#ffffff', intensity: 1.5 },
-      { pos: [0, -3, 5], scale: [12, 1.5, 1], rot: [0, 0, 0], color: '#ffd9a8', intensity: 0.9 },
-      { pos: [2.5, 2.5, 6], scale: [2.2, 2.2, 1], rot: [0, 0, 0], color: '#ffffff', intensity: 2.6 },
-      { pos: [-1, 2.2, 7], scale: [12, 5, 1], rot: [0, 0, 0], color: '#fff4e4', intensity: 1.85 },
-      { pos: [-5.5, 1.5, 6.5], scale: [7, 6, 1], rot: [0, 0.35, 0], color: '#ffe9c4', intensity: 1.65 },
-      { pos: [1, -1.5, 7], scale: [9, 2, 1], rot: [0, 0, 0], color: '#ffffff', intensity: 0.55 },
+      { form: 'rect', pos: [0, 5, 2], scale: [10, 3, 1], rot: [Math.PI / 2, 0, 0], color: '#ffffff', intensity: 3.0 },
+      { form: 'rect', pos: [-6, 1, 3], scale: [3, 8, 1], rot: [0, Math.PI / 2, 0], color: '#ffffff', intensity: 2.0 },
+      { form: 'rect', pos: [6, 0.5, 3], scale: [2, 7, 1], rot: [0, -Math.PI / 2, 0], color: '#ffffff', intensity: 1.4 },
+      { form: 'rect', pos: [0, -3, 5], scale: [12, 1.5, 1], rot: [0, 0, 0], color: '#ffd9a8', intensity: 0.8 },
+      { form: 'ring', pos: [2.5, 2.5, 6], scale: [1.2, 1.2, 1], rot: [0, 0, 0], color: '#ffffff', intensity: 2.5 },
+      { form: 'rect', pos: [-1, 2.2, 7], scale: [9, 4, 1], rot: [0, 0, 0], color: '#fff4e4', intensity: 1.6 },
+      { form: 'rect', pos: [1, -1.5, 7], scale: [9, 2, 1], rot: [0, 0, 0], color: '#ffffff', intensity: 0.5 },
     ],
   },
   softbox: {
@@ -31,10 +30,10 @@ export const ENVIRONMENT_PRESETS = {
     bgNight: '#0a0b0e',
     baseColor: '#101216',
     panels: [
-      { pos: [0, 6, 2], scale: [14, 5, 1], rot: [Math.PI / 2, 0, 0], color: '#ffffff', intensity: 3.8 },
-      { pos: [-7, 1, 4], scale: [5, 10, 1], rot: [0, Math.PI / 2, 0], color: '#f2f6ff', intensity: 2.6 },
-      { pos: [7, 1, 4], scale: [5, 10, 1], rot: [0, -Math.PI / 2, 0], color: '#fff7ee', intensity: 2.4 },
-      { pos: [0, 2, 8], scale: [10, 5, 1], rot: [0, 0, 0], color: '#ffffff', intensity: 1.8 },
+      { form: 'rect', pos: [0, 6, 2], scale: [14, 5, 1], rot: [Math.PI / 2, 0, 0], color: '#ffffff', intensity: 3.8 },
+      { form: 'rect', pos: [-7, 1, 4], scale: [5, 10, 1], rot: [0, Math.PI / 2, 0], color: '#f2f6ff', intensity: 2.6 },
+      { form: 'rect', pos: [7, 1, 4], scale: [5, 10, 1], rot: [0, -Math.PI / 2, 0], color: '#fff7ee', intensity: 2.4 },
+      { form: 'rect', pos: [0, 2, 8], scale: [10, 5, 1], rot: [0, 0, 0], color: '#ffffff', intensity: 1.8 },
     ],
   },
   industrial: {
@@ -44,10 +43,10 @@ export const ENVIRONMENT_PRESETS = {
     bgNight: '#090b0d',
     baseColor: '#0c0e11',
     panels: [
-      { pos: [-4, 6, 3], scale: [3, 10, 1], rot: [Math.PI / 2, 0, 0], color: '#d8ebff', intensity: 4.5 },
-      { pos: [4, 6, 3], scale: [3, 10, 1], rot: [Math.PI / 2, 0, 0], color: '#ffe3c4', intensity: 3.5 },
-      { pos: [-8, 0, 2], scale: [3, 7, 1], rot: [0, Math.PI / 2, 0], color: '#8ab4e8', intensity: 1.9 },
-      { pos: [8, 0, 2], scale: [3, 7, 1], rot: [0, -Math.PI / 2, 0], color: '#ffbd7a', intensity: 1.7 },
+      { form: 'rect', pos: [-4, 6, 3], scale: [3, 10, 1], rot: [Math.PI / 2, 0, 0], color: '#d8ebff', intensity: 4.5 },
+      { form: 'rect', pos: [4, 6, 3], scale: [3, 10, 1], rot: [Math.PI / 2, 0, 0], color: '#ffe3c4', intensity: 3.5 },
+      { form: 'rect', pos: [-8, 0, 2], scale: [3, 7, 1], rot: [0, Math.PI / 2, 0], color: '#8ab4e8', intensity: 1.9 },
+      { form: 'rect', pos: [8, 0, 2], scale: [3, 7, 1], rot: [0, -Math.PI / 2, 0], color: '#ffbd7a', intensity: 1.7 },
     ],
   },
   darkShowroom: {
@@ -57,9 +56,9 @@ export const ENVIRONMENT_PRESETS = {
     bgNight: '#040406',
     baseColor: '#040406',
     panels: [
-      { pos: [0, 7, 3], scale: [10, 2, 1], rot: [Math.PI / 2, 0, 0], color: '#fff1d6', intensity: 5.0 },
-      { pos: [-6, 2, 5], scale: [1.5, 8, 1], rot: [0, Math.PI / 2, 0], color: '#ffd89c', intensity: 3.2 },
-      { pos: [6, 2, 5], scale: [1.5, 8, 1], rot: [0, -Math.PI / 2, 0], color: '#dce8ff', intensity: 2.8 },
+      { form: 'rect', pos: [0, 7, 3], scale: [10, 2, 1], rot: [Math.PI / 2, 0, 0], color: '#fff1d6', intensity: 5.0 },
+      { form: 'rect', pos: [-6, 2, 5], scale: [1.5, 8, 1], rot: [0, Math.PI / 2, 0], color: '#ffd89c', intensity: 3.2 },
+      { form: 'rect', pos: [6, 2, 5], scale: [1.5, 8, 1], rot: [0, -Math.PI / 2, 0], color: '#dce8ff', intensity: 2.8 },
     ],
   },
   outdoorDaylight: {
@@ -69,9 +68,9 @@ export const ENVIRONMENT_PRESETS = {
     bgNight: '#0b1018',
     baseColor: '#364a60',
     panels: [
-      { pos: [0, 8, 0], scale: [20, 20, 1], rot: [Math.PI / 2, 0, 0], color: '#bfe0ff', intensity: 2.6 },
-      { pos: [-5, 6, 6], scale: [4, 4, 1], rot: [0.4, 0.5, 0], color: '#fff5d9', intensity: 6.0 },
-      { pos: [0, -5, 4], scale: [18, 18, 1], rot: [-Math.PI / 2, 0, 0], color: '#8a7e6e', intensity: 1.1 },
+      { form: 'rect', pos: [0, 8, 0], scale: [20, 20, 1], rot: [Math.PI / 2, 0, 0], color: '#bfe0ff', intensity: 2.6 },
+      { form: 'rect', pos: [-5, 6, 6], scale: [4, 4, 1], rot: [0.4, 0.5, 0], color: '#fff5d9', intensity: 6.0 },
+      { form: 'rect', pos: [0, -5, 4], scale: [18, 18, 1], rot: [-Math.PI / 2, 0, 0], color: '#8a7e6e', intensity: 1.1 },
     ],
   },
   neutralStudio: {
@@ -81,10 +80,10 @@ export const ENVIRONMENT_PRESETS = {
     bgNight: '#0c0c0c',
     baseColor: '#151517',
     panels: [
-      { pos: [0, 6, 2], scale: [12, 6, 1], rot: [Math.PI / 2, 0, 0], color: '#ffffff', intensity: 3.2 },
-      { pos: [-6, 1, 4], scale: [4, 8, 1], rot: [0, Math.PI / 2, 0], color: '#f5f5f5', intensity: 2.2 },
-      { pos: [6, 1, 4], scale: [4, 8, 1], rot: [0, -Math.PI / 2, 0], color: '#f5f5f5', intensity: 2.2 },
-      { pos: [0, -5, 4], scale: [12, 4, 1], rot: [-Math.PI / 2, 0, 0], color: '#cccccc', intensity: 0.9 },
+      { form: 'rect', pos: [0, 6, 2], scale: [12, 6, 1], rot: [Math.PI / 2, 0, 0], color: '#ffffff', intensity: 3.2 },
+      { form: 'rect', pos: [-6, 1, 4], scale: [4, 8, 1], rot: [0, Math.PI / 2, 0], color: '#f5f5f5', intensity: 2.2 },
+      { form: 'rect', pos: [6, 1, 4], scale: [4, 8, 1], rot: [0, -Math.PI / 2, 0], color: '#f5f5f5', intensity: 2.2 },
+      { form: 'rect', pos: [0, -5, 4], scale: [12, 4, 1], rot: [-Math.PI / 2, 0, 0], color: '#cccccc', intensity: 0.9 },
     ],
   },
 };
@@ -101,102 +100,35 @@ export class EnvironmentManager {
   }
 
   getEnvironment(presetId, night = true) {
-    const key = `${presetId}_${night ? 'n' : 'd'}`;
-    if (this.cache.has(key)) return this.cache.get(key);
+    const id = ENVIRONMENT_PRESETS[presetId] ? presetId : 'luxuryGold';
+    if (this.cache.has(id)) return this.cache.get(id);
 
-    const preset = ENVIRONMENT_PRESETS[presetId] || ENVIRONMENT_PRESETS.luxuryGold;
-    const w = 1024, h = 512;
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
+    const preset = ENVIRONMENT_PRESETS[id];
+    const envScene = new THREE.Scene();
+    const baseColor = preset.baseColor || '#0a0a0b';
+    envScene.background = new THREE.Color(baseColor);
 
-    // Smooth sweeping luxury studio gradient (zenith -> horizon -> floor)
-    const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
-    if (presetId === 'luxuryGold') {
-      skyGrad.addColorStop(0.0, night ? '#2b2113' : '#fff4dd');
-      skyGrad.addColorStop(0.24, night ? '#ffd998' : '#ffffff');
-      skyGrad.addColorStop(0.46, night ? '#3c2b16' : '#d6c3a5');
-      skyGrad.addColorStop(0.54, night ? '#120e09' : '#6e5c47');
-      skyGrad.addColorStop(0.74, night ? '#c6934a' : '#f3dfc0');
-      skyGrad.addColorStop(1.0, night ? '#14100a' : '#3d3123');
-    } else if (presetId === 'darkShowroom') {
-      skyGrad.addColorStop(0.0, '#090a0d');
-      skyGrad.addColorStop(0.22, '#ffe9c2');
-      skyGrad.addColorStop(0.45, '#12151d');
-      skyGrad.addColorStop(0.68, '#050608');
-      skyGrad.addColorStop(0.82, '#8fa6c9');
-      skyGrad.addColorStop(1.0, '#040406');
-    } else if (presetId === 'outdoorDaylight') {
-      skyGrad.addColorStop(0.0, '#6ba4db');
-      skyGrad.addColorStop(0.32, '#d8ecff');
-      skyGrad.addColorStop(0.50, '#ffffff');
-      skyGrad.addColorStop(0.56, '#7b7163');
-      skyGrad.addColorStop(1.0, '#3a342c');
-    } else if (presetId === 'industrial') {
-      skyGrad.addColorStop(0.0, '#0f141c');
-      skyGrad.addColorStop(0.25, '#cce2ff');
-      skyGrad.addColorStop(0.48, '#1a2029');
-      skyGrad.addColorStop(0.70, '#ffcb91');
-      skyGrad.addColorStop(1.0, '#0b0d11');
-    } else {
-      // Softbox / Neutral Silk Gradient
-      skyGrad.addColorStop(0.0, night ? '#1b1f28' : '#e6ebf2');
-      skyGrad.addColorStop(0.25, '#ffffff');
-      skyGrad.addColorStop(0.48, night ? '#252933' : '#b7bec9');
-      skyGrad.addColorStop(0.56, night ? '#0e1015' : '#676d78');
-      skyGrad.addColorStop(0.78, night ? '#9aa5b8' : '#eaedf2');
-      skyGrad.addColorStop(1.0, night ? '#0b0c10' : '#4a4e57');
-    }
-    ctx.fillStyle = skyGrad;
-    ctx.fillRect(0, 0, w, h);
+    const disposables = [];
+    const boxGeo = new THREE.BoxGeometry(30, 22, 30);
+    const boxMat = new THREE.MeshBasicMaterial({ color: baseColor, side: THREE.BackSide, toneMapped: false });
+    envScene.add(new THREE.Mesh(boxGeo, boxMat));
+    disposables.push(boxGeo, boxMat);
 
-    if (presetId === 'luxuryGold') {
-      // Bright front softboxes prevent mirror-gold faces from reflecting a
-      // near-black horizon in the default hero view.
-      for (const x of [w * 0.25, w * 0.75]) {
-        ctx.save();
-        ctx.translate(x, h * 0.51);
-        ctx.scale(1, 0.85);
-        const card = ctx.createRadialGradient(0, 0, w * 0.035, 0, 0, w * 0.19);
-        card.addColorStop(0, 'rgba(255,250,226,0.98)');
-        card.addColorStop(0.36, 'rgba(255,232,185,0.90)');
-        card.addColorStop(0.72, 'rgba(228,181,110,0.55)');
-        card.addColorStop(1, 'rgba(228,181,110,0)');
-        ctx.fillStyle = card;
-        ctx.fillRect(-w * 0.2, -w * 0.2, w * 0.4, w * 0.4);
-        ctx.restore();
-      }
+    for (const p of preset.panels || []) {
+      const geo = p.form === 'ring' ? new THREE.RingGeometry(0.5, 1.0, 48) : new THREE.PlaneGeometry(1, 1);
+      const col = new THREE.Color(p.color || '#ffffff').multiplyScalar(p.intensity ?? 1);
+      const mat = new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide, toneMapped: false });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(...p.pos);
+      if (p.rot) mesh.rotation.set(...p.rot);
+      if (p.scale) mesh.scale.set(...p.scale);
+      envScene.add(mesh);
+      disposables.push(geo, mat);
     }
 
-    // Sweeping horizontal diagonal softbox light ribbons for eye-catching metallic specular gradients
-    const ribbons = [
-      { x: w * 0.25, y: h * 0.28, rx: w * 0.22, ry: h * 0.14, c0: 'rgba(255,250,235,0.92)', c1: 'rgba(255,250,235,0)' },
-      { x: w * 0.72, y: h * 0.34, rx: w * 0.20, ry: h * 0.12, c0: 'rgba(255,236,200,0.78)', c1: 'rgba(255,236,200,0)' },
-      { x: w * 0.50, y: h * 0.72, rx: w * 0.35, ry: h * 0.10, c0: 'rgba(255,220,165,0.55)', c1: 'rgba(255,220,165,0)' },
-    ];
-    for (const rb of ribbons) {
-      ctx.save();
-      ctx.translate(rb.x, rb.y);
-      ctx.scale(1, rb.ry / rb.rx);
-      const rg = ctx.createRadialGradient(0, 0, rb.rx * 0.08, 0, 0, rb.rx);
-      rg.addColorStop(0, rb.c0);
-      rg.addColorStop(1, rb.c1);
-      ctx.fillStyle = rg;
-      ctx.beginPath();
-      ctx.arc(0, 0, rb.rx, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.mapping = THREE.EquirectangularReflectionMapping;
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.needsUpdate = true;
-
-    const rt = this.pmrem.fromEquirectangular(tex);
-    tex.dispose();
-    this.cache.set(key, rt);
+    const rt = this.pmrem.fromScene(envScene, 0.04);
+    for (const d of disposables) d.dispose();
+    this.cache.set(id, rt);
     return rt;
   }
 
@@ -249,7 +181,7 @@ export class EnvironmentManager {
     const envScene = new THREE.Scene();
     envScene.background = new THREE.Color('#0a0a0c');
     const boxGeo = new THREE.BoxGeometry(24, 18, 24);
-    const boxMat = new THREE.MeshBasicMaterial({ color: '#0a0a0c', side: THREE.BackSide });
+    const boxMat = new THREE.MeshBasicMaterial({ color: '#0a0a0c', side: THREE.BackSide, toneMapped: false });
     envScene.add(new THREE.Mesh(boxGeo, boxMat));
 
     const aspect = (this.customImageTex.image?.width || 16) / Math.max(1, this.customImageTex.image?.height || 9);
@@ -261,6 +193,7 @@ export class EnvironmentManager {
       map: this.customImageTex,
       color: new THREE.Color('#ffffff').multiplyScalar(cardBrightness),
       side: THREE.DoubleSide,
+      toneMapped: false,
     });
     const card = new THREE.Mesh(cardGeo, cardMat);
     card.position.set(0, 0.5, 6.5);
@@ -268,7 +201,7 @@ export class EnvironmentManager {
 
     // Subtle overhead rim so metallic bevels still catch crisp highlights
     const topGeo = new THREE.PlaneGeometry(10, 2.5);
-    const topMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffffff').multiplyScalar(2.2), side: THREE.DoubleSide });
+    const topMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffffff').multiplyScalar(2.2), side: THREE.DoubleSide, toneMapped: false });
     const topMesh = new THREE.Mesh(topGeo, topMat);
     topMesh.position.set(0, 6, 2);
     topMesh.rotation.set(Math.PI / 2, 0, 0);

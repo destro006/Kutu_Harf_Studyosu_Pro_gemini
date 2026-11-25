@@ -5,9 +5,22 @@ import { createSignMaterial } from './MaterialLibrary.js';
 import { resolveChannelMaterialBinding } from './ChannelMaterialBinding.js';
 import { EnvironmentManager, ENVIRONMENT_PRESETS } from './EnvironmentManager.js';
 import { buildSceneLights, createHaloTexture } from './LightingSystem.js';
+import { PostProcessor } from './PostProcessor.js';
 import { loadWallPixels, createWallTextures, normalizeWallId } from '../photomontage/BackgroundLibrary.js';
 import { buildChannelComponent } from '../geometry/ChannelLetterGeometry.js';
 import { layoutTextMm } from '../geometry/FontManager.js';
+
+const _refIds = new WeakMap();
+let _nextRefId = 1;
+function getRefId(obj) {
+  if (!obj || typeof obj !== 'object') return 0;
+  let id = _refIds.get(obj);
+  if (!id) {
+    id = _nextRefId++;
+    _refIds.set(obj, id);
+  }
+  return id;
+}
 
 /**
  * Core Three.js r187 3D Signage Rendering Engine
@@ -71,6 +84,8 @@ export class SignEngine {
     this.container.appendChild(this.renderer.domElement);
 
     this.envManager = new EnvironmentManager(this.renderer);
+    this.postProcessor = new PostProcessor(this.renderer);
+    this._geomCache = new Map();
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
 
@@ -262,6 +277,7 @@ export class SignEngine {
       if (this.draggingObjId) {
         this.invalidate(true);
         const targetMesh = this.signGroup.children.find(c => c.userData?.layerId === this.draggingObjId);
+        const haloMesh = this._objectLightRefs?.get(this.draggingObjId)?.halo;
         if (this.dragMode === 'move') {
           const mmPerPx = (this.orbit.radius * 0.56) * 1000 / Math.max(200, this.container.clientHeight);
           const mx = dx * mmPerPx;
@@ -272,6 +288,10 @@ export class SignEngine {
           if (targetMesh) {
             targetMesh.position.x += mx * 0.001;
             targetMesh.position.y += my * 0.001;
+          }
+          if (haloMesh) {
+            haloMesh.position.x += mx * 0.001;
+            haloMesh.position.y += my * 0.001;
           }
           this.callbacks.onTransformLive?.(this.draggingObjId, 'move', { dxMm: mx, dyMm: my }, false);
         } else if (this.dragMode === 'rotate') {
@@ -287,6 +307,9 @@ export class SignEngine {
             targetMesh.rotation.y += (dRotY * Math.PI) / 180;
             targetMesh.rotation.z += (dRotZ * Math.PI) / 180;
           }
+          if (haloMesh && dRotZ) {
+            haloMesh.rotation.z += (dRotZ * Math.PI) / 180;
+          }
           this.callbacks.onTransformLive?.(this.draggingObjId, 'rotate', { dRotX, dRotY, dRotZ }, false);
         } else if (this.dragMode === 'scale') {
           const factor = Math.max(0.9, Math.min(1.1, 1 + (dx - dy) * 0.004));
@@ -295,6 +318,10 @@ export class SignEngine {
           if (targetMesh) {
             targetMesh.scale.x *= factor;
             targetMesh.scale.y *= factor;
+          }
+          if (haloMesh) {
+            haloMesh.scale.x *= factor;
+            haloMesh.scale.y *= factor;
           }
           this.callbacks.onTransformLive?.(this.draggingObjId, 'scale', { factor }, false);
         }
@@ -424,6 +451,7 @@ export class SignEngine {
     if(!force&&this._sizeKey===key)return;
     this._sizeKey=key;this.renderer.setPixelRatio(dpr);this.invalidate();
     this.renderer.setSize(w, h, false);
+    this.postProcessor?.setSize(Math.round(w * dpr), Math.round(h * dpr));
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
@@ -503,26 +531,26 @@ export class SignEngine {
     for(const shadow of shadows){if(typeof shadow.dispose==='function')shadow.dispose();else{shadow.map?.dispose();shadow.mapPass?.dispose();}}
     for(const texture of textures)texture.dispose();
     for(const material of materials)material.dispose?.();
-    for(const geometry of geometries)geometry.dispose?.();
+    for(const geometry of geometries)if(!geometry._cachedGeom)geometry.dispose?.();
   }
 
-  /**
-   * Rebuilds the 3D scene from the unified application state & loaded fonts.
-   */
-  updateScene(state, fontMap) {
-    if (this.isDisposed) return { metricsList: [], warnings: ['WebGL kullanılamıyor.'], sizeM: { w: 1.6, h: 0.4 } };
+  _disposeGeomEntry(entry) {
+    if (!entry) return;
+    for (const g of [...(entry.outerGeos || []), ...(entry.fileGeos || []), ...(entry.acrylicGeos || [])]) {
+      g.dispose?.();
+    }
+  }
 
-    this.invalidate(true);
+  _applyEnvironmentAndPost(state) {
     const nextQuality = state.quality || 'high';
     if (nextQuality !== this.quality) {
       this.quality = nextQuality;
-      this._resize(); // immediately updates actual GPU framebuffer resolution
+      this._resize();
     }
     const prof = QUALITY_PROFILES[this.quality] || QUALITY_PROFILES.high;
     this.renderer.shadowMap.enabled = prof.shadows;
     this.renderer.toneMappingExposure = state.render?.exposure ?? 1.0;
 
-    // Environment & background
     const envPresetId = state.render?.envPreset || 'luxuryGold';
     const night = state.scene?.night ?? true;
     const envPreset = ENVIRONMENT_PRESETS[envPresetId] || ENVIRONMENT_PRESETS.luxuryGold;
@@ -534,7 +562,7 @@ export class SignEngine {
     const rotRad = ((state.render?.envRotationDeg || 0) * Math.PI) / 180;
     const pitchRad = ((state.render?.envPitchDeg || 0) * Math.PI) / 180;
     this.scene.environmentRotation.set(pitchRad, rotRad, 0);
-    this.scene.environmentIntensity = (state.render?.envIntensity ?? 1.0) * (night ? 0.72 : 1.05);
+    this.scene.environmentIntensity = (state.render?.envIntensity ?? 1.0) * (night ? 0.6 : 1.0);
 
     const transparentBg = !!state.scene?.transparentBg;
     if (transparentBg) {
@@ -546,12 +574,60 @@ export class SignEngine {
       this.scene.background = new THREE.Color(bgHex);
     }
 
+    const anyLit = Boolean(state.lighting?.enabled !== false && (state.objects || []).some(o => {
+      if (!o.visible) return false;
+      const l = resolveObjectLighting(o, state);
+      const m = l.mode;
+      return (m === 'front' && l.frontIntensity > 0) || (m === 'halo' && l.backIntensity > 0) || (m === 'both' && (l.frontIntensity > 0 || l.backIntensity > 0));
+    }));
+    this.postProcessor?.setState({
+      night,
+      lit: anyLit,
+      exposure: state.render?.exposure ?? 1.0,
+      transparentBg,
+      quality: this.quality,
+    });
+    return { prof, night, transparentBg };
+  }
+
+  /**
+   * Fast path for render-only updates (environment, exposure, quality) without
+   * rebuilding sign geometries or halo canvases.
+   */
+  updateRenderSettings(state) {
+    if (this.isDisposed) return false;
+    const { prof, night } = this._applyEnvironmentAndPost(state);
+    const sizeM = this.lastSizeM || { w: 2.0, h: 0.4 };
+    const lightsKey = [night, Math.round(sizeM.w * 10), Math.round(sizeM.h * 10), prof.shadowSize].join('|');
+    if (this._lightsKey !== lightsKey) {
+      this._clearGroup(this.lightsGroup);
+      const lights = buildSceneLights(night, sizeM);
+      lights.traverse(light => {
+        if (light.shadow?.mapSize) light.shadow.mapSize.set(prof.shadowSize, prof.shadowSize);
+      });
+      this.lightsGroup.add(lights);
+      this._lightsKey = lightsKey;
+    }
+    this.invalidate(true);
+    return true;
+  }
+
+  /**
+   * Rebuilds the 3D scene from the unified application state & loaded fonts.
+   */
+  updateScene(state, fontMap) {
+    if (this.isDisposed) return { metricsList: [], warnings: ['WebGL kullanılamıyor.'], sizeM: { w: 1.6, h: 0.4 } };
+
+    this.invalidate(true);
+    const { prof, night, transparentBg } = this._applyEnvironmentAndPost(state);
+
     // Rebuild sign objects
     this._clearGroup(this.signGroup);
     const metricsList = [];
     const warnings = [];
     this._objectLightRefs=new Map();
     const haloJobs=[];
+    const usedGeomKeys = new Set();
 
     let minXM = Infinity, maxXM = -Infinity, minYM = Infinity, maxYM = -Infinity;
 
@@ -579,62 +655,96 @@ export class SignEngine {
         brushScale: state.materialOverrides?.brushScale,
         brushIntensity: state.materialOverrides?.brushIntensity,
         textureStrength: state.materialOverrides?.textureStrength,
+      };
+      const acrylicOverrides = {
+        envMapIntensity: state.render?.reflectionIntensity,
         acrylicOpacity: state.materialOverrides?.acrylicOpacity,
         acrylicTransmission: state.materialOverrides?.acrylicTransmission,
       };
 
-      const glowHex=light.frontColor;
-      const frontInt=light.frontIntensity;
-
-      const faceMat = createSignMaterial(
-        obj.faceMaterial || state.materials.faceId,
-        { ...matOverrides, color: obj.faceColor || state.materials.faceColor },
-        { lit: hasFront && obj.constructionType !== 'fileli', night, glowHex, lightIntensity: frontInt }
-      );
+      const glowHex = light.frontColor;
+      const frontInt = light.frontIntensity;
+      const cType = obj.constructionType || state.constructionType || 'fileli';
       const metalBinding = resolveChannelMaterialBinding(obj, state);
-      const fileMat = createSignMaterial(
-        metalBinding.fileId,
-        { ...matOverrides, color: metalBinding.fileColor },
-        { lit: false, night, isOpaqueMetal: true }
-      );
-      // Fileli sidewalls are the same metal as the FRONT FILE for their full
-      // physical depth. Sharing the actual PBR instance prevents accidental
-      // mismatches in color, brushing, roughness and reflection response.
-      const sideMat = metalBinding.shareMetalMaterial ? fileMat : createSignMaterial(
-        metalBinding.sideId,
-        { ...matOverrides, color: metalBinding.sideColor },
-        { lit: false, night, isOpaqueMetal: true }
-      );
-      const acrylicMat = createSignMaterial(
-        obj.acrylicMaterial || 'opalPleksi',
-        { ...matOverrides, color: obj.acrylicColor || state.fileli?.acrylicColor || '#f3f3ee' },
-        { lit: hasFront, night, glowHex, lightIntensity: frontInt }
-      );
 
-      this._objectLightRefs.set(obj.id,{front:[faceMat,acrylicMat].filter(mat=>typeof mat.userData?.updateLed==='function'),halo:null,points:[],night,mode});
+      const frontMats = [];
+      let faceMat = null;
+      let fileMat = null;
+      let sideMat = null;
+      let acrylicMat = null;
+
+      if (cType === 'fileli') {
+        fileMat = createSignMaterial(
+          metalBinding.fileId,
+          { ...matOverrides, color: metalBinding.fileColor },
+          { lit: false, night, isOpaqueMetal: true }
+        );
+        sideMat = metalBinding.shareMetalMaterial ? fileMat : createSignMaterial(
+          metalBinding.sideId,
+          { ...matOverrides, color: metalBinding.sideColor },
+          { lit: false, night, isOpaqueMetal: true }
+        );
+        acrylicMat = createSignMaterial(
+          obj.acrylicMaterial || 'opalPleksi',
+          { ...acrylicOverrides, color: obj.acrylicColor || state.fileli?.acrylicColor || '#f3f3ee' },
+          { lit: hasFront, night, glowHex, lightIntensity: frontInt }
+        );
+        if (typeof acrylicMat.userData?.updateLed === 'function') frontMats.push(acrylicMat);
+      } else if (cType === 'pleksi') {
+        sideMat = createSignMaterial(
+          metalBinding.sideId,
+          { ...matOverrides, color: metalBinding.sideColor },
+          { lit: false, night, isOpaqueMetal: true }
+        );
+        acrylicMat = createSignMaterial(
+          obj.acrylicMaterial || (obj.faceMaterial === 'renkliPleksi' ? 'renkliPleksi' : 'opalPleksi'),
+          { ...acrylicOverrides, color: obj.faceColor || obj.acrylicColor || state.fileli?.acrylicColor || '#f3f3ee' },
+          { lit: hasFront, night, glowHex, lightIntensity: frontInt }
+        );
+        if (typeof acrylicMat.userData?.updateLed === 'function') frontMats.push(acrylicMat);
+      } else {
+        faceMat = createSignMaterial(
+          obj.faceMaterial || state.materials.faceId,
+          { ...matOverrides, ...acrylicOverrides, color: obj.faceColor || state.materials.faceColor },
+          { lit: hasFront, night, glowHex, lightIntensity: frontInt }
+        );
+        sideMat = createSignMaterial(
+          metalBinding.sideId,
+          { ...matOverrides, color: metalBinding.sideColor },
+          { lit: false, night, isOpaqueMetal: true }
+        );
+        if (typeof faceMat.userData?.updateLed === 'function') frontMats.push(faceMat);
+      }
+
+      const lightRef = { front: frontMats, halo: null, points: [], night, mode };
+      this._objectLightRefs.set(obj.id, lightRef);
       let shapesMmGroups = [];
+      let objGeomIdentity = '';
 
       if (obj.kind === 'text') {
         const fontList = fontMap.get(obj.fontId || 'cinzel');
+        objGeomIdentity = `text|${obj.fontId || 'cinzel'}|${getRefId(fontList)}|${obj.text || ''}|${obj.heightMm || 400}|${obj.letterSpacingMm || 0}|${obj.lineSpacingMult || 1.25}|${obj.textAlign || 'center'}`;
         if (fontList) {
           const layout = layoutTextMm(fontList, obj.text || '', obj.heightMm || 400, obj.letterSpacingMm || 0, obj.lineSpacingMult || 1.25, obj.textAlign || 'center');
           shapesMmGroups = layout.glyphs.map(g => ({ label: g.char, shapes: g.shapes }));
         }
       } else if (obj.kind === 'logo' && obj.logoData) {
         const hMm = obj.heightMm || 500;
+        objGeomIdentity = `logo|${getRefId(obj.logoData)}|${hMm}`;
         const mat3 = new THREE.Matrix3().set(hMm, 0, 0, 0, hMm, 0, 0, 0, 1);
         shapesMmGroups = obj.logoData.parts.map((part, idx) => ({
           label: part.partName || `Logo-${idx + 1}`,
           color: part.color,
           shapes: part.shapes.map(raw => {
             const s=restoreLogoShape(raw);
-            const ns = new THREE.Shape(s.getPoints(12).map(p => p.clone().applyMatrix3(mat3)));
-            ns.holes = (s.holes || []).map(h => new THREE.Path(h.getPoints(12).map(p => p.clone().applyMatrix3(mat3))));
+            const ns = new THREE.Shape(s.getPoints(20).map(p => p.clone().applyMatrix3(mat3)));
+            ns.holes = (s.holes || []).map(h => new THREE.Path(h.getPoints(20).map(p => p.clone().applyMatrix3(mat3))));
             return ns;
           }),
         }));
       } else if (obj.kind === 'rect') {
         const w = obj.widthMm || 300, h = obj.heightMm || 150, r = Math.min(obj.cornerRadiusMm || 0, w / 2, h / 2);
+        objGeomIdentity = `rect|${w}|${h}|${r}`;
         const s = new THREE.Shape();
         if (r > 0.1) {
           s.moveTo(r, 0); s.lineTo(w - r, 0); s.quadraticCurveTo(w, 0, w, r);
@@ -647,10 +757,12 @@ export class SignEngine {
         shapesMmGroups = [{ label: obj.name, shapes: [s] }];
       } else if (obj.kind === 'ellipse') {
         const rx = (obj.widthMm || 240) / 2, ry = (obj.heightMm || 240) / 2;
+        objGeomIdentity = `ellipse|${rx}|${ry}`;
         const s = new THREE.Shape();
         s.absellipse(rx, ry, rx, ry, 0, Math.PI * 2, false, 0);
         shapesMmGroups = [{ label: obj.name, shapes: [s] }];
       } else if (obj.kind === 'polygon' && obj.polygonsMm?.length) {
+        objGeomIdentity = `poly|${getRefId(obj.polygonsMm)}`;
         const shapes = obj.polygonsMm.map(poly => {
           const s = new THREE.Shape();
           poly.outer.forEach((p, idx) => (idx === 0 ? s.moveTo(p.x, p.y) : s.lineTo(p.x, p.y)));
@@ -688,8 +800,11 @@ export class SignEngine {
 
       const oxM = (obj.xMm || 0) * 0.001;
       const oyM = (obj.yMm || 0) * 0.001;
+      const rotZRad = ((obj.rotationDeg || 0) * Math.PI) / 180;
+      const cosZ = Math.cos(rotZRad);
+      const sinZ = Math.sin(rotZRad);
       objGroup.position.set(oxM, oyM, zOffsetM);
-      objGroup.rotation.set(((obj.rotXDeg || 0) * Math.PI) / 180, ((obj.rotYDeg || 0) * Math.PI) / 180, ((obj.rotationDeg || 0) * Math.PI) / 180);
+      objGroup.rotation.set(((obj.rotXDeg || 0) * Math.PI) / 180, ((obj.rotYDeg || 0) * Math.PI) / 180, rotZRad);
       const sx=1,sy=1;
       objGroup.scale.set(1,1,1);
 
@@ -697,11 +812,10 @@ export class SignEngine {
       compMeshGroup.position.set(-cxMm * 0.001, -cyMm * 0.001, 0);
       objGroup.add(compMeshGroup);
 
-      const cType = obj.constructionType || state.constructionType || 'fileli';
       const buildCfg = {
         constructionType: cType,
         depthMm: obj.depthMm ?? state.dimensions.depthMm ?? 80,
-        bevelMm: state.materialOverrides?.bevelMm ?? 1.8,
+        bevelMm: state.materialOverrides?.bevelMm ?? 2.2,
         fileWidthMm: obj.fileWidthMm ?? state.fileli?.fileWidthMm ?? 8,
         fileThicknessMm: state.fileli?.fileThicknessMm ?? 2,
         metalThicknessMm: state.fileli?.metalThicknessMm ?? 1,
@@ -709,9 +823,22 @@ export class SignEngine {
         acrylicInsetMm: state.fileli?.acrylicInsetMm ?? 2.5,
         acrylicThicknessMm: state.fileli?.acrylicThicknessMm ?? 3,
       };
+      const cfgKey = [
+        cType, buildCfg.depthMm, buildCfg.bevelMm, buildCfg.fileWidthMm,
+        buildCfg.fileThicknessMm, buildCfg.metalThicknessMm, buildCfg.borderBevelMm,
+        buildCfg.acrylicInsetMm, buildCfg.acrylicThicknessMm, scaleX, scaleY,
+      ].join('|');
 
-      for (const grp of shapesMmGroups) {
-        const built = buildChannelComponent(grp.shapes, buildCfg);
+      for (let gIdx = 0; gIdx < shapesMmGroups.length; gIdx++) {
+        const grp = shapesMmGroups[gIdx];
+        const gKey = `${obj.id}#${gIdx}|${objGeomIdentity}|${cfgKey}`;
+        usedGeomKeys.add(gKey);
+        let built = this._geomCache.get(gKey);
+        if (!built) {
+          built = buildChannelComponent(grp.shapes, buildCfg);
+          for (const g of [...built.outerGeos, ...built.fileGeos, ...built.acrylicGeos]) g._cachedGeom = true;
+          this._geomCache.set(gKey, built);
+        }
         if (built.warnings.length) warnings.push(...built.warnings);
 
         metricsList.push({
@@ -727,8 +854,21 @@ export class SignEngine {
           offsetYMm: (obj.yMm || 0) - cyMm,
         });
 
+        let partFaceMat = faceMat;
+        if (obj.kind === 'logo' && obj.logoColorMode === 'original' && grp.color && cType !== 'fileli' && cType !== 'pleksi') {
+          partFaceMat = createSignMaterial('boyaliAluminyum', { color: grp.color }, { lit: false, night });
+          if (hasFront) {
+            partFaceMat.userData.updateLed = (hex, intensity) => {
+              partFaceMat.emissive.set(grp.color);
+              partFaceMat.emissiveIntensity = (night ? 2.2 : 0.8) * Math.max(0, intensity);
+            };
+            partFaceMat.userData.updateLed(glowHex, frontInt);
+            lightRef.front.push(partFaceMat);
+          }
+        }
+
         for (const geo of built.outerGeos) {
-          const mats = (cType === 'fileli' || cType === 'pleksi') ? [sideMat, sideMat] : [faceMat, sideMat];
+          const mats = (cType === 'fileli' || cType === 'pleksi') ? [sideMat, sideMat] : [partFaceMat, sideMat];
           const mesh = new THREE.Mesh(geo, mats);
           mesh.castShadow = true;
           mesh.receiveShadow = true;
@@ -753,13 +893,20 @@ export class SignEngine {
           compMeshGroup.add(mesh);
         }
 
-        // Collect world-space shapes for halo plane
+        // Collect world-space shapes for halo plane (including object Z rotation)
         if (hasHalo) {
+          const toWorld = p => {
+            const lx = (p.x - cxMm) * 0.001 * sx;
+            const ly = (p.y - cyMm) * 0.001 * sy;
+            return {
+              wx: oxM + lx * cosZ - ly * sinZ,
+              wy: oyM + lx * sinZ + ly * cosZ,
+            };
+          };
           for (const poly of built.polygonsMm) {
             const sh = new THREE.Shape();
             poly.outer.forEach((p, idx) => {
-              const wx = (p.x - cxMm) * 0.001 * sx + oxM;
-              const wy = (p.y - cyMm) * 0.001 * sy + oyM;
+              const { wx, wy } = toWorld(p);
               if (idx === 0) sh.moveTo(wx, wy);
               else sh.lineTo(wx, wy);
             });
@@ -767,8 +914,7 @@ export class SignEngine {
             for (const h of poly.holes) {
               const hp = new THREE.Path();
               h.forEach((p, idx) => {
-                const wx = (p.x - cxMm) * 0.001 * sx + oxM;
-                const wy = (p.y - cyMm) * 0.001 * sy + oyM;
+                const { wx, wy } = toWorld(p);
                 if (idx === 0) hp.moveTo(wx, wy);
                 else hp.lineTo(wx, wy);
               });
@@ -793,6 +939,14 @@ export class SignEngine {
       if(hasHalo&&objectHaloShapes.length&&!transparentBg)haloJobs.push({obj,light,shapes:objectHaloShapes});
     }
 
+    // Evict & dispose stale geometry cache entries
+    for (const [k, entry] of this._geomCache.entries()) {
+      if (!usedGeomKeys.has(k)) {
+        this._disposeGeomEntry(entry);
+        this._geomCache.delete(k);
+      }
+    }
+
     const sizeM = {
       w: Number.isFinite(minXM) ? Math.max(0.2, maxXM - minXM) : 1.6,
       h: Number.isFinite(minYM) ? Math.max(0.2, maxYM - minYM) : 0.4,
@@ -807,7 +961,7 @@ export class SignEngine {
       const height=Math.max(.05,box.max.y-box.min.y);
       const halo=createHaloTexture(job.shapes,{minX:box.min.x,maxX:box.max.x,minY:box.min.y,maxY:box.max.y},{wallDistanceMm:job.light.wallDistanceMm,haloSpread:job.light.haloSpread,falloff:job.light.falloff,letterHeightM:height});
       halo.texture._disposeOnClear=true;
-      const mesh=new THREE.Mesh(new THREE.PlaneGeometry(halo.widthM,halo.heightM),new THREE.MeshBasicMaterial({map:halo.texture,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:true}));
+      const mesh=new THREE.Mesh(new THREE.PlaneGeometry(halo.widthM,halo.heightM),new THREE.MeshBasicMaterial({map:halo.texture,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
       mesh.position.set(halo.cxM,halo.cyM,.002);mesh.renderOrder=2;mesh.raycast=()=>{};this.signGroup.add(mesh);refs.halo=mesh;
       // The contour mask alone illuminates the wall. Point lights create circular hotspots.
       refs.height=height;this.applyObjectLightAppearance(refs,job.light);
@@ -1009,7 +1163,13 @@ export class SignEngine {
       this.camera.aspect = width / height;
       this.camera.updateProjectionMatrix();
       this.renderer.shadowMap.needsUpdate=true;
-      this.renderer.render(this.scene, this.camera);
+      if (!opts.transparent && !selectedIds && this.postProcessor) {
+        this.postProcessor.setSize(width, height);
+        this.postProcessor.render(this.scene, this.camera);
+      } else {
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.render(this.scene, this.camera);
+      }
       return this.renderer.domElement.toDataURL('image/png');
     } finally {
       this.camera.position.copy(cameraPos);
@@ -1030,7 +1190,7 @@ export class SignEngine {
     const intensity=light.backIntensity,night=refs.night;
     if(refs.halo){
       refs.halo.visible=intensity>0;
-      refs.halo.material.color.set(light.backColor).multiplyScalar((night ? .55 : .42)+intensity*.45);
+      refs.halo.material.color.set(light.backColor).multiplyScalar((night ? 2.4 : 0.95) * intensity + 0.15);
       refs.halo.material.opacity=intensity>0?Math.min(.98,(night ? .34 : .22)*intensity+.08):0;
     }
     // No point-light hotspot; the selected intensity controls only the contour glow.
@@ -1042,6 +1202,19 @@ export class SignEngine {
       if(!refs||refs.mode!==(light.enabled?light.mode:'none'))return false;
     }
     for(const obj of state.objects.filter(o=>o.visible))this.applyObjectLightAppearance(this._objectLightRefs.get(obj.id),resolveObjectLighting(obj,state));
+    const anyLit = Boolean(state.lighting?.enabled !== false && state.objects.some(o => {
+      if (!o.visible) return false;
+      const l = resolveObjectLighting(o, state);
+      const m = l.mode;
+      return (m === 'front' && l.frontIntensity > 0) || (m === 'halo' && l.backIntensity > 0) || (m === 'both' && (l.frontIntensity > 0 || l.backIntensity > 0));
+    }));
+    this.postProcessor?.setState({
+      night: state.scene?.night ?? true,
+      lit: anyLit,
+      exposure: state.render?.exposure ?? 1.0,
+      transparentBg: !!state.scene?.transparentBg,
+      quality: this.quality,
+    });
     this.invalidate();return true;
   }
   cancelWallLoad(){
@@ -1064,7 +1237,33 @@ export class SignEngine {
     loadWallPixels(id,{signal:request.controller.signal,onProgress:p=>publish('loading',Math.min(99,p))}).then(pixels=>{
       if(!valid())return;
       const wt=createWallTextures(id,request.w,request.h,pixels);
-      const wall=new THREE.Mesh(new THREE.PlaneGeometry(request.w,request.h),new THREE.MeshStandardMaterial({map:wt.map,bumpMap:wt.bumpMap,bumpScale:wt.bumpScale,roughness:wt.roughness}));
+      const planeGeo = new THREE.PlaneGeometry(request.w, request.h, 24, 16);
+      const posAttr = planeGeo.getAttribute('position');
+      const vCount = posAttr.count;
+      const colors = new Float32Array(vCount * 3);
+      const halfW = Math.max(0.5, request.w * 0.5);
+      const halfH = Math.max(0.5, request.h * 0.5);
+      for (let i = 0; i < vCount; i++) {
+        const nx = posAttr.getX(i) / halfW;
+        const ny = posAttr.getY(i) / halfH;
+        const r = Math.min(1, Math.hypot(nx * 0.85, ny * 1.1));
+        const shade = 1.0 - 0.32 * r * r;
+        colors[i * 3] = shade;
+        colors[i * 3 + 1] = shade;
+        colors[i * 3 + 2] = shade;
+      }
+      planeGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      const wallMat = new THREE.MeshStandardMaterial({
+        map: wt.map,
+        bumpMap: wt.bumpMap,
+        bumpScale: wt.bumpScale,
+        roughnessMap: wt.roughnessMap || null,
+        roughness: wt.roughness,
+        metalness: wt.metalness || 0,
+        envMapIntensity: wt.envMapIntensity ?? 0.55,
+        vertexColors: true,
+      });
+      const wall=new THREE.Mesh(planeGeo,wallMat);
       wall.receiveShadow=true;
       this._clearGroup(this.wallGroup);this.wallGroup.add(wall);this._wallKey=request.key;this.invalidate(true);
       publish('done',100);this._wallRequest=null;
@@ -1094,7 +1293,8 @@ export class SignEngine {
       this.camera.position.set(o.target.x+o.radius*Math.sin(o.polar)*Math.sin(o.azimuth),o.target.y+o.radius*Math.cos(o.polar),o.target.z+o.radius*Math.sin(o.polar)*Math.cos(o.azimuth));
       this.camera.lookAt(o.target);
       this._renderDirty=false;
-      this.renderer.render(this.scene,this.camera);
+      if(this.postProcessor)this.postProcessor.render(this.scene,this.camera);
+      else this.renderer.render(this.scene,this.camera);
       this.callbacks.onFrame?.();
     };
     this._raf=requestAnimationFrame(tick);
@@ -1122,6 +1322,9 @@ export class SignEngine {
     this._clearGroup(this.lightsGroup);
     this._clearGroup(this.selectionGroup);
     this._clearGroup(this.pageGroup);
+    for (const entry of this._geomCache.values()) this._disposeGeomEntry(entry);
+    this._geomCache.clear();
+    this.postProcessor?.dispose();
     this.envManager.dispose();
     this.renderer.dispose();
   }

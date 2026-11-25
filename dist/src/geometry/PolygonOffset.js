@@ -363,7 +363,17 @@ export function computeFileliContours(outerCCW, holesCW, fileWidthMm) {
     }
     const expandedHoleCCW = ensureWinding(expRes.points, true);
     // Verify expanded hole doesn't swallow the acrylicOuter
-    if (!pointInPolygon(expandedHoleCCW[0], acrylicOuter) || polygonsIntersect(expandedHoleCCW, acrylicOuter)) {
+    let holeCrossesOuter = false;
+    for (let i = 0; i < expandedHoleCCW.length && !holeCrossesOuter; i++) {
+      const a = expandedHoleCCW[i], b = expandedHoleCCW[(i + 1) % expandedHoleCCW.length];
+      for (let j = 0; j < acrylicOuter.length; j++) {
+        if (segmentsIntersect(a, b, acrylicOuter[j], acrylicOuter[(j + 1) % acrylicOuter.length], false)) {
+          holeCrossesOuter = true;
+          break;
+        }
+      }
+    }
+    if (!pointInPolygon(expandedHoleCCW[0], acrylicOuter) || holeCrossesOuter) {
       return {
         ok: false,
         warning: `File genişliği (${fileWidthMm} mm) iç boşluk ile dış sınır arasındaki kol için çok büyük.`,

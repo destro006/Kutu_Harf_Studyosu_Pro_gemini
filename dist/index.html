@@ -3,156 +3,185 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Kutu Harf Stüdyosu — Profesyonel 3D Tabela Tasarım ve İmalat Stüdyosu</title>
+  <title>Kutu Harf Stüdyosu — Profesyonel 3D Tabela CAD/CAM &amp; İmalat Stüdyosu</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Crect x='9' y='7' width='14' height='18' rx='3' fill='%23ffb547'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./src/styles/studio.css">
+  <link rel="stylesheet" href="./src/styles/studio.css?v=qa8">
 </head>
 <body>
   <div id="app" class="app-shell">
-    <!-- Top Header -->
-    <header class="topbar">
-      <div class="brand">
+    <!-- REGION 1: Main Menu Bar -->
+    <nav class="menubar" id="mainMenuBar" aria-label="Ana Menü">
+      <div class="brand-mini">
         <span class="logo-mark" aria-hidden="true"><i></i></span>
-        <div class="brand-text">
-          <strong>Kutu Harf Stüdyosu</strong>
-          <span>Profesyonel 3D Tabela CAD/CAM &amp; İmalat Stüdyosu</span>
-        </div>
-        <input id="projectNameInput" class="proj-name-in" type="text" value="Yeni Tabela Projesi" aria-label="Proje adı">
+        <strong>Kutu Harf Stüdyosu</strong>
       </div>
+      <button id="mobileMenuToggle" type="button" class="tb-btn mobile-compact" aria-expanded="false">☰ Menü</button>
+      <div class="menu-items" id="menuItems">
+        <button type="button" class="menu-btn" data-menu="file">Dosya</button>
+        <button type="button" class="menu-btn" data-menu="edit">Düzenle</button>
+        <button type="button" class="menu-btn" data-menu="view">Görünüm</button>
+        <button type="button" class="menu-btn" data-menu="object">Nesne</button>
+        <button type="button" class="menu-btn" data-menu="layout">Düzen</button>
+        <button type="button" class="menu-btn" data-menu="text">Metin</button>
+        <button type="button" class="menu-btn" data-menu="effects">Efektler</button>
+        <button type="button" class="menu-btn" data-menu="production">Üretim</button>
+        <button type="button" class="menu-btn" data-menu="window">Pencere</button>
+        <button type="button" class="menu-btn" data-menu="help">Yardım</button>
+      </div>
+      <div class="menu-right">
+        <button id="btnUndo" class="tb-btn" type="button" title="Geri Al (Ctrl+Z)">↶</button>
+        <button id="btnRedo" class="tb-btn" type="button" title="Yinele (Ctrl+Shift+Z)">↷</button>
+        <button id="btnQuickSaveDoc" class="tb-btn" type="button" title="Projeyi Kaydet (Ctrl+S)">💾 Kaydet</button>
+        <button id="btnFullscreen" class="tb-btn" type="button" title="Tam Ekran Modu">⛶</button>
+        <button id="btnShortcutsHelp" class="tb-btn" type="button" title="Kısayollar">⌨ Kısayollar</button>
+        <div id="headerTotalBadge" class="price-badge" title="KDV Dahil Tahmini Toplam">₺0</div>
+      </div>
+    </nav>
+    <div id="menuDropdown" class="menu-dropdown hidden" role="menu"></div>
 
-      <div class="topbar-actions">
-        <div class="btn-group">
-          <button id="btnUndo" class="tb-btn" type="button" title="Geri Al (Ctrl+Z)">↶ Geri Al</button>
-          <button id="btnRedo" class="tb-btn" type="button" title="Yinele (Ctrl+Y)">↷ Yinele</button>
+    <!-- REGION 2: Document Tabs (Independent Projects) -->
+    <div class="doc-tabs-bar" id="documentTabsBar" aria-label="Üstte açık proje sekmeleri">
+      <button type="button" id="btnNewDocTab" class="doc-new-tab-btn" title="Yeni proje sekmesi oluştur (Ctrl+N)" aria-label="Yeni Sekme">＋ <span>Yeni Sekme</span></button>
+      <div id="documentTabsList" class="doc-tabs-list" role="tablist" aria-label="Açık proje sekmeleri"></div>
+    </div>
+
+    <!-- REGION 3: Main Workspace Navigation (6 Workspaces for Active Document) -->
+    <header class="ws-nav-bar" id="mainWorkspaceBar">
+      <div class="ws-nav-tabs" id="mainWorkspaceTabs" role="tablist" aria-label="Ana Çalışma Alanları">
+        <button type="button" data-main-ws="design2d">✎ 2D Tasarım</button>
+        <button type="button" data-main-ws="model3d" class="on">⬡ 3D Kutu Harf</button>
+        <button type="button" data-main-ws="materials">◈ Malzeme ve Aydınlatma</button>
+        <button type="button" data-main-ws="nesting">▦ Nesting</button>
+        <button type="button" data-main-ws="cnc">⚙ Üretim / CNC</button>
+        <button type="button" data-main-ws="cost">₺ Maliyet ve Teklif</button>
+      </div>
+      <div class="ws-nav-actions">
+        <div id="legacyExportActions" hidden>
+          <button id="btnExportPng" type="button">PNG</button>
+          <button id="btnExportTransparentPng" type="button">Şeffaf PNG</button>
+          <button id="btnExportSvg" type="button">SVG</button>
+          <button id="btnExportDxf" type="button">DXF</button>
+          <button id="btnSaveJson" type="button">JSON</button>
         </div>
+        <button id="mobileRailToggle" class="tb-btn mobile-compact" type="button" aria-expanded="false">Araçlar</button>
+        <button id="btnToggleMobileInspector" class="tb-btn mobile-only-btn" type="button">☰ Panel</button>
+      </div>
+    </header>
 
+    <!-- Main 3-Column Studio Body -->
+    <div class="studio-body" id="studioBody">
+      <!-- REGION 4: Left Vertical CAD Toolbox -->
+      <aside class="cad-rail" id="cadRail" aria-label="CAD Araç Çubuğu">
+        <button type="button" id="btnToggleRail" class="rail-expand-btn" title="Araç Çubuğunu Genişlet/Daralt">⇄</button>
+        <div class="rail-group">
+          <button class="tool-btn active" data-tool="select" title="Seçim Aracı (Boşluk / V)">↖<span>Seç</span><kbd class="rail-kbd">V</kbd></button>
+          <button class="tool-btn" data-tool="move" title="Taşıma Aracı (M)">✥<span>Taşı</span><kbd class="rail-kbd">M</kbd></button>
+          <button class="tool-btn" data-tool="scale" title="Ölçekle (S)">⤢<span>Ölçek</span><kbd class="rail-kbd">S</kbd></button>
+          <button class="tool-btn" data-tool="rotate" title="3D Döndür (Alt+F8)">↻<span>Döndür</span><kbd class="rail-kbd">A+F8</kbd></button>
+          <button type="button" class="tool-btn" id="btnAlignmentRail" title="Hizalama ve Dağıtma" aria-expanded="false" aria-controls="alignmentFlyout"><i class="align-rail-icon"></i><span>Hizala ▸</span></button>
+          <button class="tool-btn" data-tool="node" title="Düğüm / Şekil Düzenleme (F10)">◈<span>Düğüm</span><kbd class="rail-kbd">F10</kbd></button>
+        </div>
+        <div class="rail-sep"></div>
+        <div class="rail-group">
+          <button class="tool-btn" data-tool="pen" title="Kalem / Çokgen Çizimi (F5)">✒<span>Kalem</span><kbd class="rail-kbd">F5</kbd></button>
+          <button class="tool-btn" data-tool="freehand" title="Serbest Çizim">〰<span>Serbest</span></button>
+          <button class="tool-btn" data-tool="rect" title="Dikdörtgen Ekle (F6)">▭<span>Dikdört.</span><kbd class="rail-kbd">F6</kbd></button>
+          <button class="tool-btn" data-tool="ellipse" title="Elips Ekle (F7)">◯<span>Elips</span><kbd class="rail-kbd">F7</kbd></button>
+          <button class="tool-btn" data-tool="polygon" title="Çokgen Şekil Ekle">⬡<span>Çokgen</span></button>
+          <button class="tool-btn" data-tool="text" title="Yazı Ekle (F8)">T<span>Yazı</span><kbd class="rail-kbd">F8</kbd></button>
+          <button class="tool-btn" data-tool="logo" title="Logo / SVG İçe Aktar (Ctrl+I)">🖼<span>Logo</span><kbd class="rail-kbd">^I</kbd></button>
+        </div>
+        <div class="rail-sep"></div>
+        <div class="rail-group">
+          <button class="tool-btn" data-tool="measure" title="Mesafe / Açı Ölçüm (D)">📏<span>Ölçüm</span><kbd class="rail-kbd">D</kbd></button>
+          <button class="tool-btn" data-tool="eyedropper" title="Renk / Materyal Damlalığı">💧<span>Damlalık</span></button>
+          <button class="tool-btn" data-tool="pan" title="Sahneyi Kaydır (H)">✋<span>Kaydır</span><kbd class="rail-kbd">H</kbd></button>
+          <button class="tool-btn" data-tool="zoom" title="Yakınlaştır (Z) • Sığdır (F4)">🔍<span>Yakın</span><kbd class="rail-kbd">Z</kbd></button>
+        </div>
+        <div class="rail-sep"></div>
+        <div class="rail-group">
+          <button class="tool-btn" data-action="duplicate" title="Çoğalt (Ctrl+D)">⧉<span>Çoğalt</span><kbd class="rail-kbd">^D</kbd></button>
+          <button class="tool-btn" data-action="toCurves" title="Eğriye Çevir (Ctrl+Q)">∿<span>Eğri</span><kbd class="rail-kbd">^Q</kbd></button>
+          <button class="tool-btn" data-action="breakApart" title="Harflere / Parçalara Ayır (Ctrl+K)">✂<span>Ayır</span><kbd class="rail-kbd">^K</kbd></button>
+          <button class="tool-btn" data-action="union" title="Birleştir / Kaynak">⊕<span>Birleştir</span></button>
+          <button class="tool-btn" data-action="difference" title="Kırp / Çıkar">⊖<span>Çıkar</span></button>
+          <button class="tool-btn" data-action="intersection" title="Kesişim">⊗<span>Kesişim</span></button>
+          <button class="tool-btn danger" data-action="delete" title="Sil (Delete)">🗑<span>Sil</span><kbd class="rail-kbd">Del</kbd></button>
+        </div>
+      </aside>
+
+      <!-- REGION 5: Central Viewport & Context-Sensitive Property Bar -->
+      <main class="viewport-col">
+        <!-- Context-Sensitive Property Bar -->
+        <div class="numeric-toolbar-row">
+        <div class="prop-bar" id="numericPropBar" aria-label="Bağlamsal Özellik Çubuğu"></div>
+          <div id="propertyFileActions" class="property-file-actions" aria-label="Performans ve dosya işlemleri">
         <select id="qualitySelect" class="tb-select" aria-label="Görüntü kalitesi">
           <option value="performance">Performans</option>
           <option value="balanced">Dengeli</option>
           <option value="high" selected>Yüksek Kalite</option>
           <option value="ultra">Ultra / Sunum</option>
         </select>
-
-        <div class="btn-group">
-          <button id="btnExportPng" class="tb-btn" type="button" title="Yüksek çözünürlüklü PNG indir">PNG</button>
-          <button id="btnExportTransparentPng" class="tb-btn" type="button" title="Arka plansız şeffaf PNG indir">Şeffaf PNG</button>
-          <button id="btnExportSvg" class="tb-btn" type="button" title="Katmanlı SVG vektör indir">SVG</button>
-          <button id="btnExportDxf" class="tb-btn" type="button" title="CNC/Lazer için katmanlı DXF indir">DXF</button>
-          <button id="btnSaveJson" class="tb-btn" type="button" title="Proje JSON kaydet (Ctrl+S)">JSON</button>
+        <button id="btnOpenExport" class="tb-btn export-open-btn" type="button" title="Dışa Aktar (Ctrl+E)">⇧ Dışa Aktar <kbd>Ctrl+E</kbd></button>
+            <button id="btnOpenImport" class="tb-btn import-open-btn" type="button" title="İçe Aktar (Ctrl+I)">⇩ İçe Aktar <kbd>Ctrl+I</kbd></button>
+          </div>
         </div>
-
-        <button id="btnShortcutsHelp" class="tb-btn" type="button" title="Klavye Kısayolları">?</button>
-        <div id="headerTotalBadge" class="price-badge" title="KDV Dahil Tahmini Toplam">₺0</div>
-      </div>
-    </header>
-
-    <!-- Main 3-Column Studio Workspace -->
-    <div class="studio-body">
-      <!-- Left CAD Toolbar -->
-      <aside class="cad-rail" aria-label="CAD Araç Çubuğu">
-        <div class="rail-group">
-          <button class="tool-btn active" data-tool="select" title="Seçim Aracı (Boşluk)">↖<span>Seç</span></button>
-          <button class="tool-btn" data-tool="move" title="Taşıma">✥<span>Taşı</span></button>
-          <button class="tool-btn" data-tool="scale" title="Ölçekle">⤢<span>Ölçek</span></button>
-          <button class="tool-btn" data-tool="rotate" title="Döndür">↻<span>Döndür</span></button>
-          <button class="tool-btn" data-tool="pan" title="Sahneyi Kaydır">✋<span>Kaydır</span></button>
-          <button class="tool-btn" data-tool="zoom" title="Yakınlaştır / Uzaklaştır">🔍<span>Yakın</span></button>
-        </div>
-        <div class="rail-sep"></div>
-        <div class="rail-group">
-          <button class="tool-btn" data-tool="rect" title="Dikdörtgen Ekle (F6)">▭<span>Dikdört.</span></button>
-          <button class="tool-btn" data-tool="ellipse" title="Elips Ekle (F7)">◯<span>Elips</span></button>
-          <button class="tool-btn" data-tool="text" title="Yeni Yazı Ekle (F8)">T<span>Yazı</span></button>
-          <button class="tool-btn" data-tool="logo" title="Logo İçe Aktar">🖼<span>Logo</span></button>
-          <button class="tool-btn" data-tool="pen" title="Kalem / Çokgen Çizimi">✒<span>Kalem</span></button>
-          <button class="tool-btn" data-tool="node" title="Düğüm Düzenleme">◈<span>Düğüm</span></button>
-          <button class="tool-btn" data-tool="measure" title="Mesafe Ölçüm Aracı">📏<span>Ölçüm</span></button>
-        </div>
-        <div class="rail-sep"></div>
-        <div class="rail-group">
-          <button class="tool-btn" data-action="duplicate" title="Çoğalt (Ctrl+D)">⧉<span>Çoğalt</span></button>
-          <button class="tool-btn" data-action="mirrorX" title="Yatay Aynala">⇆<span>Aynala Y</span></button>
-          <button class="tool-btn" data-action="mirrorY" title="Dikey Aynala">⇅<span>Aynala D</span></button>
-          <button class="tool-btn" data-action="toCurves" title="Eğriye Çevir">∿<span>Eğri</span></button>
-          <button class="tool-btn" data-action="union" title="Birleştir / Kaynak (2 nesne)">⊕<span>Birleştir</span></button>
-          <button class="tool-btn" data-action="difference" title="Kırp / Çıkar (2 nesne)">⊖<span>Çıkar</span></button>
-          <button class="tool-btn" data-action="intersection" title="Kesişim (2 nesne)">⊗<span>Kesişim</span></button>
-          <button class="tool-btn danger" data-action="delete" title="Sil (Delete)">🗑<span>Sil</span></button>
-        </div>
-      </aside>
-
-      <!-- Center Viewport Column -->
-      <main class="viewport-col">
-        <!-- Numeric CAD Property Bar -->
-        <div class="prop-bar" id="numericPropBar">
-          <div class="prop-field">
-            <label for="numX">X (mm)</label>
-            <input id="numX" type="number" step="5">
-          </div>
-          <div class="prop-field">
-            <label for="numY">Y (mm)</label>
-            <input id="numY" type="number" step="5">
-          </div>
-          <div class="prop-field">
-            <label for="numH">Yükseklik (mm)</label>
-            <input id="numH" type="number" min="20" max="3000" step="10">
-          </div>
-          <div class="prop-field">
-            <label for="numD">Derinlik (mm)</label>
-            <input id="numD" type="number" min="10" max="400" step="5">
-          </div>
-          <div class="prop-field">
-            <label for="numRot">Açı (°)</label>
-            <input id="numRot" type="number" min="-360" max="360" step="5">
-          </div>
-          <div class="prop-field">
-            <label for="numScale">Ölçek</label>
-            <input id="numScale" type="number" min="0.1" max="10" step="0.05">
-          </div>
-          <div class="prop-field">
-            <label for="numSpacing">Aralık (mm)</label>
-            <input id="numSpacing" type="number" min="-50" max="200" step="1">
-          </div>
-          <div class="prop-align">
-            <button type="button" data-align="left" title="Sola Hizala">◧</button>
-            <button type="button" data-align="centerX" title="Yatay Ortala">◫</button>
-            <button type="button" data-align="right" title="Sağa Hizala">◨</button>
-            <button type="button" data-align="top" title="Üste Hizala">⊤</button>
-            <button type="button" data-align="centerY" title="Dikey Ortala">⊟</button>
-            <button type="button" data-align="bottom" title="Alta Hizala">⊥</button>
-            <button type="button" data-dist="x" title="Yatay Dağıt (3+ nesne)">⋯</button>
+        <div id="studioRibbon" class="studio-ribbon">
+          <nav id="ribbonCategories" class="ribbon-categories" aria-label="Üst araç kategorileri">
+            <button type="button" data-ribbon="properties">Metin &amp; Yapı ⌄</button>
+            <button type="button" data-ribbon="materials">Malzeme &amp; Renk ⌄</button>
+            <button type="button" data-ribbon="lighting">Aydınlatma ⌄</button>
+            <button type="button" data-ribbon="manufacturing">İmalat ⌄</button>
+            <button type="button" data-ribbon="align">Vektör ⌄</button>
+            <button type="button" data-ribbon="background">Arka Plan &amp; Cephe ⌄</button>
+          </nav>
+          <div id="ribbonPanel" class="ribbon-panel hidden">
+            <div class="ribbon-panel-head"><strong id="ribbonPanelTitle"></strong><button type="button" id="ribbonClose" class="tb-btn" title="Kapat">✕</button></div>
+            <div id="ribbonPanelContent" class="ribbon-panel-content"></div>
           </div>
         </div>
 
-        <!-- 3D Canvas Stage -->
+        <!-- Central Multi-Workspace Stage -->
         <div class="stage-wrap" id="stageWrap">
+          <!-- 3D Viewport (used by 3D Kutu Harf & Malzeme ve Aydınlatma) -->
           <div id="threeContainer" class="three-container"></div>
+          <!-- 2D Vector Canvas (used by 2D Tasarım) -->
+          <div id="vector2DWrap" class="center-ws-layer hidden"></div>
+          <!-- Central Nesting Workspace (used by Nesting) -->
+          <div id="nestingCenterWrap" class="center-ws-layer hidden"></div>
+          <!-- Central CNC / Production Workspace (used by Üretim / CNC) -->
+          <div id="cncCenterWrap" class="center-ws-layer hidden"></div>
+          <!-- Central Cost & Quote Workspace (used by Maliyet ve Teklif) -->
+          <div id="costCenterWrap" class="center-ws-layer hidden"></div>
 
-          <!-- Ruler & Interactive 2D Overlay (Pen, Node, Measure, Photomontage) -->
+          <!-- Ruler & Interactive 2D Overlay (Pen, Measure, Photomontage) -->
           <canvas id="cadOverlay" class="cad-overlay"></canvas>
           <div id="photomontageLayer" class="photomontage-layer hidden"></div>
 
           <!-- Top-left Dimensions Pill -->
           <div class="stage-dims" id="stageDims">
-            <span>Harf <b id="dimHeight">400 mm</b></span>
-            <span>Toplam <b id="dimTotal">0 × 0 mm</b></span>
-            <span id="dimFileBadge">File <b id="dimFile">8 mm</b></span>
+            <span>Yükseklik <b id="dimHeight">—</b></span>
+            <span>Ebat <b id="dimTotal">0 × 0 mm</b></span>
+            <span id="dimFileBadge">File <b id="dimFile">5 mm</b></span>
           </div>
 
-          <!-- Top-right Camera Views -->
-          <div class="stage-views" role="group" aria-label="Kamera açısı">
+          <!-- Top-right Camera Views (visible in 3D modes) -->
+          <div class="stage-views" id="stageViewsBar" role="group" aria-label="Kamera açısı">
             <button type="button" data-view="left">Sol</button>
             <button type="button" data-view="front">Ön</button>
             <button type="button" data-view="right">Sağ</button>
             <button type="button" data-view="hero" class="on">3/4</button>
             <button type="button" data-view="top">Üst</button>
+            <button type="button" data-view="fit" title="Ekrana Sığdır (F4)">Sığdır</button>
           </div>
 
           <!-- Warning Toast Banner -->
           <div id="stageWarning" class="stage-warning hidden" role="alert"></div>
+          <div id="wallLoading" class="wall-loading hidden" role="status" aria-live="polite"><div class="wall-loading-top"><span id="wallLoadingLabel">Arka plan hazırlanıyor</span><strong id="wallLoadingPercent">0%</strong></div><progress id="wallLoadingProgress" max="100" value="0" aria-label="Arka plan hazırlama ilerlemesi"></progress><button id="wallLoadingRetry" type="button" class="sec-btn hidden">Tekrar Dene</button></div>
+          <div id="canvasTransformHud" class="canvas-transform-hud hidden" aria-live="polite"></div>
 
-          <!-- Bottom Quick Stage Controls -->
-          <div class="stage-bottom-tools">
+          <!-- Bottom Quick Stage Controls (visible in 3D modes) -->
+          <div class="stage-bottom-tools" id="stageBottomTools">
             <div class="seg" role="group" aria-label="Ortam">
               <button type="button" id="btnDay">Gündüz</button>
               <button type="button" id="btnNight" class="on">Gece</button>
@@ -162,46 +191,140 @@
               <span id="lightToggleLabel">Işık açık</span>
             </button>
             <div class="seg walls-seg" id="quickWallSeg" role="group" aria-label="Duvar">
-              <button type="button" data-wall="tugla" class="on">Tuğla</button>
-              <button type="button" data-wall="beton">Brüt Beton</button>
-              <button type="button" data-wall="ahsap">Ahşap Çıta</button>
-              <button type="button" data-wall="siva">Antrasit Sıva</button>
-              <button type="button" data-wall="mermer">Mermer</button>
+              <button type="button" data-wall="studioPremium" class="on">Grafit Stüdyo</button>
+              <button type="button" data-wall="siyahMermer">Nero Mermer</button>
+              <button type="button" data-wall="cevizPanel">Ceviz Panel</button>
+              <button type="button" data-wall="kompozit">Kompozit</button>
+              <button type="button" data-wall="traverten">Traverten</button>
+              <button type="button" data-wall="tugla">Tuğla</button>
             </div>
+            <label class="quick-wall-picker" for="quickWallSelect"><span>Arka plan</span><select id="quickWallSelect" aria-label="Arka plan materyali seç"></select></label>
+            <button type="button" id="btnOpenBackgroundPanel" class="stage-open-background" title="Hazır duvarlar, cephe ve fotoğraf montajı">▤ Arka Planlar</button>
           </div>
+        </div>
+
+        <!-- PAGE TABS BAR (Bottom of Central Canvas, CorelDRAW-style) -->
+        <div class="page-tabs-bar" id="pageTabsBar" aria-label="Sayfa Sekmeleri">
+          <div id="pageTabsList" class="page-tabs-list"></div>
+          <button type="button" id="btnAddPage" class="page-add-btn" title="Yeni Sayfa Ekle">+ Sayfa</button>
+          <button type="button" id="btnDupPage" class="page-act-btn" title="Aktif Sayfayı Çoğalt">⧉ Çoğalt</button>
+          <button type="button" id="btnDelPage" class="page-act-btn" title="Aktif Sayfayı Sil">🗑</button>
         </div>
       </main>
 
-      <!-- Right Inspector Panel with 9 Workspaces -->
-      <aside class="inspector-col">
-        <nav class="workspace-tabs" id="workspaceTabs" aria-label="Çalışma Alanları">
-          <button type="button" data-ws="design" class="on">Tasarım</button>
-          <button type="button" data-ws="materials">3D Materyal</button>
-          <button type="button" data-ws="lighting">Aydınlatma</button>
-          <button type="button" data-ws="layers">Katmanlar</button>
-          <button type="button" data-ws="background">Fotomontaj</button>
-          <button type="button" data-ws="nesting">Plaka Nesting</button>
-          <button type="button" data-ws="cost">Maliyet</button>
-          <button type="button" data-ws="quote">Teklif</button>
+      <!-- Docker Column Resizer -->
+      <div id="dockerResizer" class="docker-resizer" title="Panel genişliğini ayarla"></div>
+
+      <!-- REGION 6: Right Docker Panels -->
+      <aside class="inspector-col" id="inspectorCol">
+        <div class="inspector-mode-bar">
+          <span>Çalışma Panelleri</span>
+          <div style="display:flex;gap:4px">
+            <button type="button" id="btnSaveDefaults" class="tb-btn" style="padding:2px 7px;font-size:11px" title="Varsayılanları Kaydet">★ Kaydet</button>
+            <button type="button" id="btnFloatActiveDocker" class="tb-btn" title="Aktif paneli serbest pencereye ayır">↗ Ayır</button>
+            <button type="button" id="btnResetDockLayout" class="tb-btn" title="Sağ panel düzenini sıfırla">↺</button>
+            <button type="button" id="btnToggleStackMode" class="tb-btn" title="Panelleri alt alta aç">⊞ Alt Alta</button>
+          </div>
+        </div>
+
+        <label class="inspector-panel-picker">Panel seç
+          <select id="inspectorPanelSelect" aria-label="Aktif panel">
+            <option value="layers" selected>Katmanlar</option>
+            <option value="objects">Nesneler</option>
+            <option value="projects">Projeler</option>
+            <optgroup label="Araç kategorileri">
+              <option value="properties">Metin &amp; Yapı</option>
+              <option value="materials">Malzeme &amp; Renk</option>
+              <option value="lighting">Aydınlatma</option>
+              <option value="manufacturing">İmalat</option>
+              <option value="align">Vektör &amp; Gruplama</option>
+              <option value="background">Arka Plan &amp; Cephe</option>
+            </optgroup>
+          </select>
+        </label>
+        <nav class="workspace-tabs" id="workspaceTabs" aria-label="Docker Sekmeleri">
+          <button type="button" data-ws="layers" class="on">Katmanlar</button>
+          <button type="button" data-ws="objects">Nesneler</button>
           <button type="button" data-ws="projects">Projeler</button>
         </nav>
 
         <div id="workspaceContent" class="workspace-content"></div>
+        <div id="dockDropZone" class="dock-drop-zone hidden">⇩ Sağ panele bırak · Sekme olarak ekle</div>
       </aside>
     </div>
   </div>
 
+  <dialog id="textEditDialog" class="text-edit-dialog" aria-labelledby="textEditTitle">
+    <form id="textEditForm">
+      <h2 id="textEditTitle">Metni Düzenle</h2>
+      <label for="textEditInput">Tabela yazısı</label>
+      <textarea id="textEditInput" rows="4" required spellcheck="false"></textarea>
+      <p>Enter: Uygula · Shift + Enter: Yeni satır · Esc: İptal</p>
+      <div class="text-edit-actions"><button type="button" id="textEditCancel" class="sec-btn">İptal</button><button type="submit" class="cta-btn">Uygula</button></div>
+    </form>
+  </dialog>
+  <div id="alignmentFlyout" class="alignment-flyout hidden" role="group" aria-label="Hizalama ve dağıtma araçları"></div>
   <!-- Keyboard Shortcuts Help Modal -->
   <div id="shortcutsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle">
     <div class="modal-card">
       <div class="modal-head">
-        <h3 id="shortcutsTitle">Klavye Kısayolları</h3>
+        <h3 id="shortcutsTitle">CorelDRAW &amp; CAD Klavye Kısayolları</h3>
         <button type="button" id="btnCloseShortcuts" class="close-btn">✕</button>
       </div>
       <div id="shortcutsBody" class="modal-body"></div>
     </div>
   </div>
 
-  <script type="module" src="./src/main.js"></script>
+  <div id="exportDialog" class="export-modal hidden" role="dialog" aria-modal="true" aria-labelledby="exportDialogTitle">
+    <div class="export-modal-card">
+      <div class="export-modal-head">
+        <div><span class="export-eyebrow">KUTU HARF STÜDYOSU · DOSYA İŞLEMLERİ</span><h2 id="exportDialogTitle">Dışa Aktar</h2></div>
+        <button id="btnCloseExport" type="button" class="export-modal-close" aria-label="Kapat">✕</button>
+      </div>
+      <div class="export-modal-body">
+        <label class="export-field"><span>Dosya biçimi</span>
+          <select id="exportFormat" aria-label="Dışa aktarılacak gerçek dosya biçimi">
+            <option value="pdf">PDF · Vektörel Üretim</option>
+          </select>
+          <small id="exportFormatStatus" class="export-format-status">Gerçek çıktı üretimi</small>
+        </label>
+        <label class="export-field"><span>Çalışma kaynağı</span>
+          <select id="exportSource">
+            <option value="design">Tasarım · 2D konturlar / 3D model</option>
+            <option value="nestingActive">Nesting · Aktif levha</option>
+            <option value="nestingAll">Nesting · Tüm levhalar</option>
+          </select>
+        </label>
+        <p id="exportFormatHelp" class="export-format-help" aria-live="polite">Dosyanın gerçek çıktı özellikleri burada gösterilir.</p>
+        <div class="export-scope-box">
+          <strong>Aktarılacak kapsam</strong>
+          <label><input id="exportOnlySelected" type="checkbox"> <span>Yalnızca seçili nesneleri dışa aktar</span></label>
+          <small id="exportSelectionCount">Seçili nesne: 0</small>
+        </div>
+        <label id="exportResolutionRow" class="export-field"><span>Görsel çıkış çözünürlüğü</span>
+          <select id="exportResolution">
+            <option value="1600x1000">1600 × 1000 · Hızlı</option>
+            <option value="2400x1500" selected>2400 × 1500 · Yüksek</option>
+            <option value="3840x2400">3840 × 2400 · Ultra</option>
+            <option value="5120x3200">5120 × 3200 · Baskı/Sunum</option>
+          </select>
+        </label>
+        <p class="export-help">2D kesim dosyaları milimetre esaslı gerçek konturlardır. STL, OBJ, PLY ve 3MF milimetre; GLB/glTF ise metre birimini kullanır. Seçili nesneler dışındaki 3D geometri dosyaya eklenmez.</p>
+        <details class="export-converter-info"><summary>CDR, AI, DWG, FBX, USDZ ve diğer özel biçimler</summary><p>Bu biçimler listede bulunur ancak yerel dönüştürücü olmadan etkin değildir. CorelDRAW için PDF/EPS/SVG; AutoCAD için DXF; Blender ve diğer 3D uygulamalar için GLB/OBJ/STL/3MF dosyasını açıp gerekli özel biçimde kaydedin.</p></details>
+        <p id="exportDialogMessage" class="export-message" aria-live="polite"></p>
+      </div>
+      <div class="export-modal-foot">
+        <button id="btnCancelExport" class="export-secondary-btn" type="button">Vazgeç</button>
+        <button id="btnRunExport" class="export-primary-btn" type="button">Dosyayı Dışa Aktar</button>
+      </div>
+    </div>
+  </div>
+
+  <input id="globalLogoImport" type="file" accept=".svg,.png,.jpg,.jpeg,.webp,.dxf,.ai,.cdr,.dwg,.pdf,.eps,.ps,.svgz,.hpgl,.plt,.wmf,.emf,image/svg+xml,image/png,image/jpeg,image/webp" hidden>
+  <div id="studioToast" role="status" aria-live="polite" hidden></div>
+  <div id="quotePreviewModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Teklif önizleme"><div class="quote-preview-shell"><header><strong>Teklif Önizleme</strong><button type="button" id="quoteNewTab" class="tb-btn">Yeni Sekmede Aç</button><button type="button" id="quotePrint" class="tb-btn">Yazdır / PDF</button><button type="button" id="quoteClose" class="tb-btn" aria-label="Kapat">✕</button></header><iframe id="quotePreviewFrame" sandbox="allow-same-origin allow-modals" title="Müşteri teklif önizlemesi"></iframe></div></div>
+  <div id="floatingWindowsLayer" class="floating-windows-layer"></div>
+  <script defer src="./public/vendor/pdfjs/pdf.min.js"></script>
+  <script type="module" src="./src/main.js?v=20261124-qa8"></script>
 </body>
 </html>

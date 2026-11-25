@@ -16,6 +16,7 @@ export const {
   LineSegments,
   PlaneGeometry,
   BoxGeometry,
+  RingGeometry,
   ExtrudeGeometry,
   ShapeGeometry,
   BufferGeometry,

@@ -1,0 +1,97 @@
+import { markImmutableGeometry, structuredCloneSafe } from '../core/state.js';
+/** Separate, persistent Nesting source tabs: main sign geometry and imported vector jobs. */
+export const NESTING_TAB_FIELDS = [
+  'sheetWidthMm','sheetHeightMm','marginMm','marginLeftMm','marginRightMm','marginTopMm','marginBottomMm',
+  'clearanceMm','spacingMm','kerfMm','allowedAngles','fineAngleStep','rotationStepDeg',
+  'placementStrategy','previewColors','copies','grainDirection','targetPart','allowHoleNesting',
+  'groupByMaterial','enforceGrainDirection','presetId','sheets','unplaced','partOverrides','optimizationBudgetMs','optimizationInfo',
+];
+const clone = value => value == null ? value : structuredCloneSafe(value);
+const asName = value => String(value||'Dosya').slice(0,90);
+// Only coordinates are immutable. Part metadata, locks and sheet arrays
+// remain independent in every undo/redo revision. Moves replace contour arrays.
+export function freezeNestingContours(n){
+ if(!n)return;
+ const seen=new Set();
+ const freezeSheet=sh=>{
+  if(!sh||seen.has(sh))return;seen.add(sh);
+  for(const p of sh.placements||[]){if(p.outer)markImmutableGeometry(p.outer);if(p.holes)markImmutableGeometry(p.holes);}
+ };
+ for(const sh of n.sheets||[])freezeSheet(sh);
+ for(const sh of n.designTabSnapshot?.sheets||[])freezeSheet(sh);
+ for(const tab of n.importedTabs||[])for(const sh of tab.settings?.sheets||[])freezeSheet(sh);
+}
+export function snapshotNestingTab(n) {
+  return Object.fromEntries(NESTING_TAB_FIELDS.map(k => [k, clone(n[k])]));
+}
+export function syncActiveNestingTab(n) {
+  if (!n || !Array.isArray(n.importedTabs)) return;
+  const tabId=n.activeTabId || 'design';
+  if(tabId === 'import') return;
+  freezeNestingContours(n);
+  // Share the current revision's placement graph instead of serializing it again.
+  const snapshot=Object.fromEntries(NESTING_TAB_FIELDS.map(k=>[k,['sheets','unplaced'].includes(k)?n[k]:clone(n[k])]));
+  if(tabId==='design') n.designTabSnapshot=snapshot;
+  else {
+    const tab=n.importedTabs.find(x=>x.id===tabId);
+    if(tab)tab.settings=snapshot;
+  }
+}
+export function switchNestingTab(n, nextTabId) {
+  n.importedTabs ||= [];
+  if(nextTabId!=='design'&&nextTabId!=='import'&&!n.importedTabs.some(t=>t.id===nextTabId)) return false;
+  const previous=n.activeTabId||'design';
+  if(previous===nextTabId)return true;
+  syncActiveNestingTab(n);
+  if(nextTabId==='import') {n.activeTabId='import';return true;}
+  const source=nextTabId==='design'?n.designTabSnapshot:n.importedTabs.find(t=>t.id===nextTabId)?.settings;
+  if(source)for(const field of NESTING_TAB_FIELDS)if(Object.hasOwn(source,field))n[field]=clone(source[field]);
+  for(const field of ['partOverrides','optimizationInfo'])if(!source||!Object.hasOwn(source,field))n[field]=field==='partOverrides'?{}:null;
+  n.activeTabId=nextTabId;
+  return true;
+}
+export function openNestingImportTab(n) {return switchNestingTab(n,'import');}
+export function createNestingImportedTab(n, imported, options={}) {
+  if(!Array.isArray(imported?.items)||!imported.items.length)throw Error('Vektör dosyasında kapalı kesim konturu bulunamadı.');
+  n.importedTabs ||= [];
+  syncActiveNestingTab(n);
+  const id = options.id || ('nest_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,6));
+  if(n.importedTabs.some(t=>t.id===id))throw Error('Bu nesting sekme kimliği zaten kullanımda.');
+  const tab={id,name:asName(imported.filename||options.name),format:imported.format||'vector',
+    items:markImmutableGeometry(imported.items),warnings:clone(imported.warnings||[]),
+    settings:{...Object.fromEntries(NESTING_TAB_FIELDS.filter(k=>!['sheets','unplaced','partOverrides','optimizationInfo'].includes(k)).map(k=>[k,clone(n[k])])),sheets:[],unplaced:[],partOverrides:{},optimizationInfo:null}};
+  n.importedTabs.push(tab);
+  for(const field of NESTING_TAB_FIELDS)if(Object.hasOwn(tab.settings,field))n[field]=clone(tab.settings[field]);
+  n.activeTabId=id;
+  return tab;
+}
+export function getActiveNestingImportedItems(n) {
+  if(!n||!n.activeTabId||['design','import'].includes(n.activeTabId))return null;
+  const tab=n.importedTabs?.find(t=>t.id===n.activeTabId);
+  if(!tab)return null;
+  const copies=Math.max(1,Math.min(500,Number(n.copies)||1));
+  return Array.from({length:copies},(_,i)=>tab.items.map(item=>({...item,id:i===0?item.id:item.id+'_copy'+i}))).flat();
+}
+export function closeNestingImportedTab(n,id) {
+  const tab=n.importedTabs?.find(t=>t.id===id);
+  if(!tab)return false;
+  if(n.activeTabId===id)switchNestingTab(n,'design');
+  n.importedTabs=n.importedTabs.filter(t=>t.id!==id);
+  return true;
+}
+export function getNestingTabTitle(n) {
+  if(!n?.activeTabId||n.activeTabId==='design')return 'Bu Proje';
+  if(n.activeTabId==='import')return 'Dosya İçe Aktar';
+  return n.importedTabs?.find(t=>t.id===n.activeTabId)?.name||'Vektör dosyası';
+}
+
+// Edits belong to this nesting source, not to the original 3D document.
+export function applyNestingPartOverrides(items,n){
+  const overrides=n.partOverrides||{},get=item=>overrides[item.id]||overrides[item.id+'_copy0'];
+  return items.filter(item=>!get(item)?.deleted).map(item=>{
+    const factor=get(item)?.scale||1;
+    if(factor===1)return item;
+    const scale=ring=>ring.map(p=>({x:p.x*factor,y:p.y*factor}));
+    return {...item,outer:scale(item.outer),holes:(item.holes||[]).map(scale),areaMm2:item.areaMm2*factor*factor};
+  });
+}

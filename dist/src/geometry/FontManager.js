@@ -1,5 +1,6 @@
 import { parseFont } from '../vendor/opentype.mjs';
-import { ShapePath } from '../vendor/three.js';
+import { ShapePath, Shape, Path } from '../vendor/three.js';
+import Clipper from '../../public/vendor/cad/clipper-runtime.js';
 
 /**
  * Font Manager with all 8 bundled Turkish-ready (latin + latin-ext) fonts,
@@ -96,6 +97,7 @@ export class FontManager {
     this.fonts = new Map();
     this.customCatalog = this.loadCustomCatalog();
     this.cssRegistered = new Set();
+    this.assetBytes=new Map();
   }
 
   getAllFontMetas() {
@@ -135,21 +137,24 @@ export class FontManager {
     }
   }
 
-  async ensureCssFont(meta) {
-    if (this.cssRegistered.has(meta.id) || typeof document === 'undefined' || typeof FontFace === 'undefined') return;
-    this.cssRegistered.add(meta.id);
-    const asset = FONT_ASSETS.find(f => f.id === meta.id);
-    if (!asset) return;
-    for (const url of asset.files) {
-      try {
-        const name = meta.family.split(',')[0].replace(/['"]/g, '').trim();
-        const face = new FontFace(name, `url(${url})`, { weight: String(meta.weight) });
-        await face.load();
-        document.fonts.add(face);
-      } catch {
-        // Fallback silently
-      }
+  getAssetBytes(url){
+    if(!this.assetBytes.has(url)){
+      const pending=fetch(url).then(r=>{if(!r.ok)throw Error('Font yüklenemedi: '+url);return r.arrayBuffer();});
+      this.assetBytes.set(url,pending);pending.catch(()=>this.assetBytes.delete(url));
     }
+    return this.assetBytes.get(url);
+  }
+  async ensureCssFont(meta) {
+    if(this.cssRegistered.has(meta.id)||typeof document==='undefined'||typeof FontFace==='undefined')return;
+    this.cssRegistered.add(meta.id);
+    const asset=FONT_ASSETS.find(f=>f.id===meta.id);if(!asset)return;
+    try{
+      await Promise.all(asset.files.map(async url=>{
+        const name=meta.family.split(',')[0].replace(/['"]/g,'').trim();
+        const face=new FontFace(name,(await this.getAssetBytes(url)).slice(0),{weight:String(meta.weight)});
+        await face.load();document.fonts.add(face);
+      }));
+    }catch{this.cssRegistered.delete(meta.id);}
   }
 
   async loadFont(fontId) {
@@ -157,16 +162,8 @@ export class FontManager {
 
     const builtIn = FONT_ASSETS.find(f => f.id === fontId);
     if (builtIn) {
-      const promise = Promise.all(
-        builtIn.files.map(url =>
-          fetch(url)
-            .then(r => {
-              if (!r.ok) throw new Error(`Font yüklenemedi: ${url}`);
-              return r.arrayBuffer();
-            })
-            .then(buf => parseFont(buf))
-        )
-      );
+      const promise=Promise.all(builtIn.files.map(url=>this.getAssetBytes(url).then(buf=>parseFont(buf.slice(0)))));
+      promise.catch(()=>this.fonts.delete(fontId));
       this.fonts.set(fontId, promise);
       this.ensureCssFont(builtIn);
       return promise;
@@ -307,53 +304,132 @@ function commandsToShapes(commands, scale, offsetX) {
     else if (c.type === 'C') sp.bezierCurveTo(tx(c.x1), ty(c.y1), tx(c.x2), ty(c.y2), tx(c.x), ty(c.y));
   }
   sp.userData = { style: { fillRule: 'nonzero' } };
-  return sp.toShapes();
+  return unionConnectedGlyphShapes(sp.toShapes());
 }
 
 /**
  * Layouts text into independent per-glyph 2D shapes in MILLIMETERS.
  * Preserves spaces, Turkish characters (Ç, Ğ, İ, Ö, Ş, Ü, ı, ğ, ş), kerning, and letter spacing.
  */
-export function layoutTextMm(fontList, text, heightMm, letterSpacingMm = 0) {
+export function layoutTextMm(fontList, text, heightMm, letterSpacingMm = 0, lineSpacingMult = 1.25, textAlign = 'center') {
   if (!fontList || !fontList.length) return { glyphs: [], widthMm: 0, heightMm };
   const primary = fontList[0];
   const capHeight = (primary.tables?.os2?.sCapHeight) || primary.unitsPerEm * 0.7;
   const scale = heightMm / capHeight;
   const defaultTracking = heightMm * 0.02 + letterSpacingMm;
+  const lineStep = heightMm * Math.max(0.8, lineSpacingMult || 1.25);
+
+  const rawLines = String(text || '').split(/\r?\n/);
+  const lineLayouts = [];
+  let maxWidth = 0;
+
+  for (let li = 0; li < rawLines.length; li++) {
+    const lineText = rawLines[li];
+    const lineGlyphs = [];
+    let cursorX = 0;
+    let prev = null;
+    const yOffset = -li * lineStep;
+
+    for (const ch of [...lineText]) {
+      const font = fontList.find(f => f.charToGlyph(ch).index > 0) || primary;
+      const glyph = font.charToGlyph(ch);
+
+      if (prev && prev.font === font) {
+        cursorX += font.getKerningValue(prev.glyph, glyph) * scale;
+      }
+
+      if (!/\s/.test(ch)) {
+        const path = glyph.getPath(0, 0, font.unitsPerEm);
+        const localScale = scale * (primary.unitsPerEm / font.unitsPerEm);
+        const shapes = commandsToShapes(path.commands, localScale, cursorX);
+        if (shapes.length) {
+          if (yOffset !== 0) {
+            for (const sh of shapes) {
+              for (const c of sh.curves) {
+                if (c.v1) c.v1.y += yOffset;
+                if (c.v2) c.v2.y += yOffset;
+                if (c.v0) c.v0.y += yOffset;
+                if (c.v3) c.v3.y += yOffset;
+              }
+              for (const h of (sh.holes || [])) {
+                for (const c of h.curves) {
+                  if (c.v1) c.v1.y += yOffset;
+                  if (c.v2) c.v2.y += yOffset;
+                  if (c.v0) c.v0.y += yOffset;
+                  if (c.v3) c.v3.y += yOffset;
+                }
+              }
+            }
+          }
+          lineGlyphs.push({ char: ch, xMm: cursorX, shapes });
+        }
+      }
+
+      const advance = (glyph.advanceWidth ?? font.unitsPerEm * 0.32) * scale;
+      cursorX += advance + defaultTracking;
+      prev = { font, glyph };
+    }
+
+    const lineW = Math.max(0, cursorX - defaultTracking);
+    if (lineW > maxWidth) maxWidth = lineW;
+    lineLayouts.push({ lineW, lineGlyphs });
+  }
 
   const glyphs = [];
-  let cursorX = 0;
-  let prev = null;
-
-  for (const ch of [...(text || '')]) {
-    const font = fontList.find(f => f.charToGlyph(ch).index > 0) || primary;
-    const glyph = font.charToGlyph(ch);
-
-    if (prev && prev.font === font) {
-      cursorX += font.getKerningValue(prev.glyph, glyph) * scale;
-    }
-
-    if (!/\s/.test(ch)) {
-      const path = glyph.getPath(0, 0, font.unitsPerEm);
-      const localScale = scale * (primary.unitsPerEm / font.unitsPerEm);
-      const shapes = commandsToShapes(path.commands, localScale, cursorX);
-      if (shapes.length) {
-        glyphs.push({
-          char: ch,
-          xMm: cursorX,
-          shapes,
-        });
+  for (const ll of lineLayouts) {
+    const shiftX = textAlign === 'center' ? (maxWidth - ll.lineW) * 0.5 : textAlign === 'right' ? (maxWidth - ll.lineW) : 0;
+    if (Math.abs(shiftX) > 0.01) {
+      for (const g of ll.lineGlyphs) {
+        g.xMm += shiftX;
+        for (const sh of g.shapes) {
+          for (const c of sh.curves) {
+            if (c.v1) c.v1.x += shiftX;
+            if (c.v2) c.v2.x += shiftX;
+            if (c.v0) c.v0.x += shiftX;
+            if (c.v3) c.v3.x += shiftX;
+          }
+          for (const h of (sh.holes || [])) {
+            for (const c of h.curves) {
+              if (c.v1) c.v1.x += shiftX;
+              if (c.v2) c.v2.x += shiftX;
+              if (c.v0) c.v0.x += shiftX;
+              if (c.v3) c.v3.x += shiftX;
+            }
+          }
+        }
       }
     }
-
-    const advance = (glyph.advanceWidth ?? font.unitsPerEm * 0.32) * scale;
-    cursorX += advance + defaultTracking;
-    prev = { font, glyph };
+    glyphs.push(...ll.lineGlyphs);
   }
 
   return {
     glyphs,
-    widthMm: Math.max(0, cursorX - defaultTracking),
-    heightMm,
+    widthMm: maxWidth,
+    heightMm: heightMm + Math.max(0, rawLines.length - 1) * lineStep,
   };
+}
+
+/** Union overlapping filled contours within a single glyph. Never bridge air gaps. */
+export function unionConnectedGlyphShapes(shapes){
+ if(shapes.length<2)return shapes;
+ const S=10000,paths=[];
+ const ring=(path,positive)=>{
+  const points=path.getPoints(24).map(p=>({X:Math.round(p.x*S),Y:Math.round(p.y*S)}));
+  if(Clipper.Clipper.Orientation(points)!==positive)points.reverse();
+  return points;
+ };
+ try{
+  for(const shape of shapes){paths.push(ring(shape,true));for(const h of shape.holes||[])paths.push(ring(h,false));}
+  const cl=new Clipper.Clipper(),tree=new Clipper.PolyTree();
+  cl.AddPaths(paths,Clipper.PolyType.ptSubject,true);
+  if(!cl.Execute(Clipper.ClipType.ctUnion,tree,Clipper.PolyFillType.pftNonZero,Clipper.PolyFillType.pftNonZero))return shapes;
+  const result=[];
+  const toPath=(pts,Type)=>{const p=new Type();pts.forEach((v,i)=>i?p.lineTo(v.X/S,v.Y/S):p.moveTo(v.X/S,v.Y/S));p.closePath();return p;};
+  const visit=node=>{for(const c of node.Childs()){
+   if(!c.IsHole()){const sh=toPath(c.Contour(),Shape);sh.holes=c.Childs().filter(h=>h.IsHole()).map(h=>toPath(h.Contour(),Path));result.push(sh);}
+   visit(c);
+  }};
+  visit(tree);
+  return result.length>0&&result.length<shapes.length?result:shapes;
+ }catch{return shapes;}
 }

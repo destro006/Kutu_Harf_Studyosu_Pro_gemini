@@ -48,7 +48,7 @@ export function createHaloTexture(shapesM, boundsM, options = {}) {
 
   const wM = Math.max(0.05, boundsM.maxX - boundsM.minX + padM * 2);
   const hM = Math.max(0.05, boundsM.maxY - boundsM.minY + padM * 2);
-  const scale = Math.min(1024 / wM, 1024 / hM);
+  const scale = Math.min(512 / wM, 512 / hM);
   const pw = Math.max(16, Math.round(wM * scale));
   const ph = Math.max(16, Math.round(hM * scale));
 
@@ -80,14 +80,14 @@ export function createHaloTexture(shapesM, boundsM, options = {}) {
   outCanvas.height = ph;
   const oCtx = outCanvas.getContext('2d');
 
-  // Keep inner blur tight so letter shapes (M, R, logo details) remain distinct on the wall
-  const baseBlur = Math.max(1.5, letterHeightM * 0.038 * haloSpread * distFactor * scale);
-  oCtx.filter = `blur(${(baseBlur * (1.2 + falloff * 0.45)).toFixed(1)}px)`;
-  oCtx.globalAlpha = 0.72;
+  // Lush two-pass Claude-calibrated halo: wide soft ambient wash + crisp contour core
+  const baseBlur = Math.max(1.5, letterHeightM * 0.068 * haloSpread * distFactor * scale);
+  oCtx.filter = `blur(${(baseBlur * (1.8 + falloff * 0.45)).toFixed(1)}px)`;
+  oCtx.globalAlpha = 0.85;
   oCtx.drawImage(srcCanvas, 0, 0);
 
-  oCtx.filter = `blur(${(baseBlur * 0.42).toFixed(1)}px)`;
-  oCtx.globalAlpha = 0.96;
+  oCtx.filter = `blur(${(baseBlur * 0.65).toFixed(1)}px)`;
+  oCtx.globalAlpha = 1.0;
   oCtx.drawImage(srcCanvas, 0, 0);
 
   const tex = new THREE.CanvasTexture(outCanvas);
@@ -109,24 +109,34 @@ export function buildSceneLights(night, sizeM) {
   const h = Math.max(0.4, sizeM.h || 0.4);
 
   if (night) {
-    const amb = new THREE.AmbientLight('#9fb0d0', 0.08);
+    const amb = new THREE.AmbientLight('#9fb0d0', 0.06);
     group.add(amb);
 
-    // A directional fill provides soft material visibility without a circular spotlight footprint.
-    const dir=new THREE.DirectionalLight('#ffd6a3',.42);
-    dir.position.set(-w*.5-1,h/2+2,3);
-    dir.castShadow=true;
-    const frustum=Math.max(2,w)*.8;
-    dir.shadow.camera.left=-frustum;dir.shadow.camera.right=frustum;
-    dir.shadow.camera.top=frustum;dir.shadow.camera.bottom=-frustum;
-    dir.shadow.mapSize.set(2048,2048);dir.shadow.bias=-.0004;dir.shadow.normalBias=.015;dir.shadow.radius=6;
+    // Primary warm architectural gallery key light (directional: no circular spot hotspot)
+    const dir = new THREE.DirectionalLight('#ffd6a3', 1.65);
+    dir.position.set(0.15, h / 2 + 1.4 + w * 0.15, 2.4 + w * 0.3);
+    dir.castShadow = true;
+    const frustum = Math.max(2, w) * 0.85;
+    dir.shadow.camera.left = -frustum;
+    dir.shadow.camera.right = frustum;
+    dir.shadow.camera.top = frustum;
+    dir.shadow.camera.bottom = -frustum;
+    dir.shadow.mapSize.set(2048, 2048);
+    dir.shadow.bias = -0.0004;
+    dir.shadow.normalBias = 0.015;
+    dir.shadow.radius = 6;
     group.add(dir);
+
+    // Subtle cool edge rim to sculpt dark metallic returns at night
+    const rim = new THREE.DirectionalLight('#c8dcff', 0.25);
+    rim.position.set(-w * 0.8 - 1.5, h * 0.5 + 1.0, 2.5);
+    group.add(rim);
   } else {
-    const hemi = new THREE.HemisphereLight('#fff8ee', '#5d5045', 0.95);
+    const hemi = new THREE.HemisphereLight('#fff8ee', '#5d5045', 0.9);
     group.add(hemi);
 
     const frustum = Math.max(w, 2) * 0.75;
-    const dir = new THREE.DirectionalLight('#fff3e2', 2.65);
+    const dir = new THREE.DirectionalLight('#fff3e2', 2.6);
     dir.position.set(-w * 0.6 - 1.5, h / 2 + 3, 4);
     dir.castShadow = true;
     dir.shadow.mapSize.set(2048, 2048);
@@ -138,6 +148,10 @@ export function buildSceneLights(night, sizeM) {
     dir.shadow.camera.bottom = -frustum;
     dir.shadow.radius = 4;
     group.add(dir);
+
+    const fill = new THREE.DirectionalLight('#e8f0ff', 0.32);
+    fill.position.set(w * 0.6 + 1.5, -h * 0.3, 3.0);
+    group.add(fill);
   }
 
   return group;
