@@ -46,7 +46,9 @@ import {
   generateCorelBridgeLauncherBat,
   checkCorelBridgeStatus,
   sendNestingToCorel,
-} from './export/CorelDrawBridge.js';
+  pullSelectionFromCorel,
+  wakeCorelBridgeProtocol,
+} from './export/CorelDrawBridge.js?v=20261126-v18';
 import {
   CNC_TRANSPORT_MODES,
   loadMachineConnection,
@@ -4930,16 +4932,15 @@ function runCadAction(action) {
 async function refreshCorelBridgeStatusUI() {
   const badge = document.getElementById('corelBridgeStatusBadge');
   if (!badge) return { online: false };
-  badge.textContent = 'Köprü kontrol ediliyor...';
+  badge.textContent = 'Eklenti kontrol ediliyor...';
   badge.className = 'corel-status-pill';
   const status = await checkCorelBridgeStatus(900);
   if (status.online) {
-    badge.textContent = status.corelRunning
-      ? '✓ Canlı Köprü Bağlı · CorelDRAW Açık'
-      : '✓ Canlı Köprü Bağlı (CorelDRAW Hazır)';
+    try { localStorage.setItem('khs_corel_installed', '1'); } catch {}
+    badge.textContent = `● Eklenti Aktif · v${status.version || '2.0'} (${status.corelRunning ? 'CorelDRAW Açık' : 'CorelDRAW Otomatik Açılır'})`;
     badge.className = 'corel-status-pill online';
   } else {
-    badge.textContent = '○ Yerel Köprü Kapalı (Tek Seferlik .bat Başlatın)';
+    badge.textContent = '○ Kurulum Gerekli (Tek Seferlik Kurulum İndirin)';
     badge.className = 'corel-status-pill offline';
   }
   return status;
@@ -4968,8 +4969,18 @@ async function triggerSendToCorel(openModalOnOffline = true) {
     studioToast('CorelDRAW’a göndermek için önce en az bir yerleştirilmiş levha gerekir.', true);
     return;
   }
-  const res = await sendNestingToCorel(sheets, s.nesting?.previewColors || {}, s.projectName || 'KutuHarf_Nesting');
+  let res = await sendNestingToCorel(sheets, s.nesting?.previewColors || {}, s.projectName || 'KutuHarf_Nesting');
+  if (res.bridgeOffline) {
+    let wasInstalled = false;
+    try { wasInstalled = localStorage.getItem('khs_corel_installed') === '1'; } catch {}
+    if (wasInstalled) {
+      wakeCorelBridgeProtocol();
+      await new Promise(r => setTimeout(r, 1300));
+      res = await sendNestingToCorel(sheets, s.nesting?.previewColors || {}, s.projectName || 'KutuHarf_Nesting');
+    }
+  }
   if (res.ok) {
+    try { localStorage.setItem('khs_corel_installed', '1'); } catch {}
     document.getElementById('corelBridgeModal')?.classList.add('hidden');
     studioToast(`✓ CorelDRAW'a aktarıldı: ${res.sheetsImported} levha, ${res.partsImported} parça (plaka ebatı + seçili renkler)!`);
     return;
@@ -4988,10 +4999,29 @@ function bindCorelBridgeModal() {
   document.getElementById('btnCloseCorelModal')?.addEventListener('click', () => modal.classList.add('hidden'));
   document.getElementById('btnCorelCheckStatus')?.addEventListener('click', () => refreshCorelBridgeStatusUI());
   document.getElementById('btnCorelDownloadBat')?.addEventListener('click', () => {
-    downloadBlob('KutuHarf_CorelDRAW_Kopru.bat', generateCorelBridgeLauncherBat(), 'application/x-bat');
-    studioToast('İndirilen KutuHarf_CorelDRAW_Kopru.bat dosyasına çift tıklayıp köprüyü başlatın.');
+    downloadBlob('KutuHarf_CorelDRAW_Kurulum.bat', generateCorelBridgeLauncherBat(), 'application/x-bat');
+    try { localStorage.setItem('khs_corel_installed', '1'); } catch {}
+    studioToast('Tek seferlik KutuHarf_CorelDRAW_Kurulum.bat indirildi — çift tıklayıp 1 kez kurun; bir daha açmanız gerekmez!');
   });
   document.getElementById('btnCorelRetrySend')?.addEventListener('click', () => triggerSendToCorel(true));
+  document.getElementById('btnCorelPullSelection')?.addEventListener('click', async () => {
+    let res = await pullSelectionFromCorel();
+    if (res.bridgeOffline) {
+      wakeCorelBridgeProtocol();
+      await new Promise(r => setTimeout(r, 1300));
+      res = await pullSelectionFromCorel();
+    }
+    if (res.ok && res.svgText) {
+      try { localStorage.setItem('khs_corel_installed', '1'); } catch {}
+      const file = new File([res.svgText], res.fileName || 'CorelDRAW_Secim.svg', { type: 'image/svg+xml' });
+      modal.classList.add('hidden');
+      setMainWorkspace('model3d');
+      await handleLogoUpload(file);
+      studioToast('✓ CorelDRAW seçili çizimi 3D sahneye aktarıldı.');
+      return;
+    }
+    studioToast(res.bridgeOffline ? 'Önce Tek Seferlik Kurulumu çalıştırın.' : (res.error || 'CorelDRAW seçimi alınamadı.'), true);
+  });
   document.getElementById('btnCorelDownloadSvg')?.addEventListener('click', () => {
     const s = store.get();
     const sheets = s.nesting?.sheets || [];

@@ -198,9 +198,19 @@ export function generateCorelVbaMacro(payload) {
       '  sh.Outline.Color.RGBAssign 90, 102, 122'
     );
 
+    const vbaLayers = new Map();
     for (const part of sh.placements) {
       if (!part.outer.length) continue;
       const pName = String(part.label || 'Parca').replace(/"/g, "'");
+      const [pr, pg, pb] = part.colorRgb || [br, bg, bb];
+      const grp = part.partGroup || 'body';
+      const lVar = grp === 'file_frame' ? 'lFile' : grp === 'fileli_acrylic' ? 'lAc' : grp === 'fileli_dekota' ? 'lDek' : null;
+      const lTitle = grp === 'file_frame' ? 'FILE_CERCEVE' : grp === 'fileli_acrylic' ? 'PLEKSI_AKRILIK' : grp === 'fileli_dekota' ? 'ARKA_DEKOTA' : null;
+      if (lVar && !vbaLayers.has(lVar)) {
+        vbaLayers.set(lVar, lTitle);
+        lines.push(`  Dim ${lVar} As Layer: Set ${lVar} = p.CreateLayer("${lTitle}")`);
+      }
+      const targetLayer = lVar || 'lParts';
       lines.push('  Set crv = doc.CreateCurve()');
       const n = part.outer.length;
       lines.push(`  ReDim xs(0 To ${n - 1}): ReDim ys(0 To ${n - 1})`);
@@ -219,14 +229,14 @@ export function generateCorelVbaMacro(payload) {
       }
 
       lines.push(
-        '  Set sh = lParts.CreateCurve(crv)',
+        `  Set sh = ${targetLayer}.CreateCurve(crv)`,
         `  sh.Name = "${pName}"`,
-        `  sh.Fill.ApplyUniformFill CreateRGBColor(${br}, ${bg}, ${bb})`,
+        `  sh.Fill.ApplyUniformFill CreateRGBColor(${pr}, ${pg}, ${pb})`,
         '  sh.Outline.Width = 0.1',
         '  sh.Outline.Color.RGBAssign 30, 35, 42'
       );
 
-      if (distinctHoleColor && part.holes.length) {
+      if (distinctHoleColor && grp !== 'file_frame' && part.holes.length) {
         for (const hole of part.holes) {
           if (hole.length < 3) continue;
           lines.push(
@@ -270,31 +280,130 @@ function utf8ToBase64(text) {
   return btoa(bin);
 }
 
+export function getCorelPluginBasScript(studioUrl = 'https://kutuharfstudyosuprov2.vercel.app/') {
+  return [
+    'Attribute VB_Name = "KutuHarfStudyosuPlugin"',
+    "' Kutu Harf Studyosu Pro v2 - Native CorelDRAW Plugin Modulu",
+    'Option Explicit',
+    '',
+    'Private Function KutuHarfHttpCall(ByVal methodName As String, ByVal endpoint As String) As String',
+    '  On Error GoTo ErrH',
+    '  Dim req As Object',
+    '  Set req = CreateObject("MSXML2.XMLHTTP.6.0")',
+    '  req.Open methodName, "http://127.0.0.1:47891" & endpoint, False',
+    '  req.Send',
+    '  KutuHarfHttpCall = req.responseText',
+    '  Exit Function',
+    'ErrH:',
+    '  KutuHarfHttpCall = ""',
+    'End Function',
+    '',
+    'Public Sub KutuHarf_Studyoyu_Ac()',
+    '  Dim sh As Object',
+    '  Set sh = CreateObject("WScript.Shell")',
+    `  sh.Run "${studioUrl}", 1, False`,
+    'End Sub',
+    '',
+    'Public Sub KutuHarf_Son_Nestingi_Getir()',
+    '  Dim res As String',
+    '  res = KutuHarfHttpCall("POST", "/api/import-latest")',
+    '  If Len(res) = 0 Or InStr(res, """ok"":false") > 0 Then',
+    '    MsgBox "Son nesting verisi bulunamadi veya arka plan servisi kapali. Web studyodan bir kez Aktar yapin.", vbInformation, "Kutu Harf Studyosu"',
+    '  End If',
+    'End Sub',
+    '',
+    'Public Sub KutuHarf_Kopru_Durumu()',
+    '  Dim res As String',
+    '  res = KutuHarfHttpCall("GET", "/api/health")',
+    '  If InStr(res, """ok"":true") > 0 Then',
+    '    MsgBox "Kutu Harf Studyosu CorelDRAW Eklenti Servisi AKTIF (127.0.0.1:47891).", vbInformation, "Kutu Harf Studyosu"',
+    '  Else',
+    '    MsgBox "Arka plan servisi kapali. Tek Seferlik Kurulumu calistirin.", vbExclamation, "Kutu Harf Studyosu"',
+    '  End If',
+    'End Sub',
+  ].join('\r\n');
+}
+
+export function getCorelAddonXslt() {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+  <xsl:output method="xml" encoding="utf-8" indent="yes"/>
+  <xsl:template match="node()|@*">
+    <xsl:copy>
+      <xsl:apply-templates select="node()|@*"/>
+    </xsl:copy>
+  </xsl:template>
+</xsl:stylesheet>`;
+}
+
 export function getCorelBridgePs1Script() {
   return String.raw`$ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Web.Extensions
 
+$createdNew = $false
+$mutex = New-Object System.Threading.Mutex($true, "Global\KutuHarfCorelBridgeSingleInstance", [ref]$createdNew)
+if (-not $createdNew) { exit 0 }
+
 $port = 47891
-$prefix = "http://127.0.0.1:$port/"
+$prefix = "http://127.0.0.1:$($port)/"
+$dataDir = Join-Path $env:LOCALAPPDATA "KutuHarfStudyosu\CorelPlugin"
+New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+$latestPath = Join-Path $dataDir "last_nesting.json"
+$installedFlag = Test-Path (Join-Path $dataDir "start_silent.vbs")
+
 $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add($prefix)
 try {
   $listener.Start()
 } catch {
-  Write-Host "HATA: Port $port acilamadi. Onceki kopru penceresi aciksa kapatip tekrar deneyin." -ForegroundColor Red
-  Read-Host "Cikmak icin Enter'a basin"
   exit 1
 }
 
-Write-Host "==========================================================" -ForegroundColor Green
-Write-Host " Kutu Harf Studyosu <-> CorelDRAW Canli Kopru Aktif!" -ForegroundColor Green
-Write-Host " Dinlenen adres : $prefix" -ForegroundColor Cyan
-Write-Host " Durum          : Web stüdyodan 'CorelDRAW'a Gonder' butonuna basin." -ForegroundColor Yellow
-Write-Host " Kapatmak icin  : Bu pencereyi kapatin veya Ctrl+C" -ForegroundColor Gray
-Write-Host "==========================================================" -ForegroundColor Green
-
 $jsonSer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
 $jsonSer.MaxJsonLength = 67108864
+
+$trayHandle = $null
+try {
+  if ([Environment]::UserInteractive) {
+    $rs = [runspacefactory]::CreateRunspace()
+    $rs.ApartmentState = "STA"
+    $rs.ThreadOptions = "ReuseThread"
+    $rs.Open()
+    $psTray = [powershell]::Create()
+    $psTray.Runspace = $rs
+    $null = $psTray.AddScript({
+      param($portNum, $latestFile)
+      try {
+        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Drawing
+        [System.Windows.Forms.Application]::EnableVisualStyles()
+        $icon = New-Object System.Windows.Forms.NotifyIcon
+        $icon.Icon = [System.Drawing.SystemIcons]::Application
+        $icon.Text = "Kutu Harf Studyosu <-> CorelDRAW Eklentisi (Aktif)"
+        $icon.Visible = $true
+
+        $menu = New-Object System.Windows.Forms.ContextMenuStrip
+        $miOpen = $menu.Items.Add("Kutu Harf Studyosunu Ac")
+        $miOpen.add_Click({ Start-Process "https://kutuharfstudyosuprov2.vercel.app/" })
+        $miPull = $menu.Items.Add("Son Nestingi CorelDRAW'a Aktar")
+        $miPull.add_Click({
+          try { Invoke-RestMethod -Uri ("http://127.0.0.1:" + $portNum + "/api/import-latest") -Method Post | Out-Null } catch {}
+        })
+        $menu.Items.Add("-") | Out-Null
+        $miExit = $menu.Items.Add("Servisi Durdur")
+        $miExit.add_Click({
+          try { Invoke-RestMethod -Uri ("http://127.0.0.1:" + $portNum + "/api/shutdown") -Method Post | Out-Null } catch {}
+          $icon.Visible = $false
+          $icon.Dispose()
+          [System.Windows.Forms.Application]::ExitThread()
+        })
+        $icon.ContextMenuStrip = $menu
+        [System.Windows.Forms.Application]::Run()
+      } catch {}
+    }).AddArgument($port).AddArgument($latestPath)
+    $trayHandle = $psTray.BeginInvoke()
+  }
+} catch {}
 
 function Send-JsonResponse($ctx, [int]$status, $obj) {
   $ctx.Response.StatusCode = $status
@@ -354,6 +463,7 @@ function Import-NestingToCorel($payload) {
       $lParts = $page.CreateLayer("PARCALAR")
       $lHoles = $null
       if ($distinctHoleColor) { $lHoles = $page.CreateLayer("IC_DELIKLER") }
+      $groupLayers = @{}
 
       $plateRect = $lPlate.CreateRectangle2($ox, $oy, $wMm, $hMm)
       $plateRect.Name = "PLAKA_EBATI_$($sh['index'])"
@@ -395,14 +505,33 @@ function Import-NestingToCorel($payload) {
           }
         }
 
-        $shape = $lParts.CreateCurve($crv)
+        $grp = "body"
+        if ($part.ContainsKey("partGroup") -and $part["partGroup"]) { $grp = [string]$part["partGroup"] }
+        $targetLayer = $lParts
+        if ($grp -eq "file_frame") {
+          if (-not $groupLayers.ContainsKey("FILE_CERCEVE")) { $groupLayers["FILE_CERCEVE"] = $page.CreateLayer("FILE_CERCEVE") }
+          $targetLayer = $groupLayers["FILE_CERCEVE"]
+        } elseif ($grp -eq "fileli_acrylic") {
+          if (-not $groupLayers.ContainsKey("PLEKSI_AKRILIK")) { $groupLayers["PLEKSI_AKRILIK"] = $page.CreateLayer("PLEKSI_AKRILIK") }
+          $targetLayer = $groupLayers["PLEKSI_AKRILIK"]
+        } elseif ($grp -eq "fileli_dekota") {
+          if (-not $groupLayers.ContainsKey("ARKA_DEKOTA")) { $groupLayers["ARKA_DEKOTA"] = $page.CreateLayer("ARKA_DEKOTA") }
+          $targetLayer = $groupLayers["ARKA_DEKOTA"]
+        }
+
+        $pRgb = $bodyRgb
+        if ($part.ContainsKey("colorRgb") -and $part["colorRgb"] -and $part["colorRgb"].Count -ge 3) {
+          $pRgb = $part["colorRgb"]
+        }
+
+        $shape = $targetLayer.CreateCurve($crv)
         $shape.Name = [string]$part["label"]
-        $shape.Fill.ApplyUniformFill($corel.CreateRGBColor([int]$bodyRgb[0], [int]$bodyRgb[1], [int]$bodyRgb[2]))
+        $shape.Fill.ApplyUniformFill($corel.CreateRGBColor([int]$pRgb[0], [int]$pRgb[1], [int]$pRgb[2]))
         $shape.Outline.Width = 0.1
         $shape.Outline.Color.RGBAssign(30, 35, 42)
         $partsCount++
 
-        if ($distinctHoleColor -and $holes) {
+        if ($distinctHoleColor -and $grp -ne "file_frame" -and $holes) {
           foreach ($hole in $holes) {
             if (-not $hole -or $hole.Count -lt 3) { continue }
             $hCrv = $doc.CreateCurve()
@@ -434,8 +563,35 @@ function Import-NestingToCorel($payload) {
   }
 }
 
-while ($listener.IsListening) {
-  $ctx = $listener.GetContext()
+function Export-SelectionFromCorel() {
+  $corel = $null
+  try { $corel = [Runtime.InteropServices.Marshal]::GetActiveObject("CorelDRAW.Application") } catch {}
+  if (-not $corel -or $corel.Documents.Count -eq 0 -or $null -eq $corel.ActiveDocument) {
+    return @{ ok = $false; error = "Acik bir CorelDRAW belgesi bulunamadi." }
+  }
+  $doc = $corel.ActiveDocument
+  $rangeMode = 2
+  try {
+    if ($doc.Selection -and $doc.Selection.Shapes.Count -gt 0) { $rangeMode = 1 }
+  } catch {}
+  $tmpSvg = Join-Path $env:TEMP ("khs_corel_pull_" + [Guid]::NewGuid().ToString("N") + ".svg")
+  try {
+    $exp = $doc.ExportEx($tmpSvg, 1345, $rangeMode)
+    if ($exp) { $exp.Finish() }
+    if (-not (Test-Path $tmpSvg)) {
+      return @{ ok = $false; error = "CorelDRAW SVG disa aktarimi olusturulamadi." }
+    }
+    $svgText = [System.IO.File]::ReadAllText($tmpSvg, [System.Text.Encoding]::UTF8)
+    return @{ ok = $true; svgText = $svgText; fileName = "CorelDRAW_Secim.svg" }
+  } finally {
+    if (Test-Path $tmpSvg) { Remove-Item $tmpSvg -Force -ErrorAction SilentlyContinue }
+  }
+}
+
+$runningLoop = $true
+while ($runningLoop -and $listener.IsListening) {
+  $ctx = $null
+  try { $ctx = $listener.GetContext() } catch { break }
   try {
     $method = $ctx.Request.HttpMethod
     $path = $ctx.Request.Url.AbsolutePath
@@ -444,43 +600,215 @@ while ($listener.IsListening) {
       continue
     }
     if ($method -eq "GET" -and $path -eq "/api/health") {
-      $running = $false
-      try { $null = [Runtime.InteropServices.Marshal]::GetActiveObject("CorelDRAW.Application"); $running = $true } catch {}
-      Send-JsonResponse $ctx 200 @{ ok = $true; service = "kutu-harf-corel-bridge"; version = "1.0"; corelRunning = $running }
+      $corelOn = $false
+      try { $null = [Runtime.InteropServices.Marshal]::GetActiveObject("CorelDRAW.Application"); $corelOn = $true } catch {}
+      Send-JsonResponse $ctx 200 @{ ok = $true; service = "kutu-harf-corel-bridge"; version = "2.0"; installed = $installedFlag; corelRunning = $corelOn; hasLatest = (Test-Path $latestPath) }
       continue
     }
     if ($method -eq "POST" -and $path -eq "/api/import") {
       $sr = New-Object System.IO.StreamReader($ctx.Request.InputStream, [System.Text.Encoding]::UTF8)
       $raw = $sr.ReadToEnd()
+      [System.IO.File]::WriteAllText($latestPath, $raw, [System.Text.UTF8Encoding]::new($false))
       $payload = $jsonSer.DeserializeObject($raw)
       $res = Import-NestingToCorel $payload
-      Write-Host "[$(Get-Date -Format 'HH:mm:ss')] CorelDRAW'a $($res.sheetsImported) levha, $($res.partsImported) parca eklendi." -ForegroundColor Green
       Send-JsonResponse $ctx 200 $res
+      continue
+    }
+    if (($method -eq "POST" -or $method -eq "GET") -and $path -eq "/api/import-latest") {
+      if (-not (Test-Path $latestPath)) {
+        Send-JsonResponse $ctx 404 @{ ok = $false; error = "Henuz kaydedilmis bir nesting verisi yok." }
+        continue
+      }
+      $raw = [System.IO.File]::ReadAllText($latestPath, [System.Text.Encoding]::UTF8)
+      $payload = $jsonSer.DeserializeObject($raw)
+      $res = Import-NestingToCorel $payload
+      Send-JsonResponse $ctx 200 $res
+      continue
+    }
+    if ($method -eq "POST" -and $path -eq "/api/pull-from-corel") {
+      $res = Export-SelectionFromCorel
+      if ($res["ok"]) { Send-JsonResponse $ctx 200 $res } else { Send-JsonResponse $ctx 400 $res }
+      continue
+    }
+    if ($method -eq "POST" -and $path -eq "/api/shutdown") {
+      Send-JsonResponse $ctx 200 @{ ok = $true }
+      $runningLoop = $false
+      $listener.Stop()
       continue
     }
     Send-JsonResponse $ctx 404 @{ ok = $false; error = "Bilinmeyen uc nokta: $path" }
   } catch {
-    Write-Host "[HATA] $($_.Exception.Message)" -ForegroundColor Red
-    Send-JsonResponse $ctx 500 @{ ok = $false; error = [string]$_.Exception.Message }
+    try { Send-JsonResponse $ctx 500 @{ ok = $false; error = [string]$_.Exception.Message } } catch {}
   }
 }
 `;
 }
 
+export function getCorelInstallerPs1Script() {
+  const nl = '[Environment]::NewLine';
+  return String.raw`param(
+  [Parameter(Mandatory=$true)][string]$BridgeSource,
+  [Parameter(Mandatory=$true)][string]$PluginBasB64,
+  [Parameter(Mandatory=$true)][string]$AddonXsltB64
+)
+$ErrorActionPreference = "Stop"
+
+$installDir = Join-Path $env:LOCALAPPDATA "KutuHarfStudyosu\CorelPlugin"
+New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+
+try { Invoke-RestMethod -Uri "http://127.0.0.1:47891/api/shutdown" -Method Post -TimeoutSec 2 | Out-Null; Start-Sleep -Milliseconds 350 } catch {}
+
+$bridgeDest = Join-Path $installDir "bridge.ps1"
+Copy-Item -Path $BridgeSource -Destination $bridgeDest -Force
+
+$vbsPath = Join-Path $installDir "start_silent.vbs"
+$vbsLines = @(
+  'Set shell = CreateObject("WScript.Shell")',
+  ('shell.Run "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File """ & "' + $bridgeDest + '" & """", 0, False')
+)
+[System.IO.File]::WriteAllText($vbsPath, ($vbsLines -join ${nl}), [System.Text.Encoding]::ASCII)
+
+$pluginBasText = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($PluginBasB64))
+$pluginBasDest = Join-Path $installDir "KutuHarfStudyosu_Plugin.bas"
+[System.IO.File]::WriteAllText($pluginBasDest, $pluginBasText, [System.Text.UTF8Encoding]::new($false))
+
+$addonXsltText = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($AddonXsltB64))
+$localAddonDir = Join-Path $installDir "CorelAddon"
+New-Item -ItemType Directory -Force -Path $localAddonDir | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $localAddonDir "coreldrw.addon"), "", [System.Text.Encoding]::ASCII)
+[System.IO.File]::WriteAllText((Join-Path $localAddonDir "AppUI.xslt"), $addonXsltText, [System.Text.UTF8Encoding]::new($false))
+
+$uninstallBat = Join-Path $installDir "uninstall.bat"
+$unLines = @(
+  '@echo off',
+  'powershell.exe -NoProfile -Command "try { Invoke-RestMethod -Uri ''http://127.0.0.1:47891/api/shutdown'' -Method Post -TimeoutSec 2 | Out-Null } catch {}"',
+  'reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "KutuHarfCorelBridge" /f >nul 2>&1',
+  'reg delete "HKCU\Software\Classes\kutuharf" /f >nul 2>&1',
+  'echo Kutu Harf Studyosu CorelDRAW Eklentisi kaldirildi.',
+  'pause'
+)
+[System.IO.File]::WriteAllText($uninstallBat, ($unLines -join ${nl}), [System.Text.Encoding]::ASCII)
+
+$q = [string][char]34
+$runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+if (-not (Test-Path $runKey)) { New-Item -Path $runKey -Force | Out-Null }
+Set-ItemProperty -Path $runKey -Name "KutuHarfCorelBridge" -Value ("wscript.exe " + $q + $vbsPath + $q)
+
+$protoKey = "HKCU:\Software\Classes\kutuharf"
+New-Item -Path $protoKey -Force | Out-Null
+Set-ItemProperty -Path $protoKey -Name "(Default)" -Value "URL:Kutu Harf Studyosu Protocol"
+Set-ItemProperty -Path $protoKey -Name "URL Protocol" -Value ""
+$cmdKey = "HKCU:\Software\Classes\kutuharf\shell\open\command"
+New-Item -Path $cmdKey -Force | Out-Null
+Set-ItemProperty -Path $cmdKey -Name "(Default)" -Value ("wscript.exe " + $q + $vbsPath + $q)
+
+$installedCorelPaths = @()
+$corelRoaming = Join-Path $env:APPDATA "Corel"
+if (Test-Path $corelRoaming) {
+  $suites = Get-ChildItem -Path $corelRoaming -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "CorelDRAW*" }
+  foreach ($s in $suites) {
+    $gmsDir = Join-Path $s.FullName "Draw\GMS"
+    $addonsDir = Join-Path $s.FullName "Draw\Addons\KutuHarfStudyosu"
+    New-Item -ItemType Directory -Force -Path $gmsDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $addonsDir | Out-Null
+    Copy-Item -Path $pluginBasDest -Destination (Join-Path $gmsDir "KutuHarfStudyosu_Plugin.bas") -Force
+    Copy-Item -Path (Join-Path $localAddonDir "coreldrw.addon") -Destination (Join-Path $addonsDir "coreldrw.addon") -Force
+    Copy-Item -Path (Join-Path $localAddonDir "AppUI.xslt") -Destination (Join-Path $addonsDir "AppUI.xslt") -Force
+    $installedCorelPaths += $s.Name
+  }
+}
+
+Start-Process -FilePath "wscript.exe" -ArgumentList ($q + $vbsPath + $q)
+
+$ok = $false
+for ($try = 0; $try -lt 16; $try++) {
+  Start-Sleep -Milliseconds 250
+  try {
+    $h = Invoke-RestMethod -Uri "http://127.0.0.1:47891/api/health" -TimeoutSec 2
+    if ($h.ok) { $ok = $true; break }
+  } catch {}
+}
+
+Write-Host ""
+Write-Host "==================================================================" -ForegroundColor Green
+if ($ok) {
+  Write-Host " KUTU HARF STUDYOSU <-> CORELDRAW EKLENTISI KURULDU!" -ForegroundColor Green
+} else {
+  Write-Host " Eklenti dosyalari kuruldu; arka plan servisi baslatiliyor..." -ForegroundColor Yellow
+}
+Write-Host "==================================================================" -ForegroundColor Green
+Write-Host " Kurulum Klasoru   : $installDir" -ForegroundColor Cyan
+Write-Host " Windows Acilisi   : Otomatik arka plan servisi aktif (penceresiz)" -ForegroundColor Cyan
+Write-Host " URL Protokolu     : kutuharf:// aktif (gerekirse webden uyanir)" -ForegroundColor Cyan
+if ($installedCorelPaths.Count -gt 0) {
+  Write-Host (" CorelDRAW Eklenti : " + ($installedCorelPaths -join ", ")) -ForegroundColor Cyan
+}
+Write-Host ""
+Write-Host " Artık bir daha .bat acmaniza gerek yok! Web sayfasindan tek tikla" -ForegroundColor White
+Write-Host " 'Corel'e Aktar' butonuna basabilirsiniz." -ForegroundColor White
+Write-Host ""
+Start-Sleep -Seconds 3
+`;
+}
+
 export function generateCorelBridgeLauncherBat() {
-  const b64 = utf8ToBase64(getCorelBridgePs1Script());
-  const wrapped = b64.match(/.{1,76}/g).map(line => `::${line}`).join('\r\n');
+  const bridgeB64 = utf8ToBase64(getCorelBridgePs1Script()).match(/.{1,76}/g).map(line => `::${line}`).join('\r\n');
+  const instB64 = utf8ToBase64(getCorelInstallerPs1Script()).match(/.{1,76}/g).map(line => `::${line}`).join('\r\n');
+  const pluginBasB64 = utf8ToBase64(getCorelPluginBasScript());
+  const addonXsltB64 = utf8ToBase64(getCorelAddonXslt());
   return [
     '@echo off',
     'chcp 65001 >nul',
-    'title Kutu Harf Studyosu - CorelDRAW Canli Kopru',
-    'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$raw = [IO.File]::ReadAllText(\'%~f0\', [Text.Encoding]::UTF8); $m = [regex]::Match($raw, \'(?s)::###PS1_B64_START###\\r?\\n(.*?)\\r?\\n::###PS1_B64_END###\'); $b64 = ($m.Groups[1].Value -replace \'(?m)^::\', \'\' -replace \'\\s+\', \'\'); $bytes = [Convert]::FromBase64String($b64); [IO.File]::WriteAllText(\'%TEMP%\\kutu_harf_corel_bridge.ps1\', [Text.Encoding]::UTF8.GetString($bytes), [Text.UTF8Encoding]::new($false))"',
-    'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%TEMP%\\kutu_harf_corel_bridge.ps1"',
+    'title Kutu Harf Studyosu - CorelDRAW Tek Seferlik Kurulum & Eklenti',
+    'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$raw = [IO.File]::ReadAllText(\'%~f0\', [Text.Encoding]::UTF8); $m1 = [regex]::Match($raw, \'(?s)::###PS1_B64_START###\\r?\\n(.*?)\\r?\\n::###PS1_B64_END###\'); $b1 = ($m1.Groups[1].Value -replace \'(?m)^::\', \'\' -replace \'\\s+\', \'\'); [IO.File]::WriteAllText(\'%TEMP%\\kutu_harf_corel_bridge.ps1\', [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b1)), [Text.UTF8Encoding]::new($false)); $m2 = [regex]::Match($raw, \'(?s)::###INSTALLER_B64_START###\\r?\\n(.*?)\\r?\\n::###INSTALLER_B64_END###\'); $b2 = ($m2.Groups[1].Value -replace \'(?m)^::\', \'\' -replace \'\\s+\', \'\'); [IO.File]::WriteAllText(\'%TEMP%\\kutu_harf_corel_install.ps1\', [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b2)), [Text.UTF8Encoding]::new($false))"',
+    `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%TEMP%\\kutu_harf_corel_install.ps1" -BridgeSource "%TEMP%\\kutu_harf_corel_bridge.ps1" -PluginBasB64 "${pluginBasB64}" -AddonXsltB64 "${addonXsltB64}"`,
     'exit /b %errorlevel%',
     '::###PS1_B64_START###',
-    wrapped,
+    bridgeB64,
     '::###PS1_B64_END###',
+    '::###INSTALLER_B64_START###',
+    instB64,
+    '::###INSTALLER_B64_END###',
   ].join('\r\n');
+}
+
+export function wakeCorelBridgeProtocol() {
+  if (typeof document === 'undefined') return false;
+  try {
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = 'kutuharf://start';
+    document.body.appendChild(iframe);
+    setTimeout(() => iframe.remove(), 1200);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function pullSelectionFromCorel() {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  try {
+    const res = await fetch(`${COREL_BRIDGE_URL}/api/pull-from-corel`, {
+      method: 'POST',
+      mode: 'cors',
+      signal: ctrl.signal,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.ok && data?.svgText) {
+      return { ok: true, svgText: data.svgText, fileName: data.fileName || 'CorelDRAW_Secim.svg' };
+    }
+    return {
+      ok: false,
+      bridgeOffline: false,
+      error: data?.error || `CorelDRAW çizimi alınamadı (${res.status})`,
+    };
+  } catch {
+    return { ok: false, bridgeOffline: true };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function checkCorelBridgeStatus(timeoutMs = 900) {

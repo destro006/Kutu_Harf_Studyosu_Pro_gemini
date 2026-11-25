@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Kutu Harf Stüdyosu — Profesyonel 3D Tabela CAD/CAM &amp; İmalat Stüdyosu</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Crect x='9' y='7' width='14' height='18' rx='3' fill='%23ffb547'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./src/styles/studio.css?v=20261126-v17">
+  <link rel="stylesheet" href="./src/styles/studio.css?v=20261126-v18">
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -290,34 +290,35 @@
     </div>
   </div>
 
-  <!-- CorelDRAW 1-Click Live Integration Modal -->
+  <!-- CorelDRAW 1-Click Live Plugin & Auto-Start Integration Modal -->
   <div id="corelBridgeModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="corelBridgeTitle">
     <div class="modal-card corel-modal-card">
       <div class="modal-head">
-        <h3 id="corelBridgeTitle">✦ CorelDRAW Canlı Entegrasyonu</h3>
+        <h3 id="corelBridgeTitle">✦ CorelDRAW Eklentisi &amp; Canlı Entegrasyon</h3>
         <button type="button" id="btnCloseCorelModal" class="close-btn">✕</button>
       </div>
       <div class="modal-body corel-modal-body">
         <div class="corel-status-row">
-          <span id="corelBridgeStatusBadge" class="corel-status-pill">Bağlantı kontrol ediliyor...</span>
+          <span id="corelBridgeStatusBadge" class="corel-status-pill">Eklenti kontrol ediliyor...</span>
           <button type="button" id="btnCorelCheckStatus" class="sec-btn">Yenile</button>
         </div>
         <p id="corelBridgeSummary" class="dock-helper" style="margin:6px 0 10px">
-          Nesting yaptığınız tüm parçalar, 1:1 mm gerçek ölçüler, plaka ebatı (sayfa ölçüsü + kenar sınırı) ve seçili gövde/iç boşluk renkleriyle doğrudan CorelDRAW'a aktarılır.
+          Nesting yaptığınız tüm parçalar, 1:1 mm gerçek ölçüler, plaka ebatı ve seçili grup renkleriyle doğrudan CorelDRAW'a aktarılır.
         </p>
         <div class="corel-step-box">
-          <strong>Canlı Tek Tıkla CorelDRAW'a Gönderme (Önerilen)</strong>
+          <strong>Tek Seferlik Kurulum (Otomatik Başlatma + CorelDRAW Eklentisi)</strong>
           <ol>
-            <li>Aşağıdaki <b>CorelDRAW Köprüsünü İndir (.bat)</b> dosyasını indirin ve çift tıklayarak çalıştırın (kurulumsuz, yalnızca yerel <code>127.0.0.1:47891</code> portunu açar).</li>
-            <li>Ardından <b>CorelDRAW'a Şimdi Gönder</b> butonuna basın — parçalar plaka ebatı ve renkleriyle açık CorelDRAW belgenize otomatik eklenir.</li>
+            <li>Aşağıdaki <b>Tek Seferlik Kurulum &amp; Eklenti İndir (.bat)</b> dosyasını <b>yalnızca 1 kez</b> çalıştırın. Kurulum gizli Windows arka plan servisini, Sistem Tepsisi (Tray) simgesini ve CorelDRAW Addon/GMS eklentisini kurar.</li>
+            <li>Bir daha hiçbir pencere veya <code>.bat</code> açmanız gerekmez! Windows ile otomatik başlar; <b>Corel'e Aktar</b> tek tıkla çalışır veya CorelDRAW'dan seçili çizimi doğrudan geri alabilirsiniz.</li>
           </ol>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-            <button type="button" id="btnCorelDownloadBat" class="sec-btn">⬇ CorelDRAW Köprüsünü İndir (.bat)</button>
-            <button type="button" id="btnCorelRetrySend" class="corel-btn">✦ CorelDRAW'a Şimdi Gönder</button>
+            <button type="button" id="btnCorelDownloadBat" class="corel-btn">⬇ Tek Seferlik Kurulum &amp; Eklenti İndir (.bat)</button>
+            <button type="button" id="btnCorelRetrySend" class="sec-btn">✦ CorelDRAW'a Şimdi Gönder</button>
+            <button type="button" id="btnCorelPullSelection" class="sec-btn" title="CorelDRAW'da seçtiğiniz vektörü 3D sahneye çekin">↙ CorelDRAW'dan Seçili Çizimi Al</button>
           </div>
         </div>
         <div class="corel-step-box" style="margin-top:10px">
-          <strong>Köprü Olmadan Hızlı Aktarım Seçenekleri</strong>
+          <strong>Kurulumsuz / Dosya Bazlı Aktarım</strong>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
             <button type="button" id="btnCorelDownloadSvg" class="sec-btn">⬇ Corel Renkli SVG (1:1 mm)</button>
             <button type="button" id="btnCorelCopySvg" class="sec-btn">⧉ Corel SVG Panoya Kopyala</button>
@@ -442,6 +443,6 @@
   <div id="quotePreviewModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Teklif önizleme"><div class="quote-preview-shell"><header><strong>Teklif Önizleme</strong><button type="button" id="quoteNewTab" class="tb-btn">Yeni Sekmede Aç</button><button type="button" id="quotePrint" class="tb-btn">Yazdır / PDF</button><button type="button" id="quoteClose" class="tb-btn" aria-label="Kapat">✕</button></header><iframe id="quotePreviewFrame" sandbox="allow-same-origin allow-modals" title="Müşteri teklif önizlemesi"></iframe></div></div>
   <div id="floatingWindowsLayer" class="floating-windows-layer"></div>
   <script defer src="./public/vendor/pdfjs/pdf.min.js"></script>
-  <script type="module" src="./src/main.js?v=20261126-v17"></script>
+  <script type="module" src="./src/main.js?v=20261126-v18"></script>
 </body>
 </html>

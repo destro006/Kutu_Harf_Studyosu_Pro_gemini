@@ -9,6 +9,9 @@ import {
   generateCorelVbaMacro,
   generateCorelBridgeLauncherBat,
   getCorelBridgePs1Script,
+  getCorelInstallerPs1Script,
+  getCorelPluginBasScript,
+  getCorelAddonXslt,
 } from '../src/export/CorelDrawBridge.js';
 import {
   getDefaultMachineConnection,
@@ -198,8 +201,8 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v8'));
-assert(rootHtml.includes('./src/main.js?v=20261126-v17'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v17'));
+assert(rootHtml.includes('./src/main.js?v=20261126-v18'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v18'));
 assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
 assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v17'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
@@ -392,20 +395,31 @@ assert(corelBas.includes('CreateRGBColor(225, 29, 72)') && corelBas.includes('Cr
 
 const launcherBat = generateCorelBridgeLauncherBat();
 assert(launcherBat.includes('PS1_B64_START###') && launcherBat.includes('PS1_B64_END###'));
+assert(launcherBat.includes('INSTALLER_B64_START###') && launcherBat.includes('INSTALLER_B64_END###'));
 const b64Block = launcherBat.match(/::###PS1_B64_START###\r?\n([\s\S]*?)\r?\n::###PS1_B64_END###/)[1].replace(/^::/gm, '').replace(/\s+/g, '');
 const decodedPs1 = Buffer.from(b64Block, 'base64').toString('utf8');
 assert.equal(decodedPs1, getCorelBridgePs1Script());
-assert(decodedPs1.includes('127.0.0.1:$port/') && decodedPs1.includes('Access-Control-Allow-Private-Network'));
+assert(decodedPs1.includes('127.0.0.1:$($port)/') && decodedPs1.includes('Access-Control-Allow-Private-Network'));
 assert(decodedPs1.includes('CorelDRAW.Application') && decodedPs1.includes('ApplyUniformFill'));
+assert(decodedPs1.includes('Mutex') && decodedPs1.includes('NotifyIcon') && decodedPs1.includes('/api/pull-from-corel') && decodedPs1.includes('/api/import-latest') && decodedPs1.includes('FILE_CERCEVE'));
 
-// Verify zero PowerShell syntax errors in the embedded CorelDRAW COM bridge script
+const instB64Block = launcherBat.match(/::###INSTALLER_B64_START###\r?\n([\s\S]*?)\r?\n::###INSTALLER_B64_END###/)[1].replace(/^::/gm, '').replace(/\s+/g, '');
+const decodedInstallerPs1 = Buffer.from(instB64Block, 'base64').toString('utf8');
+assert.equal(decodedInstallerPs1, getCorelInstallerPs1Script());
+assert(decodedInstallerPs1.includes('CurrentVersion\\Run') && decodedInstallerPs1.includes('Classes\\kutuharf') && decodedInstallerPs1.includes('start_silent.vbs') && decodedInstallerPs1.includes('coreldrw.addon') && decodedInstallerPs1.includes('AppUI.xslt') && decodedInstallerPs1.includes('uninstall.bat'));
+assert(getCorelPluginBasScript().includes('KutuHarf_Son_Nestingi_Getir') && getCorelAddonXslt().includes('xsl:stylesheet'));
+assert(rootHtml.includes('id="btnCorelPullSelection"'));
+
+// Verify zero PowerShell syntax errors in both embedded CorelDRAW scripts
 if (process.platform === 'win32') {
-  const psCheck = execFileSync('powershell.exe', [
-    '-NoProfile',
-    '-Command',
-    "$code=[Console]::In.ReadToEnd(); $errs=$null; [void][System.Management.Automation.Language.Parser]::ParseInput($code,[ref]$null,[ref]$errs); if($errs.Count -gt 0){$errs | ForEach-Object {Write-Error $_.Message}; exit 1}",
-  ], { input: decodedPs1, encoding: 'utf8' });
-  assert.equal(typeof psCheck, 'string');
+  for (const psCode of [decodedPs1, decodedInstallerPs1]) {
+    const psCheck = execFileSync('powershell.exe', [
+      '-NoProfile',
+      '-Command',
+      "$code=[Console]::In.ReadToEnd(); $errs=$null; [void][System.Management.Automation.Language.Parser]::ParseInput($code,[ref]$null,[ref]$errs); if($errs.Count -gt 0){$errs | ForEach-Object {Write-Error $_.Message}; exit 1}",
+    ], { input: psCode, encoding: 'utf8' });
+    assert.equal(typeof psCheck, 'string');
+  }
 }
 
 const cwsState = createDefaultState();
