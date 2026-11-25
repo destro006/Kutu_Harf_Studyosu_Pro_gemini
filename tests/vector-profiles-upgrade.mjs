@@ -223,10 +223,10 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v8'));
-assert(rootHtml.includes('./src/main.js?v=20261126-v27'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v27'));
+assert(rootHtml.includes('./src/main.js?v=20261126-v28'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v28'));
 assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
-assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v27'));
+assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v28'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -600,6 +600,8 @@ const splitUiHtml = renderNestingCenter(fState, { activeSheetIdx: 1, leftTab: 'p
 assert(splitUiHtml.includes('data-cws-left-tab="parts"') && splitUiHtml.includes('data-cws-left-tab="fileli"'), 'Left sidebar must have Parçalar and File Malzeme Ayarları tabs');
 assert(splitUiHtml.includes('File Malzeme Ayarları'));
 assert(splitUiHtml.includes('sheet-tab-dot'), 'Separate sheet tabs must display group color indicators');
+assert(splitUiHtml.includes('class="sheet-tab-close"') && splitUiHtml.includes('data-cws-sheet-close="0"') && splitUiHtml.includes('data-cws-sheet-close="1"') && splitUiHtml.includes('data-cws-sheet-close="2"'), 'Each sheet tab must render top-left close (x) button');
+assert(mainJs.includes('data-cws-sheet-close'));
 assert(splitUiHtml.includes('File Çerçeve') && splitUiHtml.includes('Pleksi') && splitUiHtml.includes('Arka Dekota'));
 
 const fileliTabHtml = renderNestingCenter(fState, { activeSheetIdx: 1, leftTab: 'fileli' });

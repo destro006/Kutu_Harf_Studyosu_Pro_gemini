@@ -1,7 +1,7 @@
 import {normalizeDisplayUnit,formatMmAsUnit,formatDimensions,formatPresetLabel} from '../core/units.js';
 import { renderDetailedCostCenter } from './CostCenterView.js?v=qa8';
 import { ringLength, SHEET_PRESETS } from '../manufacturing/NestingEngine.js';
-import { renderNestingSvg } from './NestingView.js?v=20261126-v27';
+import { renderNestingSvg } from './NestingView.js?v=20261126-v28';
 import { renderNestingSourceTabs, renderNestingImportPane } from './NestingImportView.js?v=units6';
 import { MACHINE_PROFILES, MACHINE_PROFILE_CATEGORIES, getMachineProfile, validateNestedProduction } from '../export/CncGcodeExporter.js';
 import { formatMoney } from '../manufacturing/CostEngine.js';
@@ -196,9 +196,12 @@ export function renderNestingCenter(state, ctx) {
                 ? groupColors[firstGrp]
                 : (sh.placements?.[0]?.partColor || null);
               return `
-              <button type="button" class="sheet-tab ${idx === activeIdx ? 'on' : ''}" data-cws-sheet="${idx}">
-                ${dotColor ? `<i class="sheet-tab-dot" style="background:${dotColor}"></i>` : ''}${escapeHtml(sh.name || `Levha ${idx + 1}`)} • ${escapeHtml(sh.materialLabel||sh.materialGroup||"Genel")} (${sh.placements.length})
-              </button>`;
+              <span class="sheet-tab-wrap">
+                <button type="button" class="sheet-tab-close" data-cws-sheet-close="${idx}" title="${escapeHtml(sh.name || `Levha ${idx + 1}`)} sekmesini kapat" aria-label="${escapeHtml(sh.name || `Levha ${idx + 1}`)} sekmesini kapat">×</button>
+                <button type="button" class="sheet-tab ${idx === activeIdx ? 'on' : ''}" data-cws-sheet="${idx}">
+                  ${dotColor ? `<i class="sheet-tab-dot" style="background:${dotColor}"></i>` : ''}${escapeHtml(sh.name || `Levha ${idx + 1}`)} • ${escapeHtml(sh.materialLabel||sh.materialGroup||"Genel")} (${sh.placements.length})
+                </button>
+              </span>`;
             }).join('')}
             <button type="button" id="cwsAddSheet" class="sheet-tab">+ Yeni Levha</button>
           </div>

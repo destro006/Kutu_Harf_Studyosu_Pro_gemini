@@ -943,7 +943,34 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   font-size: 12px;
   flex-wrap: wrap;
 }
-.sheet-tabs { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+.sheet-tabs { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding-top: 5px; padding-left: 4px; }
+.sheet-tab-wrap { position: relative; display: inline-flex; align-items: center; }
+.sheet-tab-close {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: #1a2230;
+  color: #cbd5e1;
+  font-size: 11px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+  transition: background .12s, border-color .12s, color .12s, transform .12s;
+}
+.sheet-tab-close:hover {
+  background: #dc2626;
+  border-color: #ef4444;
+  color: #ffffff;
+  transform: scale(1.1);
+}
 .sheet-tab {
   display: inline-flex;
   align-items: center;

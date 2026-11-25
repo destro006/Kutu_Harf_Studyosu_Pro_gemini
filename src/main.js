@@ -11,7 +11,7 @@ import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v15';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v27';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v28';
 import {
   nextNestingSelection,
   deleteNestingParts,
@@ -3738,6 +3738,28 @@ function bindNestingCenterEvents(root) {
     updateCenterWorkspaces(store.get());
     updateNumericBar(store.get());
   });
+  root.querySelectorAll('[data-cws-sheet-close]').forEach(btn => btn.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    const idx = Number(btn.dataset.cwsSheetClose);
+    if (!Number.isInteger(idx) || idx < 0) return;
+    mutateData('Levha sekmesini kapat', s => {
+      if (!Array.isArray(s.nesting?.sheets) || idx >= s.nesting.sheets.length) return;
+      s.nesting.sheets.splice(idx, 1);
+      s.nesting.sheets.forEach((sh, i) => {
+        sh.index = i + 1;
+        if (/^Levha\s+\d+$/.test(sh.name || '')) sh.name = `Levha ${i + 1}`;
+      });
+      syncActiveNestingTab(s.nesting);
+    }, false);
+    const remaining = store.get().nesting?.sheets?.length || 0;
+    if (idx < activeSheetIdx) activeSheetIdx = Math.max(0, activeSheetIdx - 1);
+    else if (activeSheetIdx >= remaining) activeSheetIdx = Math.max(0, remaining - 1);
+    clearNestingSelection();
+    if (lastNesting) lastNesting = { ...lastNesting, sheets: store.get().nesting.sheets || [] };
+    updateCenterWorkspaces(store.get());
+    updateNumericBar(store.get());
+  }));
   root.querySelectorAll('[data-cws-pid]').forEach(el => {
     el.onclick=e=>{
       if(e.target.closest('[data-cws-delete]'))return;
