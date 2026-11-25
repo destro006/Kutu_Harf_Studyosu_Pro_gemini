@@ -1,5 +1,7 @@
 import {
+  computeFileliAcrylicCutContours,
   ensureWinding,
+  expandAcrylicContoursWithOverlap,
   minDistanceBetweenPolygons,
   distPointToSegment,
   pointInPolygon,
@@ -177,8 +179,8 @@ export function extractSidewallStripItems(metricsList, state) {
 /**
  * Extracts nestable manufacturing components from current scene metricsList,
  * preserving projectId, parentId, partId, material, thickness, finish, and exact contours.
- * Fileli construction emits 3 color-coded groups (File Çerçeve, Pleksi, Arka Dekota)
- * on one unified sheet batch; non-fileli constructions emit only outer body parts.
+ * Fileli construction emits 3 color-coded groups (File Çerçeve, Pleksi, Arka Dekota),
+ * each assigned to its own dedicated sheet tab; non-fileli constructions emit only outer body parts.
  * When nesting.targetPart === 'sidewalls', extracts ONLY unfolded return sidewall strips.
  */
 export function extractNestingItems(metricsList, state) {
@@ -227,40 +229,66 @@ export function extractNestingItems(metricsList, state) {
       };
 
       if (cType === 'fileli') {
-        const sharedBatch = 'Fileli · File + Pleksi + Dekota';
+        const fileThick = state.fileli?.fileThicknessMm || 2;
+        const acThick = state.fileli?.acrylicThicknessMm || 3;
+        const dekThick = state.fileli?.dekotaThicknessMm || 5;
+        const overlapMm = Math.max(0, Number(state.fileli?.acrylicOverlapMm ?? 3));
+        const overlapLabel = Number.isInteger(overlapMm) ? String(overlapMm) : overlapMm.toFixed(1).replace(/\.0$/, '');
+        const wallMm = Math.max(0.4, Number(m.metalThicknessMm ?? state.fileli?.metalThicknessMm ?? 1));
+
+        const fileGroupName = `File Çerçeve · ${fileThick} mm`;
+        const acrylicGroupName = overlapMm > 0.01
+          ? `Pleksi (+${overlapLabel} mm Pay) · ${acThick} mm`
+          : `Pleksi (Akrilik) · ${acThick} mm`;
+        const dekotaGroupName = `Arka Dekota · ${dekThick} mm`;
+
         const fileRings = m.exportContours?.file?.length ? m.exportContours.file : m.polygonsMm;
         const fileMat = state.fileli?.fileMaterial || 'aynaAltin';
         if (targetPart === 'all' || targetPart === 'file') {
           for (const poly of fileRings) {
-            addRing(poly.outer, poly.holes, 'File Çerçeve', fileMat, state.fileli?.fileThicknessMm || 2, 'CUT_OUTER', {
+            addRing(poly.outer, poly.holes, 'File Çerçeve', fileMat, fileThick, 'CUT_OUTER', {
               partGroup: FILELI_NESTING_GROUPS.file_frame.id,
               partGroupLabel: FILELI_NESTING_GROUPS.file_frame.label,
               partColor: FILELI_NESTING_GROUPS.file_frame.color,
               dxfLayer: FILELI_NESTING_GROUPS.file_frame.layer,
-              materialGroupOverride: sharedBatch,
+              materialGroupOverride: fileGroupName,
             });
           }
         }
-        if ((targetPart === 'all' || targetPart === 'acrylic') && m.exportContours?.acrylic?.length) {
-          for (const poly of m.exportContours.acrylic) {
-            addRing(poly.outer, poly.holes, 'Pleksi', state.fileli?.acrylicMaterial || 'opalPleksi', state.fileli?.acrylicThicknessMm || 3, 'CUT_OUTER', {
+        if (targetPart === 'all' || targetPart === 'acrylic') {
+          let acrylicCutPolys = [];
+          if (m.exportContours?.acrylicCut?.length && Math.abs((m.exportContours.acrylicOverlapMm ?? overlapMm) - overlapMm) < 1e-4) {
+            acrylicCutPolys = m.exportContours.acrylicCut;
+          } else if (m.fileWidthMm != null && m.polygonsMm?.length) {
+            for (const poly of m.polygonsMm) {
+              const cutRes = computeFileliAcrylicCutContours(poly.outer, poly.holes, m.fileWidthMm, overlapMm, wallMm);
+              if (cutRes.ok && cutRes.acrylicPolys.length) acrylicCutPolys.push(...cutRes.acrylicPolys);
+            }
+          } else if (m.exportContours?.acrylic?.length) {
+            acrylicCutPolys = expandAcrylicContoursWithOverlap(m.exportContours.acrylic, overlapMm, m.polygonsMm, wallMm);
+          }
+          if (!acrylicCutPolys.length && m.exportContours?.acrylic?.length) {
+            acrylicCutPolys = m.exportContours.acrylic;
+          }
+          for (const poly of acrylicCutPolys) {
+            addRing(poly.outer, poly.holes, 'Pleksi', state.fileli?.acrylicMaterial || 'opalPleksi', acThick, 'CUT_OUTER', {
               partGroup: FILELI_NESTING_GROUPS.fileli_acrylic.id,
               partGroupLabel: FILELI_NESTING_GROUPS.fileli_acrylic.label,
               partColor: FILELI_NESTING_GROUPS.fileli_acrylic.color,
               dxfLayer: FILELI_NESTING_GROUPS.fileli_acrylic.layer,
-              materialGroupOverride: sharedBatch,
+              materialGroupOverride: acrylicGroupName,
             });
           }
         }
         const backingRings = m.exportContours?.backing?.length ? m.exportContours.backing : m.polygonsMm;
         if (targetPart === 'all' || targetPart === 'outer' || targetPart === 'dekota') {
           for (const poly of backingRings) {
-            addRing(poly.outer, poly.holes, 'Arka Dekota', 'dekota', state.fileli?.dekotaThicknessMm || 5, 'CUT_OUTER', {
+            addRing(poly.outer, poly.holes, 'Arka Dekota', 'dekota', dekThick, 'CUT_OUTER', {
               partGroup: FILELI_NESTING_GROUPS.fileli_dekota.id,
               partGroupLabel: FILELI_NESTING_GROUPS.fileli_dekota.label,
               partColor: FILELI_NESTING_GROUPS.fileli_dekota.color,
               dxfLayer: FILELI_NESTING_GROUPS.fileli_dekota.layer,
-              materialGroupOverride: sharedBatch,
+              materialGroupOverride: dekotaGroupName,
             });
           }
         }

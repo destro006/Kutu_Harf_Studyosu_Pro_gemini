@@ -1,7 +1,7 @@
 import {normalizeDisplayUnit,formatMmAsUnit,formatDimensions,formatPresetLabel} from '../core/units.js';
 import { renderDetailedCostCenter } from './CostCenterView.js?v=qa8';
 import { ringLength, SHEET_PRESETS } from '../manufacturing/NestingEngine.js';
-import { renderNestingSvg } from './NestingView.js?v=20261126-v23';
+import { renderNestingSvg } from './NestingView.js?v=20261126-v25';
 import { renderNestingSourceTabs, renderNestingImportPane } from './NestingImportView.js?v=units6';
 import { MACHINE_PROFILES, MACHINE_PROFILE_CATEGORIES, getMachineProfile, validateNestedProduction } from '../export/CncGcodeExporter.js';
 import { formatMoney } from '../manufacturing/CostEngine.js';
@@ -58,7 +58,9 @@ export function renderNestingCenter(state, ctx) {
   const openGroupsSet = ctx.openGroups instanceof Set
     ? ctx.openGroups
     : new Set(Array.isArray(ctx.openGroups) ? ctx.openGroups : []);
-  const anyGroupOpen = partGroups.length > 1 ? partGroups.some(g => openGroupsSet.has(g.id)) : openGroupsSet.has('all');
+  const anyGroupOpen = partGroups.length > 1
+    ? partGroups.some(g => openGroupsSet.has(g.id))
+    : (partGroups[0] ? (openGroupsSet.has(partGroups[0].id) || openGroupsSet.has('all')) : openGroupsSet.has('all'));
   const isSidewallMode = (n.targetPart || 'all') === 'sidewalls';
   const totalStripLenMm = sheets.reduce((sum, sh) => sum + sh.placements.filter(p => p.partGroup === 'sidewall_strip').reduce((a, p) => a + (p.bounds?.width || 0), 0), 0);
   const rotateMode = Boolean(ctx.rotateMode && selectedIds.size > 0);
@@ -119,18 +121,24 @@ export function renderNestingCenter(state, ctx) {
                 </details>
               `).join('')}
             </div>
-          ` : `
-            <details class="nest-group-box" data-nest-group="all"${openGroupsSet.has('all') ? ' open' : ''}>
+          ` : (() => {
+            const sg = partGroups[0];
+            const isTyped = Boolean(sg && sg.id !== 'body');
+            const boxId = isTyped ? sg.id : 'all';
+            const isOpen = openGroupsSet.has(boxId) || openGroupsSet.has('all');
+            return `
+            <details class="nest-group-box" data-nest-group="${escapeHtml(boxId)}"${isOpen ? ' open' : ''}>
               <summary class="nest-group-head">
                 <span class="nest-group-caret" aria-hidden="true">▸</span>
-                <span class="nest-group-title">Parça Listesi <small>(${activeSheet?.placements?.length || 0})</small></span>
+                ${isTyped ? `<input type="color" class="nest-group-color-pick" data-nest-group-color="${escapeHtml(sg.id)}" value="${sg.color}" title="${escapeHtml(sg.label)} grup rengini seç">` : ''}
+                <span class="nest-group-title">${isTyped ? escapeHtml(sg.label) : 'Parça Listesi'} <small>(${activeSheet?.placements?.length || 0})</small></span>
                 <button type="button" class="nest-group-act" data-nest-select-all-btn title="Tümünü seç (Ctrl+A)">Tümünü Seç</button>
               </summary>
               <div class="nest-group-rows">
-                ${(activeSheet?.placements || []).map(p => renderPartRow(p)).join('')}
+                ${(activeSheet?.placements || []).map(p => renderPartRow(p, isTyped ? sg.color : null)).join('')}
               </div>
             </details>
-          `}
+          `; })()}
         `}
         ${(n.unplaced || []).length ? `
           <h3 class="sec-title" style="margin-top:12px;color:var(--danger)">Yerleşmeyenler (${n.unplaced.length})</h3>
@@ -144,11 +152,16 @@ export function renderNestingCenter(state, ctx) {
       <div class="cws-main">
         <div class="cws-nesting-topbar">
           <div class="sheet-tabs">
-            ${sheets.map((sh, idx) => `
+            ${sheets.map((sh, idx) => {
+              const firstGrp = sh.placements?.[0]?.partGroup;
+              const dotColor = (firstGrp && /^#[0-9a-f]{6}$/i.test(groupColors[firstGrp] || ''))
+                ? groupColors[firstGrp]
+                : (sh.placements?.[0]?.partColor || null);
+              return `
               <button type="button" class="sheet-tab ${idx === activeIdx ? 'on' : ''}" data-cws-sheet="${idx}">
-                ${escapeHtml(sh.name || `Levha ${idx + 1}`)} • ${escapeHtml(sh.materialLabel||sh.materialGroup||"Genel")} (${sh.placements.length})
-              </button>
-            `).join('')}
+                ${dotColor ? `<i class="sheet-tab-dot" style="background:${dotColor}"></i>` : ''}${escapeHtml(sh.name || `Levha ${idx + 1}`)} • ${escapeHtml(sh.materialLabel||sh.materialGroup||"Genel")} (${sh.placements.length})
+              </button>`;
+            }).join('')}
             <button type="button" id="cwsAddSheet" class="sheet-tab">+ Yeni Levha</button>
           </div>
           <div class="cws-nesting-actions">
@@ -193,6 +206,8 @@ export function renderNestingCenter(state, ctx) {
         <div class="field-row"><label>Levha Yüksekliği (${unit})</label><input id="cwsNestH" type="number" step="any" value="${show(n.sheetHeightMm)}"></div>
         <div class="field-row"><label>Parça Aralığı (${unit})</label><input id="cwsNestSp" type="number" step="any" value="${show(n.clearanceMm??5)}"></div>
         <div class="field-row"><label>Kenar Payı (${unit})</label><input id="cwsNestMg" type="number" step="any" value="${show(n.marginLeftMm)}"></div>
+        <div class="field-row" id="cwsNestAcrylicOverlapRow" title="Fileli harflerde pleksi kesiminin filenin iç boşluğundan her kenarda kaç mm büyük kesileceği (en az 3 mm önerilir)"><label for="cwsNestAcrylicOverlap">Pleksi Binme Payı (${unit})</label><input id="cwsNestAcrylicOverlap" type="number" min="0" max="${show(25)}" step="${show(0.5)}" value="${show(state.fileli?.acrylicOverlapMm ?? 3)}"></div>
+        <small class="nest-overlap-hint">Fileli harf pleksisi, file iç boşluğundan her kenarda bu değer kadar büyük kesilir (en az 3 mm önerilir).</small>
         <div class="field-row"><label>Delik İçi Yerleştirme</label><input id="cwsNestHoles" type="checkbox" ${n.allowHoleNesting ? 'checked' : ''}></div>
         <div class="field-row"><label>Fırça Yönü Kısıtı (0° Sabit)</label><input id="cwsNestGrain" type="checkbox" ${n.enforceGrainDirection ? 'checked' : ''}></div>
         <details class="nesting-advanced-details" id="cwsNestAdvanced" ${ctx.advancedOpen ? 'open' : ''}>

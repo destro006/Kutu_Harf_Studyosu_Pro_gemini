@@ -28,12 +28,13 @@ import { detectVectorFormat } from '../src/manufacturing/VectorFormatDetect.js';
 import { importDxfText, importSvgText, importHpglText } from '../src/manufacturing/VectorFileImport.js';
 import { cleanCdrSvg, dwgDatabaseToDxf } from '../src/manufacturing/NativeCadImport.js';
 import { importWmfEmf } from '../src/manufacturing/WmfEmfImport.js';
-import { extractNestingItems, FILELI_NESTING_GROUPS, SIDEWALL_STRIP_GROUP } from '../src/manufacturing/NestingEngine.js';
+import { extractNestingItems, FILELI_NESTING_GROUPS, SIDEWALL_STRIP_GROUP, runTrueShapeNesting } from '../src/manufacturing/NestingEngine.js';
 import { renderNestingSvg } from '../src/ui/NestingView.js';
 import { parseFont } from '../src/vendor/opentype.mjs';
 import { layoutTextMm } from '../src/geometry/FontManager.js';
 import { buildChannelComponent } from '../src/geometry/ChannelLetterGeometry.js';
-import { healPolygonWithHoles, pointInPolygon, hasSelfIntersection } from '../src/geometry/PolygonOffset.js';
+import { healPolygonWithHoles, pointInPolygon, polygonBounds, hasSelfIntersection } from '../src/geometry/PolygonOffset.js';
+import THREE from '../src/vendor/three.js';
 import { calculateProjectCosts, COST_ROLE_LABELS } from '../src/manufacturing/CostEngine.js';
 import { PostProcessor } from '../src/render/PostProcessor.js';
 import {
@@ -215,10 +216,10 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v8'));
-assert(rootHtml.includes('./src/main.js?v=20261126-v24'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v24'));
+assert(rootHtml.includes('./src/main.js?v=20261126-v25'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v25'));
 assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
-assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v24'));
+assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v25'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -532,7 +533,7 @@ assert(cwsHtml.includes('id="nestCncSendMachine"') && cwsHtml.includes('id="nest
 assert(rootHtml.includes('id="cncMachineModal"'));
 console.log(`✓ 1-Click CNC machine bridge verified for all ${MACHINE_PROFILES.length} profiles (Browser USB/Folder + PowerShell COM/FTP/TCP/UDP)`);
 
-// 14. Fileli 3-color grouped nesting (File Çerçeve + Pleksi + Arka Dekota) & left-panel group selection/editing
+// 14. Fileli 3-color grouped nesting on separate sheet tabs & configurable Pleksi overlap (+3 mm default)
 const sqOuter = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }];
 const sqInner = [{ x: 15, y: 15 }, { x: 15, y: 85 }, { x: 85, y: 85 }, { x: 85, y: 15 }];
 const fileliMetric = [{
@@ -548,12 +549,48 @@ const fileliMetric = [{
   },
 }];
 const fState = createDefaultState();
+assert.equal(fState.fileli.acrylicOverlapMm, 3, 'Default Fileli acrylic overlap must be 3 mm');
 const fileliItems = extractNestingItems(fileliMetric, fState);
 assert.equal(fileliItems.length, 3);
 assert.deepEqual(fileliItems.map(i => i.partGroup), ['file_frame', 'fileli_acrylic', 'fileli_dekota']);
-assert.equal(new Set(fileliItems.map(i => i.materialGroup)).size, 1, 'All 3 fileli groups must appear together on the unified sheet');
+assert.equal(new Set(fileliItems.map(i => i.materialGroup)).size, 3, 'Each of the 3 Fileli groups must receive its own dedicated sheet group');
 assert.equal(new Set(fileliItems.map(i => i.partColor)).size, 3, 'Each fileli group must carry a distinct color');
 assert.equal(fileliItems[0].holes.length, 1, 'File Çerçeve must emit hollow frame contours');
+
+// Verify Pleksi cutting contour expands outward by acrylicOverlapMm per side (default +3 mm -> 76x76 mm)
+const acBounds3 = polygonBounds(fileliItems[1].outer);
+assert(Math.abs(acBounds3.width - 76) < 0.15 && Math.abs(acBounds3.height - 76) < 0.15,
+  `Expected 76x76 mm Pleksi (+3 mm per side over 70x70 mm file inner hole), got ${acBounds3.width.toFixed(2)}x${acBounds3.height.toFixed(2)}`);
+
+// Verify customer-adjustable overlap (5 mm -> 80x80 mm)
+const customOverlapState = createDefaultState();
+customOverlapState.fileli.acrylicOverlapMm = 5;
+const customItems = extractNestingItems(fileliMetric, customOverlapState);
+const acBounds5 = polygonBounds(customItems[1].outer);
+assert(Math.abs(acBounds5.width - 80) < 0.15 && Math.abs(acBounds5.height - 80) < 0.15,
+  `Expected 80x80 mm Pleksi (+5 mm per side), got ${acBounds5.width.toFixed(2)}x${acBounds5.height.toFixed(2)}`);
+
+// Verify separate sheet tabs created by runTrueShapeNesting (File, Pleksi, Dekota)
+const splitNested = runTrueShapeNesting(fileliItems, fState.nesting);
+assert.equal(splitNested.sheets.length, 3, 'Fileli must produce 3 separate sheet tabs (File Çerçeve, Pleksi, Arka Dekota)');
+assert.deepEqual(splitNested.sheets.map(s => s.placements[0].partGroup), ['file_frame', 'fileli_acrylic', 'fileli_dekota']);
+fState.nesting.sheets = splitNested.sheets;
+const splitUiHtml = renderNestingCenter(fState, { activeSheetIdx: 1 });
+assert(splitUiHtml.includes('id="cwsNestAcrylicOverlap"'), 'Nesting settings must expose customer-adjustable Pleksi binme payı input');
+assert(splitUiHtml.includes('sheet-tab-dot'), 'Separate sheet tabs must display group color indicators');
+assert(splitUiHtml.includes('File Çerçeve') && splitUiHtml.includes('Pleksi') && splitUiHtml.includes('Arka Dekota'));
+
+// Verify real buildChannelComponent emits larger acrylicCut than file inner opening & respects sidewall clamp
+const sqShape = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(100, 0), new THREE.Vector2(100, 100), new THREE.Vector2(0, 100)]);
+const builtSq3 = buildChannelComponent([sqShape], { constructionType: 'fileli', depthMm: 80, fileWidthMm: 8, metalThicknessMm: 1, acrylicOverlapMm: 3 });
+const cutB3 = polygonBounds(builtSq3.exportContours.acrylicCut[0].outer);
+const visB3 = polygonBounds(builtSq3.exportContours.acrylic[0].outer);
+assert(Math.abs(visB3.width - 84) < 0.15 && Math.abs(cutB3.width - 90) < 0.15,
+  `File inner opening 84 mm + 3 mm overlap/side must yield 90 mm acrylicCut (got ${cutB3.width.toFixed(2)} mm)`);
+assert(builtSq3.metrics.acrylicAreaMm2 + builtSq3.metrics.fileAreaMm2 <= builtSq3.metrics.outerAreaMm2 * 1.025);
+const builtSqClamped = buildChannelComponent([sqShape], { constructionType: 'fileli', depthMm: 80, fileWidthMm: 4, metalThicknessMm: 1, acrylicOverlapMm: 10 });
+const cutBClamp = polygonBounds(builtSqClamped.exportContours.acrylicCut[0].outer);
+assert(cutBClamp.width <= 98.15, `Excessive overlap must clamp inside 1 mm metal sidewall (<= 98 mm, got ${cutBClamp.width.toFixed(2)})`);
 
 const metalOnlyItems = extractNestingItems([{ ...fileliMetric[0], constructionType: 'metal' }], fState);
 assert.equal(metalOnlyItems.length, 1);
@@ -580,7 +617,7 @@ const grpSvg = renderNestingSvg(grpSheet, null, fState.nesting.previewColors, 'm
 assert(grpSvg.includes('nest-group-dimmed'), 'Non-active color groups must be visually isolated on SVG');
 assert(grpSvg.includes('fill="none"') && !grpSvg.includes('fill-opacity'), 'Nesting SVG must use stroke-only outlines with zero interior fills');
 assert(mainJs.includes('async function repackNestingSettings(label,updateNesting,quickImport=false)'));
-console.log('✓ Fileli 3-color grouped nesting, non-fileli exclusion, left-panel group controls & repack true-shape fix verified');
+console.log('✓ Fileli 3-color separate sheet tabs, +3 mm adjustable Pleksi overlap, non-fileli exclusion & group controls verified');
 
 // 15. Cinzel 'Z' & universal node auto-healing, vivid Fileli/Pleksi glow, return sidewall costing & Kenar Çıtaları nesting button
 const loadFontFile = p => {

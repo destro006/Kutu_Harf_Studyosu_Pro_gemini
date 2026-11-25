@@ -11,7 +11,7 @@ import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v15';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v24';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v25';
 import {
   nextNestingSelection,
   deleteNestingParts,
@@ -410,6 +410,7 @@ function computeSceneWithoutWebGL(state, loadedFonts, intentional=false) {
           fileThicknessMm: state.fileli?.fileThicknessMm ?? 2,
           metalThicknessMm: state.fileli?.metalThicknessMm ?? 1,
           acrylicThicknessMm: state.fileli?.acrylicThicknessMm ?? 3,
+          acrylicOverlapMm: state.fileli?.acrylicOverlapMm ?? 3,
           acrylicInsetMm: state.fileli?.acrylicInsetMm ?? 2.5,
           borderBevelMm: state.fileli?.borderBevelMm ?? 0.8,
         });
@@ -1018,6 +1019,7 @@ function renderManufacturingDocker(state) {
       <div class="field-row"><label>File Genişliği (${unit})</label><input id="mfgFileW" type="number" step="any" min="${show(0)}" max="${show(40)}" value="${show(fw)}"></div>
       <div class="field-row"><label>Kenar Çıta Ebatı (${unit})</label><input id="mfgDepth" type="number" step="any" min="${show(10)}" max="${show(400)}" value="${show(obj?.depthMm ?? 80)}"></div>
       <div class="field-row"><label>Pleksi Kalınlığı (${unit})</label><input id="mfgAcThick" type="number" min="${show(1)}" max="${show(20)}" step="${show(0.5)}" value="${show(state.fileli?.acrylicThicknessMm ?? 3)}"></div>
+      <div class="field-row"><label>Pleksi Binme Payı (${unit})</label><input id="mfgAcOverlap" type="number" min="0" max="${show(25)}" step="${show(0.5)}" value="${show(state.fileli?.acrylicOverlapMm ?? 3)}"></div>
       <div class="field-row"><label>Pleksi İçe Çökme (${unit})</label><input id="mfgAcInset" type="number" min="${show(0)}" max="${show(20)}" step="${show(0.5)}" value="${show(state.fileli?.acrylicInsetMm ?? 2.5)}"></div>
       <div class="field-row"><label>Ön File Metal Yüksekliği (${unit})</label><input id="mfgMetThick" type="number" min="${show(0.5)}" max="${show(5)}" step="${show(0.1)}" value="${show(state.fileli?.fileThicknessMm ?? 2)}"></div>
       <div class="field-row"><label>Yanak Sac Kalınlığı (${unit})</label><input id="mfgWallThickness" type="number" min="${show(0.2)}" max="${show(3)}" step="${show(0.1)}" value="${show(state.fileli?.metalThicknessMm ?? 1)}"></div>
@@ -1547,6 +1549,10 @@ function renderDesignWs(state) {
       <div class="field-row">
         <label>Pleksi Kalınlığı (${unit})</label>
         <input id="wsAcrylicThickMm" type="number" min="${show(1.5)}" max="${show(15)}" step="${show(0.5)}" value="${show(state.fileli.acrylicThicknessMm)}">
+      </div>
+      <div class="field-row" title="Pleksinin filenin iç boşluğundan her kenarda kaç mm büyük kesileceği (varsayılan 3 mm)">
+        <label>Pleksi Binme Payı (${unit})</label>
+        <input id="wsAcrylicOverlapMm" type="number" min="0" max="${show(25)}" step="${show(0.5)}" value="${show(state.fileli.acrylicOverlapMm ?? 3)}">
       </div>
     </section>
     ` : ''}
@@ -2204,7 +2210,7 @@ function bindWorkspaceEvents(ws, root) {
     });
 
     const bindNum = (id, fn) => root.querySelector('#' + id)?.addEventListener('change', e => {
-      const units=['wsHeightMm','wsWidthMm','wsDepthMm','wsSpacingMm','wsFileWidthMm','wsFileThickMm','wsWallThicknessMm','wsBorderBevelMm','wsAcrylicInsetMm','wsAcrylicThickMm'];
+      const units=['wsHeightMm','wsWidthMm','wsDepthMm','wsSpacingMm','wsFileWidthMm','wsFileThickMm','wsWallThicknessMm','wsBorderBevelMm','wsAcrylicInsetMm','wsAcrylicThickMm','wsAcrylicOverlapMm'];
       const value=units.includes(id)?displayToMm(e.target.value,store.get().pageLayout?.displayUnit):Number(e.target.value);
       if(Number.isFinite(value))mutate('Ölçü değiştirildi',s=>fn(s,value));
     });
@@ -2245,6 +2251,7 @@ function bindWorkspaceEvents(ws, root) {
     bindNum('wsBorderBevelMm', (s, v) => { s.fileli.borderBevelMm = Math.max(0, v || 0); });
     bindNum('wsAcrylicInsetMm', (s, v) => { s.fileli.acrylicInsetMm = Math.max(0, v || 0); });
     bindNum('wsAcrylicThickMm', (s, v) => { s.fileli.acrylicThicknessMm = Math.max(1, v || 3); });
+    bindNum('wsAcrylicOverlapMm', (s, v) => { s.fileli.acrylicOverlapMm = Math.max(0, Math.min(25, Number.isFinite(v) ? v : 3)); });
 
     root.querySelector('#logoThreshold')?.addEventListener('input', e => { logoTraceOptions.threshold = Number(e.target.value); });
     root.querySelector('#logoBgTol')?.addEventListener('input', e => { logoTraceOptions.bgTolerance = Number(e.target.value); });
@@ -2447,6 +2454,7 @@ function bindWorkspaceEvents(ws, root) {
     bindM('mfgFileW', (s, v) => { const fw = Math.max(0, Math.min(40, v)); s.fileli.fileWidthMm = fw; const o = getSelectedOrFirst(s); if (o) o.fileWidthMm = fw; });
     bindM('mfgDepth', (s, v) => { const o = getSelectedOrFirst(s); if (o) o.depthMm = Math.max(10, v); });
     bindM('mfgAcThick', (s, v) => { s.fileli.acrylicThicknessMm = Math.max(1, v); });
+    bindM('mfgAcOverlap', (s, v) => { s.fileli.acrylicOverlapMm = Math.max(0, Math.min(25, Number.isFinite(v) ? v : 3)); });
     bindM('mfgAcInset', (s, v) => { s.fileli.acrylicInsetMm = Math.max(0, v); });
     bindM('mfgMetThick', (s, v) => { s.fileli.fileThicknessMm = Math.max(0.5, v); });
     bindM('mfgWallThickness', (s, v) => { s.fileli.metalThicknessMm = Math.max(0.2, Math.min(3, v)); });
@@ -3098,7 +3106,7 @@ function setMainWorkspace(ws) {
 
 // Keep the Nesting sheet-size editor mounted. Replacing the entire workspace DOM
 // on every mutation closes native <select> menus and discards input focus.
-function syncNestingSettingsControls(sidebar, nesting, displayUnit) {
+function syncNestingSettingsControls(sidebar, nesting, displayUnit, fileli = null) {
   const unit=normalizeDisplayUnit(displayUnit),show=mm=>formatMmAsUnit(mm,unit);
   if (!sidebar) return;
   const values = {
@@ -3107,6 +3115,7 @@ function syncNestingSettingsControls(sidebar, nesting, displayUnit) {
     cwsNestH: show(nesting.sheetHeightMm),
     cwsNestSp: show(nesting.clearanceMm),
     cwsNestMg: show(nesting.marginLeftMm),
+    cwsNestAcrylicOverlap: show(fileli?.acrylicOverlapMm ?? 3),
     cwsNestRot: nesting.rotationStepDeg ?? 'auto',
     cwsNestStrategy: nesting.placementStrategy || 'auto',
     cwsNestBodyColor: nesting.previewColors?.body || '#c89343',
@@ -3161,7 +3170,7 @@ function updateCenterWorkspaces(state) {
         const tabs = el.querySelector('.nesting-source-tabs');
         const nextTabs = template.content.querySelector('.nesting-source-tabs');
         if (tabs && nextTabs) tabs.replaceWith(nextTabs);
-        syncNestingSettingsControls(grid.querySelector('.cws-side-r'), state.nesting,state.pageLayout?.displayUnit);
+        syncNestingSettingsControls(grid.querySelector('.cws-side-r'), state.nesting,state.pageLayout?.displayUnit,state.fileli);
         const oldCnc=grid.querySelector('#nestCncPanel'),newCnc=template.content.querySelector('#nestCncPanel');
         for(const id of ['cwsExpCorel','cwsExpSvg','cwsExpDxf','cwsExpCsv']){const old=grid.querySelector('#'+id),fresh=template.content.querySelector('#'+id);if(old&&fresh)old.disabled=fresh.disabled;}
         if(oldCnc&&newCnc){
@@ -3821,6 +3830,16 @@ function bindNestingCenterEvents(root) {
     if (Number.isFinite(v) && v >= 0) repackNestingSettings('Levha kenar payı', n => {
       n.marginMm = n.marginLeftMm = n.marginRightMm = n.marginTopMm = n.marginBottomMm = v;
     });
+  });
+  root.querySelector('#cwsNestAcrylicOverlap')?.addEventListener('change', e => {
+    const v = displayToMm(e.target.value, store.get().pageLayout?.displayUnit);
+    if (!Number.isFinite(v) || v < 0) return;
+    const clamped = Math.max(0, Math.min(25, v));
+    mutateData('Pleksi binme payı', s => {
+      s.fileli ||= {};
+      s.fileli.acrylicOverlapMm = clamped;
+    }, false);
+    repackNestingSettings('Pleksi binme payı', () => {}, false);
   });
   root.querySelector('#cwsNestHoles')?.addEventListener('change', e =>
     repackNestingSettings('Delik içi yerleşim', n => { n.allowHoleNesting = e.target.checked; }));

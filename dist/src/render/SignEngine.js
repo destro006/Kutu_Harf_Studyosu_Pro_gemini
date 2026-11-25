@@ -821,11 +821,12 @@ export class SignEngine {
         borderBevelMm: state.fileli?.borderBevelMm ?? 0.8,
         acrylicInsetMm: state.fileli?.acrylicInsetMm ?? 2.5,
         acrylicThicknessMm: state.fileli?.acrylicThicknessMm ?? 3,
+        acrylicOverlapMm: state.fileli?.acrylicOverlapMm ?? 3,
       };
       const cfgKey = [
         cType, buildCfg.depthMm, buildCfg.bevelMm, buildCfg.fileWidthMm,
         buildCfg.fileThicknessMm, buildCfg.metalThicknessMm, buildCfg.borderBevelMm,
-        buildCfg.acrylicInsetMm, buildCfg.acrylicThicknessMm, scaleX, scaleY,
+        buildCfg.acrylicInsetMm, buildCfg.acrylicThicknessMm, buildCfg.acrylicOverlapMm, scaleX, scaleY,
       ].join('|');
 
       for (let gIdx = 0; gIdx < shapesMmGroups.length; gIdx++) {

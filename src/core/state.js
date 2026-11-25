@@ -33,6 +33,7 @@ export function createDefaultState() {
       borderBevelMm: 0.8,
       acrylicInsetMm: 2.5,
       acrylicThicknessMm: 3,
+      acrylicOverlapMm: 3, // Pleksinin filenin iç boşluğundan her kenarda taşma (binme) payı (mm)
       acrylicColor: '#f3f3ee',
     },
 

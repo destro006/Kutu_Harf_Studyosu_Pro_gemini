@@ -12,7 +12,10 @@ export function collectManufacturingContours(metricsList) {
   const contours=[];
   for (const m of metricsList || []) {
     for (const role of ['outer','file','acrylic']) {
-      for (const poly of m.exportContours?.[role] || []) {
+      const rolePolys = role === 'acrylic' && m.exportContours?.acrylicCut?.length
+        ? m.exportContours.acrylicCut
+        : (m.exportContours?.[role] || []);
+      for (const poly of rolePolys) {
         for (const ring of [poly.outer,...(poly.holes || [])]) {
           if (!validRing(ring)) continue;
           contours.push({role, label:String(m.label||''),

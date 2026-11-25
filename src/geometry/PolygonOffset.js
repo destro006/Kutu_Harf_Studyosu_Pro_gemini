@@ -570,6 +570,109 @@ export function computeFileliContours(outerCCW, holesCW, fileWidthMm) {
 }
 
 /**
+ * Computes the enlarged Pleksi (acrylic) cutting contour for Fileli letters.
+ * Offsetting inward from the outer boundary by `max(wallThicknessMm, fileWidthMm - overlapMm)`
+ * ensures the acrylic extends behind the metal file rim by `overlapMm` per side
+ * while remaining safely inside the metal sidewall return.
+ */
+export function computeFileliAcrylicCutContours(outerCCW, holesCW, fileWidthMm, overlapMm = 3, wallThicknessMm = 1) {
+  const safeWall = Math.max(0.4, Number(wallThicknessMm) || 1);
+  const safeOverlap = Math.max(0, Number(overlapMm) || 0);
+  const fw = Math.max(0, Number(fileWidthMm) || 0);
+  const cutInsetMm = fw <= 0.05 ? 0 : Math.max(safeWall, fw - safeOverlap);
+
+  if (cutInsetMm <= 0.05) {
+    const healed = healPolygonWithHoles(outerCCW, holesCW, 0.025);
+    const outer = healed.outer.length >= 3 ? healed.outer : ensureWinding(outerCCW, true);
+    return {
+      ok: outer.length >= 3,
+      acrylicPolys: outer.length >= 3 ? [{ outer, holes: healed.holes }] : [],
+      cutInsetMm: 0,
+      warning: null,
+    };
+  }
+
+  let res = computeFileliContours(outerCCW, holesCW, cutInsetMm);
+  if (!res.ok && cutInsetMm < fw) {
+    res = computeFileliContours(outerCCW, holesCW, fw);
+  }
+  return {
+    ok: res.ok,
+    acrylicPolys: res.acrylicPolys || [],
+    cutInsetMm,
+    warning: res.warning || null,
+  };
+}
+
+/**
+ * Expands existing Fileli visible acrylic contours outward by `overlapMm` per side,
+ * optionally clamped inside the letter's metal sidewall cavity (`outerPolysMm` inset by `wallThicknessMm`).
+ */
+export function expandAcrylicContoursWithOverlap(acrylicContours, overlapMm = 3, outerPolysMm = null, wallThicknessMm = 1) {
+  const safeOverlap = Math.max(0, Number(overlapMm) || 0);
+  if (safeOverlap <= 0.05 || !acrylicContours?.length) {
+    return acrylicContours || [];
+  }
+  const cleanTol = Math.min(0.05, Math.max(0.015, safeOverlap * 0.08));
+  try {
+    const co = new Clipper.ClipperOffset(2.2, 0.2 * CLIPPER_SCALE);
+    for (const poly of acrylicContours) {
+      if (!poly?.outer || poly.outer.length < 3) continue;
+      co.AddPath(toClipperPath(poly.outer, true), Clipper.JoinType.jtMiter, Clipper.EndType.etClosedPolygon);
+      for (const h of poly.holes || []) {
+        if (h?.length >= 3) {
+          co.AddPath(toClipperPath(h, false), Clipper.JoinType.jtMiter, Clipper.EndType.etClosedPolygon);
+        }
+      }
+    }
+    const expandedTree = new Clipper.PolyTree();
+    co.Execute(expandedTree, safeOverlap * CLIPPER_SCALE);
+    let resultPolys = extractPolyTreeRings(expandedTree, cleanTol, 0.5);
+    if (!resultPolys.length) return acrylicContours;
+
+    if (outerPolysMm?.length) {
+      const safeWall = Math.max(0.4, Number(wallThicknessMm) || 1);
+      const clampCo = new Clipper.ClipperOffset(2.2, 0.2 * CLIPPER_SCALE);
+      let addedOuter = false;
+      for (const op of outerPolysMm) {
+        if (!op?.outer || op.outer.length < 3) continue;
+        clampCo.AddPath(toClipperPath(op.outer, true), Clipper.JoinType.jtMiter, Clipper.EndType.etClosedPolygon);
+        for (const h of op.holes || []) {
+          if (h?.length >= 3) {
+            clampCo.AddPath(toClipperPath(h, false), Clipper.JoinType.jtMiter, Clipper.EndType.etClosedPolygon);
+          }
+        }
+        addedOuter = true;
+      }
+      if (addedOuter) {
+        const cavityTree = new Clipper.PolyTree();
+        clampCo.Execute(cavityTree, -safeWall * CLIPPER_SCALE);
+        const cavityPolys = extractPolyTreeRings(cavityTree, cleanTol, 0.5);
+        if (cavityPolys.length) {
+          const interCl = new Clipper.Clipper();
+          for (const ep of resultPolys) {
+            interCl.AddPath(toClipperPath(ep.outer, true), Clipper.PolyType.ptSubject, true);
+            for (const h of ep.holes) interCl.AddPath(toClipperPath(h, false), Clipper.PolyType.ptSubject, true);
+          }
+          for (const cp of cavityPolys) {
+            interCl.AddPath(toClipperPath(cp.outer, true), Clipper.PolyType.ptClip, true);
+            for (const h of cp.holes) interCl.AddPath(toClipperPath(h, false), Clipper.PolyType.ptClip, true);
+          }
+          const clampedTree = new Clipper.PolyTree();
+          if (interCl.Execute(Clipper.ClipType.ctIntersection, clampedTree, Clipper.PolyFillType.pftEvenOdd, Clipper.PolyFillType.pftEvenOdd)) {
+            const clampedPolys = extractPolyTreeRings(clampedTree, cleanTol, 0.5);
+            if (clampedPolys.length) resultPolys = clampedPolys;
+          }
+        }
+      }
+    }
+    return resultPolys;
+  } catch {
+    return acrylicContours;
+  }
+}
+
+/**
  * 2D Polygon Boolean Operations (Union, Difference, Intersection)
  * via Sutherland-Hodgman / Weiler-Atherton-style contour clipping for CAD tools.
  */

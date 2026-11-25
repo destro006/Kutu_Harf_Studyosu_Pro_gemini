@@ -63,7 +63,7 @@ export function generateManufacturingSvg(metricsList) {
         holes: (poly.holes || []).map(h => shiftRing(h, ox, oy)),
       });
     }
-    for (const poly of (m.exportContours?.acrylic || [])) {
+    for (const poly of (m.exportContours?.acrylicCut?.length ? m.exportContours.acrylicCut : m.exportContours?.acrylic || [])) {
       shiftedAcrylic.push({
         label: m.label,
         outer: shiftRing(poly.outer, ox, oy),
@@ -151,7 +151,7 @@ export function generateManufacturingDxf(metricsList) {
       emitPoly(poly.outer, 'FILE_BORDER', ox, oy);
       for (const h of (poly.holes || [])) emitPoly(h, 'FILE_BORDER', ox, oy);
     }
-    for (const poly of (m.exportContours?.acrylic || [])) {
+    for (const poly of (m.exportContours?.acrylicCut?.length ? m.exportContours.acrylicCut : m.exportContours?.acrylic || [])) {
       emitPoly(poly.outer, 'ACRYLIC', ox, oy);
       for (const h of (poly.holes || [])) emitPoly(h, 'ACRYLIC', ox, oy);
     }

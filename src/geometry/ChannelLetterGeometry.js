@@ -1,6 +1,7 @@
 import THREE from '../vendor/three.js';
 import {
   computeFileliContours,
+  computeFileliAcrylicCutContours,
   ensureWinding,
   healPolygonWithHoles,
   polygonArea,
@@ -88,6 +89,7 @@ export function buildChannelComponent(shapesMm, config) {
     borderBevelMm = 0.8,
     acrylicInsetMm = 2.5,
     acrylicThicknessMm = 3,
+    acrylicOverlapMm = 3,
     includeBacking = false,
   } = config;
 
@@ -101,7 +103,9 @@ export function buildChannelComponent(shapesMm, config) {
   const exportOuterContours = [];
   const exportFileContours = [];
   const exportAcrylicContours = [];
+  const exportAcrylicCutContours = [];
   const exportSidewallStrips = [];
+  const safeOverlapMm = Math.max(0, Number(acrylicOverlapMm) || 0);
 
   let outerAreaMm2 = 0;
   let acrylicAreaMm2 = 0;
@@ -176,6 +180,7 @@ export function buildChannelComponent(shapesMm, config) {
         // opening. Its front face remains below the channel's front plane.
         acrylicAreaMm2 += polyNetArea;
         exportAcrylicContours.push({ outer: poly.outer, holes: poly.holes });
+        exportAcrylicCutContours.push({ outer: poly.outer, holes: poly.holes });
         const acThick = Math.max(1.5, acrylicThicknessMm);
         const acGeo = extrudeShapeMm(bodyShapeM, acThick, 0, 1);
         const acZ = Math.max(2, depthMm - acrylicInsetMm - acThick);
@@ -192,6 +197,7 @@ export function buildChannelComponent(shapesMm, config) {
           putWall();
           acrylicAreaMm2 += polyNetArea;
           exportAcrylicContours.push({ outer: poly.outer, holes: poly.holes });
+          exportAcrylicCutContours.push({ outer: poly.outer, holes: poly.holes });
           const acThick = Math.max(1.5, acrylicThicknessMm);
           const acGeo = extrudeShapeMm(bodyShapeM, acThick, 0, 1);
           acGeo.translate(0, 0, Math.max(2, depthMm - acrylicInsetMm - acThick) * MM_TO_M);
@@ -223,11 +229,17 @@ export function buildChannelComponent(shapesMm, config) {
             acGeo.translate(0, 0, acZ * MM_TO_M);
             acrylicGeos.push(acGeo);
           }
+          const cutRes = computeFileliAcrylicCutContours(poly.outer, poly.holes, fileWidthMm, safeOverlapMm, wallThickness);
+          const cutPolys = (cutRes.ok && cutRes.acrylicPolys.length) ? cutRes.acrylicPolys : acPolys;
+          for (const cp of cutPolys) {
+            exportAcrylicCutContours.push({ outer: cp.outer, holes: cp.holes || [] });
+          }
         }
       }
     } else if (constructionType === 'pleksi') {
       acrylicAreaMm2 += polyNetArea;
       exportAcrylicContours.push({ outer: poly.outer, holes: poly.holes });
+      exportAcrylicCutContours.push({ outer: poly.outer, holes: poly.holes });
 
       const shapeM = polygonMmToThreeShape(poly.outer, poly.holes, MM_TO_M);
       const acThick = Math.max(3, acrylicThicknessMm);
@@ -259,6 +271,8 @@ export function buildChannelComponent(shapesMm, config) {
       outer: exportOuterContours,
       file: exportFileContours,
       acrylic: exportAcrylicContours,
+      acrylicCut: exportAcrylicCutContours,
+      acrylicOverlapMm: safeOverlapMm,
       sidewallStrips: exportSidewallStrips,
       backing: includeBacking ? exportOuterContours : [],
     },
@@ -270,6 +284,9 @@ export function buildChannelComponent(shapesMm, config) {
       sidewallAreaMm2,
       perimeterMm,
       cuttingLengthMm: perimeterMm + exportFileContours.reduce((s, c) => s + polygonPerimeter(c.outer), 0),
+      fileWidthMm,
+      metalThicknessMm: Math.max(0.2, Math.min(3, metalThicknessMm)),
+      acrylicOverlapMm: safeOverlapMm,
     },
     warnings,
   };
