@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {generateWallPixels} from '../src/photomontage/WallTextureGenerator.js';
-import {loadWallPixels,BACKGROUND_SCENES} from '../src/photomontage/BackgroundLibrary.js';
+import {loadWallPixels,computeWallRepeat,BACKGROUND_SCENES} from '../src/photomontage/BackgroundLibrary.js';
 import {SignEngine} from '../src/render/SignEngine.js';
 const events=[];const data=generateWallPixels('studioPremium',p=>events.push(p));
 assert.equal(data.color.length,512*512*4);assert.equal(data.bump.length,data.color.length);assert.equal(events[0],0);assert.equal(events.at(-1),100);assert(events.every((p,i)=>!i||p>=events[i-1]));
@@ -17,4 +18,9 @@ for(const id of ['beton','mermer','siva']){
 const again=loadWallPixels('tugla',{workerFactory:factory});assert.equal(worker.id,'tugla','LRU must evict old pair');worker.onmessage({data:{id:'tugla',result:data}});await again;
 assert.equal(BACKGROUND_SCENES.length,15);
 const engine={_paused:true,isDisposed:false};assert.doesNotThrow(()=>SignEngine.prototype.requestWall.call(engine,'mermer',{w:1,h:1},false));
-console.log('✓ Lazy wall worker, real monotonic pixel progress, cancellation, bounded LRU and hidden-workspace guard');
+const r1=computeWallRepeat('tugla',10,10,1.0),rHalf=computeWallRepeat('tugla',10,10,0.5),rDbl=computeWallRepeat('tugla',10,10,2.0);
+assert(Math.abs(rHalf.rx-r1.rx*2)<1e-6&&Math.abs(rDbl.rx-r1.rx*0.5)<1e-6);
+const mainSrc=fs.readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
+const sliderPos=mainSrc.indexOf('id="bgWallScaleRange"'),gridPos=mainSrc.indexOf('class="background-preset-grid"');
+assert(sliderPos>0&&gridPos>sliderPos,'Background scale slider must be positioned directly above background-preset-grid');
+console.log('✓ Lazy wall worker, real monotonic pixel progress, cancellation, bounded LRU, wallScale and hidden-workspace guard');

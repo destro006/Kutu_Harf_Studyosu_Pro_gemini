@@ -97,6 +97,7 @@ export function createDefaultState() {
     scene: {
       night: true,
       wallId: 'studioPremium',
+      wallScale: 1.0,
       transparentBg: false,
       cameraPreset: 'hero',
       showRuler: true,

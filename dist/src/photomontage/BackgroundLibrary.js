@@ -8,21 +8,21 @@ import THREE from '../vendor/three.js';
  */
 
 export const BACKGROUND_SCENES = [
-  { id:'studioPremium',label:'Premium Grafit Stüdyo',category:'studio',roughness:.82,bump:.18,tileM:3.2,metalness:0,envMapIntensity:.45 },
-  { id:'traverten',label:'Bej Traverten',category:'luxury',roughness:.74,bump:.55,tileM:2.2,metalness:0,envMapIntensity:.55 },
-  { id:'kompozit',label:'Antrasit Kompozit Panel',category:'storefront',roughness:.36,bump:.30,tileM:2.6,metalness:.42,envMapIntensity:.85 },
-  { id:'siyahMermer',label:'Nero Mermer',category:'luxury',roughness:.18,bump:.14,tileM:2.5,metalness:.04,envMapIntensity:.95 },
-  { id:'cevizPanel',label:'Ceviz Ahşap Panel',category:'interior',roughness:.44,bump:.65,tileM:1.8,metalness:0,envMapIntensity:.60 },
-  { id:'beyazSiva',label:'Venedik Kırık Beyaz Sıva',category:'wall',roughness:.78,bump:.24,tileM:2.8,metalness:0,envMapIntensity:.50 },
-  { id: 'tugla', label: 'Loft Tuğla', category: 'wall', roughness: 0.90, bump: 1.35, tileM: 2.0, metalness: 0, envMapIntensity: 0.38 },
-  { id: 'beton', label: 'Brüt Beton', category: 'wall', roughness: 0.88, bump: 0.80, tileM: 2.4, metalness: 0, envMapIntensity: 0.42 },
-  { id: 'ahsap', label: 'Meşe Çıta Panel', category: 'wall', roughness: 0.56, bump: 1.30, tileM: 1.4, metalness: 0, envMapIntensity: 0.55 },
-  { id: 'siva', label: 'Antrasit Mikrobeton', category: 'wall', roughness: 0.78, bump: 0.50, tileM: 2.2, metalness: 0, envMapIntensity: 0.48 },
-  { id: 'mermer', label: 'Calacatta Mermer', category: 'luxury', roughness: 0.18, bump: 0.22, tileM: 2.4, metalness: 0.04, envMapIntensity: 0.95 },
-  { id: 'vitrin', label: 'Bronz Mağaza Cephesi', category: 'storefront', roughness: 0.36, bump: 0.38, tileM: 2.4, metalness: 0.38, envMapIntensity: 0.90 },
-  { id: 'resepsiyon', label: 'Yivli Taş Resepsiyon', category: 'interior', roughness: 0.62, bump: 0.95, tileM: 2.0, metalness: 0, envMapIntensity: 0.55 },
-  { id: 'karanlikCephe', label: 'Bazalt Taş Cephe', category: 'luxury', roughness: 0.72, bump: 0.95, tileM: 2.2, metalness: 0.05, envMapIntensity: 0.52 },
-  { id: 'studioNotr', label: 'Grej Galeri Stüdyosu', category: 'studio', roughness: 0.84, bump: 0.14, tileM: 3.0, metalness: 0, envMapIntensity: 0.48 },
+  { id:'studioPremium',label:'Premium Grafit Stüdyo',category:'studio',roughness:.82,bump:.18,tileM:2.4,metalness:0,envMapIntensity:.45 },
+  { id:'traverten',label:'Bej Traverten',category:'luxury',roughness:.74,bump:.55,tileM:1.6,metalness:0,envMapIntensity:.55 },
+  { id:'kompozit',label:'Antrasit Kompozit Panel',category:'storefront',roughness:.36,bump:.30,tileM:1.8,metalness:.42,envMapIntensity:.85 },
+  { id:'siyahMermer',label:'Nero Mermer',category:'luxury',roughness:.18,bump:.14,tileM:1.8,metalness:.04,envMapIntensity:.95 },
+  { id:'cevizPanel',label:'Ceviz Ahşap Panel',category:'interior',roughness:.44,bump:.65,tileM:1.35,metalness:0,envMapIntensity:.60 },
+  { id:'beyazSiva',label:'Venedik Kırık Beyaz Sıva',category:'wall',roughness:.78,bump:.24,tileM:2.0,metalness:0,envMapIntensity:.50 },
+  { id: 'tugla', label: 'Loft Tuğla', category: 'wall', roughness: 0.90, bump: 1.35, tileM: 1.45, metalness: 0, envMapIntensity: 0.38 },
+  { id: 'beton', label: 'Brüt Beton', category: 'wall', roughness: 0.88, bump: 0.80, tileM: 1.7, metalness: 0, envMapIntensity: 0.42 },
+  { id: 'ahsap', label: 'Meşe Çıta Panel', category: 'wall', roughness: 0.56, bump: 1.30, tileM: 1.0, metalness: 0, envMapIntensity: 0.55 },
+  { id: 'siva', label: 'Antrasit Mikrobeton', category: 'wall', roughness: 0.78, bump: 0.50, tileM: 1.7, metalness: 0, envMapIntensity: 0.48 },
+  { id: 'mermer', label: 'Calacatta Mermer', category: 'luxury', roughness: 0.18, bump: 0.22, tileM: 1.8, metalness: 0.04, envMapIntensity: 0.95 },
+  { id: 'vitrin', label: 'Bronz Mağaza Cephesi', category: 'storefront', roughness: 0.36, bump: 0.38, tileM: 1.8, metalness: 0.38, envMapIntensity: 0.90 },
+  { id: 'resepsiyon', label: 'Yivli Taş Resepsiyon', category: 'interior', roughness: 0.62, bump: 0.95, tileM: 1.4, metalness: 0, envMapIntensity: 0.55 },
+  { id: 'karanlikCephe', label: 'Bazalt Taş Cephe', category: 'luxury', roughness: 0.72, bump: 0.95, tileM: 1.6, metalness: 0.05, envMapIntensity: 0.52 },
+  { id: 'studioNotr', label: 'Grej Galeri Stüdyosu', category: 'studio', roughness: 0.84, bump: 0.14, tileM: 2.2, metalness: 0, envMapIntensity: 0.48 },
 ];
 
 // Only selected backgrounds are generated. Keep at most three recently
@@ -62,13 +62,20 @@ export function loadWallPixels(wallId,{signal,onProgress=()=>{},workerFactory=()
    try{worker.postMessage({id});}catch(e){complete(e);}
  });
 }
-export function createWallTextures(wallId,widthM,heightM,pixels){
+export function computeWallRepeat(wallId,widthM,heightM,wallScale=1.0){
  const meta=BACKGROUND_SCENES.find(b=>b.id===normalizeWallId(wallId));
+ const scale=Math.max(0.25,Math.min(2.5,Number(wallScale)||1.0));
+ const effTile=Math.max(0.2,meta.tileM*scale);
+ return {rx:Math.max(1,widthM/effTile),ry:Math.max(1,heightM/effTile)};
+}
+export function createWallTextures(wallId,widthM,heightM,pixels,wallScale=1.0){
+ const meta=BACKGROUND_SCENES.find(b=>b.id===normalizeWallId(wallId));
+ const {rx,ry}=computeWallRepeat(wallId,widthM,heightM,wallScale);
  const make=(bytes,isColor)=>{
    const canvas=document.createElement('canvas');canvas.width=canvas.height=pixels.size;
    const ctx=canvas.getContext('2d');ctx.putImageData(new ImageData(bytes,pixels.size,pixels.size),0,0);
    const tex=new THREE.CanvasTexture(canvas);if(isColor)tex.colorSpace=THREE.SRGBColorSpace;
-   tex.wrapS=tex.wrapT=THREE.RepeatWrapping;tex.repeat.set(Math.max(1,widthM/meta.tileM),Math.max(1,heightM/meta.tileM));tex.anisotropy=8;
+   tex.wrapS=tex.wrapT=THREE.RepeatWrapping;tex.repeat.set(rx,ry);tex.anisotropy=8;
    tex._disposeOnClear=true;return tex;
  };
  const roughnessMap=pixels.roughness?make(pixels.roughness,false):null;

@@ -6,7 +6,7 @@ import { resolveChannelMaterialBinding } from './ChannelMaterialBinding.js';
 import { EnvironmentManager, ENVIRONMENT_PRESETS } from './EnvironmentManager.js';
 import { buildSceneLights, createHaloTexture } from './LightingSystem.js';
 import { PostProcessor } from './PostProcessor.js';
-import { loadWallPixels, createWallTextures, normalizeWallId } from '../photomontage/BackgroundLibrary.js';
+import { loadWallPixels, createWallTextures, computeWallRepeat, normalizeWallId } from '../photomontage/BackgroundLibrary.js';
 import { buildChannelComponent } from '../geometry/ChannelLetterGeometry.js';
 import { layoutTextMm } from '../geometry/FontManager.js';
 
@@ -121,6 +121,8 @@ export class SignEngine {
     this.disposables = [];
     this.selectableRoots = [];
     this.lastSizeM = { w: 2.0, h: 0.4 };
+    this._wallScale = 1.0;
+    this._wallDims = null;
     this.quality = 'high';
     this.isDisposed = false;
 
@@ -968,7 +970,7 @@ export class SignEngine {
     }
 
     // The wall is loaded independently; geometry and controls remain responsive.
-    this.requestWall(state.scene?.wallId,sizeM,transparentBg);
+    this.requestWall(state.scene?.wallId,sizeM,transparentBg,state.scene?.wallScale??1.0);
 
     // Scene lighting
     const lightsKey=[night,Math.round(sizeM.w*10),Math.round(sizeM.h*10),prof.shadowSize].join('|');
@@ -1222,12 +1224,29 @@ export class SignEngine {
     this._wallRequest=null;
     this.callbacks?.onWallLoad?.({phase:'idle'});
   }
-  requestWall(wallId,sizeM=this.lastSizeM,transparent=false){
+  updateWallScale(wallScale=1.0){
+    if(this.isDisposed)return;
+    const scale=Math.max(0.25,Math.min(2.5,Number(wallScale)||1.0));
+    this._wallScale=scale;
+    if(!this._wallDims||!this.wallGroup?.children?.length)return;
+    const {rx,ry}=computeWallRepeat(this._wallDims.id,this._wallDims.w,this._wallDims.h,scale);
+    for(const child of this.wallGroup.children){
+      const mat=child.material;
+      if(!mat)continue;
+      for(const tex of [mat.map,mat.bumpMap,mat.roughnessMap]){
+        if(tex){tex.repeat.set(rx,ry);tex.needsUpdate=true;}
+      }
+    }
+    this.invalidate(true);
+  }
+  requestWall(wallId,sizeM=this.lastSizeM,transparent=false,wallScale=this._wallScale){
     if(this.isDisposed||this._paused)return;
+    const sc=Math.max(0.25,Math.min(2.5,Number(wallScale)||1.0));
+    this._wallScale=sc;
     const id=normalizeWallId(wallId),w=Math.max(16,Math.ceil(sizeM.w*3.5)),h=Math.max(10,Math.ceil(sizeM.h*5));
     const key=transparent?'transparent':id+'|'+w+'|'+h;
-    if(transparent){this.cancelWallLoad();this._clearGroup(this.wallGroup);this._wallKey=key;this.invalidate(true);return;}
-    if(this._wallKey===key){if(this._wallRequest)this.cancelWallLoad();return;}
+    if(transparent){this.cancelWallLoad();this._clearGroup(this.wallGroup);this._wallKey=key;this._wallDims=null;this.invalidate(true);return;}
+    if(this._wallKey===key){if(this._wallRequest)this.cancelWallLoad();this._wallDims={id,w,h};this.updateWallScale(sc);return;}
     if(this._wallRequest?.id===id){Object.assign(this._wallRequest,{key,w,h});return;}
     this.cancelWallLoad();
     const request={id,key,w,h,controller:new AbortController()};this._wallRequest=request;
@@ -1236,7 +1255,8 @@ export class SignEngine {
     publish('loading',0);
     loadWallPixels(id,{signal:request.controller.signal,onProgress:p=>publish('loading',Math.min(99,p))}).then(pixels=>{
       if(!valid())return;
-      const wt=createWallTextures(id,request.w,request.h,pixels);
+      this._wallDims={id,w:request.w,h:request.h};
+      const wt=createWallTextures(id,request.w,request.h,pixels,this._wallScale);
       const planeGeo = new THREE.PlaneGeometry(request.w, request.h, 24, 16);
       const posAttr = planeGeo.getAttribute('position');
       const vCount = posAttr.count;
