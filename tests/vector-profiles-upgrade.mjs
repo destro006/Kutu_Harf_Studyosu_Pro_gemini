@@ -12,6 +12,7 @@ import {
   getCorelInstallerPs1Script,
   getCorelPluginBasScript,
   getCorelAddonXslt,
+  copySvgVectorToClipboard,
 } from '../src/export/CorelDrawBridge.js';
 import {
   getDefaultMachineConnection,
@@ -207,10 +208,10 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v8'));
-assert(rootHtml.includes('./src/main.js?v=20261126-v21'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v21'));
+assert(rootHtml.includes('./src/main.js?v=20261126-v22'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v22'));
 assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
-assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v21'));
+assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v22'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -409,6 +410,28 @@ assert.equal(decodedPs1, getCorelBridgePs1Script());
 assert(decodedPs1.includes('127.0.0.1:$($port)/') && decodedPs1.includes('Access-Control-Allow-Private-Network'));
 assert(decodedPs1.includes('CorelDRAW.Application') && decodedPs1.includes('ApplyNoFill()') && !decodedPs1.includes('ApplyUniformFill') && decodedPs1.includes('Outline.Color.RGBAssign'));
 assert(decodedPs1.includes('Mutex') && decodedPs1.includes('NotifyIcon') && decodedPs1.includes('/api/pull-from-corel') && decodedPs1.includes('/api/import-latest') && decodedPs1.includes('FILE_CERCEVE'));
+assert(decodedPs1.includes('/api/copy-vector-clipboard') && decodedPs1.includes('Set-VectorClipboard') && decodedPs1.includes('SetFileDropList') && decodedPs1.includes('image/svg+xml') && decodedPs1.includes('ApartmentState'));
+assert(!mainJs.includes('navigator.clipboard.writeText(svg)') && mainJs.includes('copySvgVectorToClipboard(svg)'));
+
+// Verify copySvgVectorToClipboard writes ONLY vector image/svg+xml (never text/plain XML) when browser ClipboardItem is used
+const origClip = globalThis.navigator?.clipboard;
+const origClipItem = globalThis.ClipboardItem;
+let capturedMimeKeys = [];
+try {
+  globalThis.ClipboardItem = class MockClipboardItem {
+    constructor(items) { capturedMimeKeys = Object.keys(items); }
+  };
+  Object.defineProperty(globalThis.navigator, 'clipboard', {
+    configurable: true,
+    value: { write: async () => {} },
+  });
+  const clipRes = await copySvgVectorToClipboard('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+  assert.equal(clipRes.ok, true);
+  assert.deepEqual(capturedMimeKeys, ['image/svg+xml']);
+} finally {
+  if (origClipItem === undefined) delete globalThis.ClipboardItem; else globalThis.ClipboardItem = origClipItem;
+  if (origClip !== undefined) Object.defineProperty(globalThis.navigator, 'clipboard', { configurable: true, value: origClip });
+}
 
 const instB64Block = launcherBat.match(/::###INSTALLER_B64_START###\r?\n([\s\S]*?)\r?\n::###INSTALLER_B64_END###/)[1].replace(/^::/gm, '').replace(/\s+/g, '');
 const decodedInstallerPs1 = Buffer.from(instB64Block, 'base64').toString('utf8');

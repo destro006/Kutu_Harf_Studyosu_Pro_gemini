@@ -11,7 +11,7 @@ import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v15';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v21';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v22';
 import {nextNestingSelection,deleteNestingParts,moveNestingParts} from './manufacturing/NestingSelection.js?v=nest7';
 import { generateNestedGcode, generateNestedHpgl,validateNestedProduction,MACHINE_PROFILES,getMachineProfile } from './export/CncGcodeExporter.js';
 import { HistoryManager } from './core/history.js';
@@ -47,8 +47,9 @@ import {
   checkCorelBridgeStatus,
   sendNestingToCorel,
   pullSelectionFromCorel,
+  copySvgVectorToClipboard,
   wakeCorelBridgeProtocol,
-} from './export/CorelDrawBridge.js?v=20261126-v21';
+} from './export/CorelDrawBridge.js?v=20261126-v22';
 import {
   CNC_TRANSPORT_MODES,
   loadMachineConnection,
@@ -5060,11 +5061,12 @@ function bindCorelBridgeModal() {
     const sheets = s.nesting?.sheets || [];
     if (!sheets.length) return;
     const svg = generateCorelColoredSvg(sheets, s.nesting?.previewColors, s.projectName);
-    try {
-      await navigator.clipboard.writeText(svg);
-      studioToast('✓ CorelDRAW Renkli 1:1 mm SVG panoya kopyalandı — CorelDRAW içinde Ctrl+V yapabilirsiniz.');
-    } catch {
+    const res = await copySvgVectorToClipboard(svg);
+    if (res.ok) {
+      studioToast('✓ Vektör çizim (1:1 mm SVG) panoya kopyalandı — CorelDRAW içinde Ctrl+V ile doğrudan nesne olarak yapıştırabilirsiniz.');
+    } else {
       downloadBlob(`${s.projectName || 'KutuHarf'}_CorelDRAW.svg`, svg, 'image/svg+xml');
+      studioToast('Tarayıcı doğrudan vektör panosunu desteklemiyor; 1:1 mm SVG indirildi (CorelDRAW içine sürükleyip bırakın veya Tek Seferlik Kurulumu yükleyin).');
     }
   });
   document.getElementById('btnCorelDownloadBas')?.addEventListener('click', () => {

@@ -569,6 +569,37 @@ function Import-NestingToCorel($payload) {
   }
 }
 
+function Set-VectorClipboard([string]$svgText) {
+  if ([string]::IsNullOrWhiteSpace($svgText)) {
+    return @{ ok = $false; error = "Kopyalanacak SVG verisi bos." }
+  }
+  $clipSvgPath = Join-Path $env:TEMP "KutuHarfStudyosu_Pano.svg"
+  [System.IO.File]::WriteAllText($clipSvgPath, $svgText, [System.Text.UTF8Encoding]::new($false))
+  $svgBytes = [System.Text.Encoding]::UTF8.GetBytes($svgText)
+  $state = [hashtable]::Synchronized(@{ Path = $clipSvgPath; Bytes = $svgBytes; Error = $null })
+  $t = New-Object System.Threading.Thread([System.Threading.ParameterizedThreadStart]{
+    param($arg)
+    try {
+      $dataObj = New-Object System.Windows.Forms.DataObject
+      $ms = New-Object System.IO.MemoryStream(,([byte[]]$arg.Bytes))
+      $dataObj.SetData("image/svg+xml", $false, $ms)
+      $files = New-Object System.Collections.Specialized.StringCollection
+      [void]$files.Add([string]$arg.Path)
+      $dataObj.SetFileDropList($files)
+      [System.Windows.Forms.Clipboard]::SetDataObject($dataObj, $true)
+    } catch {
+      $arg.Error = [string]$_.Exception.Message
+    }
+  })
+  $t.SetApartmentState([System.Threading.ApartmentState]::STA)
+  $t.Start($state)
+  $t.Join()
+  if ($state.Error) {
+    return @{ ok = $false; error = [string]$state.Error }
+  }
+  return @{ ok = $true; filePath = $clipSvgPath; formats = @("image/svg+xml", "FileDrop") }
+}
+
 function Export-SelectionFromCorel() {
   $corel = $null
   try { $corel = [Runtime.InteropServices.Marshal]::GetActiveObject("CorelDRAW.Application") } catch {}
@@ -633,6 +664,15 @@ while ($runningLoop -and $listener.IsListening) {
     }
     if ($method -eq "POST" -and $path -eq "/api/pull-from-corel") {
       $res = Export-SelectionFromCorel
+      if ($res["ok"]) { Send-JsonResponse $ctx 200 $res } else { Send-JsonResponse $ctx 400 $res }
+      continue
+    }
+    if ($method -eq "POST" -and $path -eq "/api/copy-vector-clipboard") {
+      $sr = New-Object System.IO.StreamReader($ctx.Request.InputStream, [System.Text.Encoding]::UTF8)
+      $raw = $sr.ReadToEnd()
+      $bodyObj = $jsonSer.DeserializeObject($raw)
+      $svgStr = if ($bodyObj -and $bodyObj.ContainsKey("svgText")) { [string]$bodyObj["svgText"] } else { "" }
+      $res = Set-VectorClipboard $svgStr
       if ($res["ok"]) { Send-JsonResponse $ctx 200 $res } else { Send-JsonResponse $ctx 400 $res }
       continue
     }
@@ -868,4 +908,45 @@ export async function sendNestingToCorel(sheets, previewColors = {}, projectName
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Copies 1:1 mm SVG to clipboard as real vector data (image/svg+xml + Windows FileDrop),
+ * NEVER as plain text/plain XML so CorelDRAW pastes editable vector curves instead of text.
+ */
+export async function copySvgVectorToClipboard(svgText) {
+  if (!svgText || typeof svgText !== 'string') {
+    return { ok: false, error: 'Kopyalanacak SVG verisi yok.' };
+  }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 1500);
+  try {
+    const res = await fetch(`${COREL_BRIDGE_URL}/api/copy-vector-clipboard`, {
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ svgText }),
+      signal: ctrl.signal,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.ok) {
+      return { ok: true, method: 'bridge', ...data };
+    }
+  } catch {
+    // Local bridge offline; try native Async Clipboard API vector MIME flavor.
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.write && typeof ClipboardItem !== 'undefined') {
+    try {
+      const svgBlob = new Blob([svgText], { type: 'image/svg+xml' });
+      await navigator.clipboard.write([new ClipboardItem({ 'image/svg+xml': svgBlob })]);
+      return { ok: true, method: 'browser-svg' };
+    } catch {
+      // Browser does not allow or support image/svg+xml ClipboardItem.
+    }
+  }
+
+  return { ok: false, fallbackDownload: true };
 }
