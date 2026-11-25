@@ -215,10 +215,10 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v8'));
-assert(rootHtml.includes('./src/main.js?v=20261126-v23'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v23'));
+assert(rootHtml.includes('./src/main.js?v=20261126-v24'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v24'));
 assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
-assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v23'));
+assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v24'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -750,4 +750,14 @@ try {
   if (origDoc === undefined) delete globalThis.document; else globalThis.document = origDoc;
 }
 assert(mainJs.includes('function selectAllNestingParts()') && mainJs.includes('function duplicateNestingSelection()') && mainJs.includes("['model3d','materials','design2d','nesting'].includes(ws)"));
-console.log('✓ Nesting CorelDRAW CAD features (Ctrl+A, 2-click rotate gizmo/bar, alignment & cut/copy/paste/duplicate) verified');
+// Collapsible left Nesting panel + default-collapsed group accordions + single-line rows
+const collapsedByDefaultHtml = renderNestingCenter(grpSheetStateSafe(fState), { activeSheetIdx: 0 });
+assert(!/<details class="nest-group-box[^"]*"[^>]*\bopen\b/.test(collapsedByDefaultHtml), 'Nesting part/color groups must start collapsed by default');
+const onlyOneOpenHtml = renderNestingCenter(grpSheetStateSafe(fState), { activeSheetIdx: 0, openGroups: new Set(['fileli_acrylic']) });
+assert((onlyOneOpenHtml.match(/<details class="nest-group-box[^"]*"[^>]*\bopen\b/g) || []).length === 1, 'Only explicitly toggled group should be expanded');
+const collapsedSidebarHtml = renderNestingCenter(grpSheetStateSafe(fState), { activeSheetIdx: 0, leftPanelCollapsed: true });
+assert(collapsedSidebarHtml.includes('cws-left-collapsed') && collapsedSidebarHtml.includes('id="cwsToggleLeftPanel"'));
+assert(studioCss.includes('.nesting-part-row{flex-wrap:nowrap;align-items:center}'));
+console.log('✓ Nesting CorelDRAW CAD features (Ctrl+A, 2-click rotate gizmo/bar, alignment & cut/copy/paste/duplicate) + collapsible sidebar verified');
+
+function grpSheetStateSafe(st) { return st; }

@@ -11,7 +11,7 @@ import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v15';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v23';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v24';
 import {
   nextNestingSelection,
   deleteNestingParts,
@@ -259,6 +259,8 @@ function setDocumentClipboardStatus(message) {
 }
 let nestingRotateMode = false;
 let nestingClipboard = null;
+let nestingLeftCollapsed = false;
+const nestingOpenGroups = new Set();
 function copySelectionToClipboard(includeLocked = true) {
   if (store.get().mainWorkspace === 'nesting') {
     const s = store.get();
@@ -3143,10 +3145,11 @@ function updateCenterWorkspaces(state) {
       if(nestingGesture?.active)return;
       syncNestingSelectionScope(state);
       if (!selectedNestingIds.size) nestingRotateMode = false;
-      const html=renderNestingCenter(state,{activeSheetIdx,selectedPlacementId:selectedNestingId,selectedPlacementIds:[...selectedNestingIds],advancedOpen:nestingAdvancedOpen,activePartGroup:activeNestingGroup,rotateMode:nestingRotateMode});
+      const html=renderNestingCenter(state,{activeSheetIdx,selectedPlacementId:selectedNestingId,selectedPlacementIds:[...selectedNestingIds],advancedOpen:nestingAdvancedOpen,activePartGroup:activeNestingGroup,rotateMode:nestingRotateMode,leftPanelCollapsed:nestingLeftCollapsed,openGroups:nestingOpenGroups});
       if(el._lastHtml===html)return;
       el._lastHtml=html;
       if (grid && currentTabId === targetTabId && el.querySelector('.nesting-workspace')?.dataset.displayUnit===normalizeDisplayUnit(state.pageLayout?.displayUnit) && grid.querySelector('.cws-side-r')) {
+        grid.classList.toggle('cws-left-collapsed', nestingLeftCollapsed);
         // Replace only changing parts; preserve the exact right-panel DOM node.
         const template = document.createElement('template');
         template.innerHTML = html;
@@ -3608,6 +3611,40 @@ function bindNestingCenterEvents(root) {
     updateCenterWorkspaces(store.get());
     updateNumericBar(store.get());
   });
+  root.querySelector('#cwsToggleLeftPanel')?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    nestingLeftCollapsed = !nestingLeftCollapsed;
+    const wrap = document.getElementById('nestingCenterWrap');
+    if (wrap) wrap._lastHtml = null;
+    updateCenterWorkspaces(store.get());
+  });
+  root.querySelector('#cwsToggleAllGroups')?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    const boxes = [...root.querySelectorAll('details.nest-group-box[data-nest-group]')];
+    const anyOpen = boxes.some(d => d.open);
+    nestingOpenGroups.clear();
+    if (!anyOpen) boxes.forEach(d => nestingOpenGroups.add(d.dataset.nestGroup));
+    const wrap = document.getElementById('nestingCenterWrap');
+    if (wrap) wrap._lastHtml = null;
+    updateCenterWorkspaces(store.get());
+  });
+  root.querySelectorAll('details.nest-group-box[data-nest-group]').forEach(d => {
+    d.addEventListener('toggle', () => {
+      const gid = d.dataset.nestGroup;
+      if (!gid) return;
+      if (d.open) nestingOpenGroups.add(gid);
+      else nestingOpenGroups.delete(gid);
+      const tBtn = root.querySelector('#cwsToggleAllGroups');
+      if (tBtn) tBtn.textContent = nestingOpenGroups.size > 0 ? 'Tümünü Kapat' : 'Tümünü Aç';
+    });
+  });
+  root.querySelectorAll('[data-nest-select-all-btn]').forEach(b => b.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    selectAllNestingParts();
+  }));
   root.querySelectorAll('[data-nest-group-color]').forEach(el => {
     el.addEventListener('click', e => e.stopPropagation());
     el.addEventListener('change', e => {

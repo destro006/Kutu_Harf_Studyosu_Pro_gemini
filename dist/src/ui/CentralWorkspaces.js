@@ -54,6 +54,11 @@ export function renderNestingCenter(state, ctx) {
   }
   const partGroups = [...partGroupsMap.values()];
   const activeGroup = (ctx.activePartGroup && partGroupsMap.has(ctx.activePartGroup)) ? ctx.activePartGroup : null;
+  const leftCollapsed = Boolean(ctx.leftPanelCollapsed);
+  const openGroupsSet = ctx.openGroups instanceof Set
+    ? ctx.openGroups
+    : new Set(Array.isArray(ctx.openGroups) ? ctx.openGroups : []);
+  const anyGroupOpen = partGroups.length > 1 ? partGroups.some(g => openGroupsSet.has(g.id)) : openGroupsSet.has('all');
   const isSidewallMode = (n.targetPart || 'all') === 'sidewalls';
   const totalStripLenMm = sheets.reduce((sum, sh) => sum + sh.placements.filter(p => p.partGroup === 'sidewall_strip').reduce((a, p) => a + (p.bounds?.width || 0), 0), 0);
   const rotateMode = Boolean(ctx.rotateMode && selectedIds.size > 0);
@@ -63,7 +68,7 @@ export function renderNestingCenter(state, ctx) {
     <div class="layer-item nesting-part-row ${selectedIds.has(p.id) ? 'on' : ''}" data-cws-pid="${escapeHtml(p.id)}" aria-selected="${selectedIds.has(p.id)}">
       <input type="checkbox" data-cws-check aria-label="${escapeHtml(p.label)} seç" ${selectedIds.has(p.id)?'checked':''}>
       ${colorDot ? `<i class="nest-part-dot" style="background:${colorDot}"></i>` : ''}
-      <span class="layer-name">${p.locked ? '🔒 ' : ''}${escapeHtml(p.label)}</span>
+      <span class="layer-name" title="${escapeHtml(p.label)}">${p.locked ? '🔒 ' : ''}${escapeHtml(p.label)}</span>
       <small class="nesting-part-size">${formatMmAsUnit(p.bounds?.width||0,unit,2)}×${formatMmAsUnit(p.bounds?.height||0,unit,2)} ${unit}</small>
       <button type="button" class="nesting-part-delete" data-cws-delete aria-label="${escapeHtml(p.label)} sil" title="${p.locked?'Kilitli parça':'Parçayı sil'}" ${p.locked?'disabled':''}>×</button>
     </div>
@@ -72,10 +77,14 @@ export function renderNestingCenter(state, ctx) {
   return `
     <div class="nesting-workspace" data-nesting-tab="${n.activeTabId || 'design'}" data-display-unit="${unit}">
     ${renderNestingSourceTabs(n)}
-    <div class="center-ws-grid">
-      <!-- Left: Part List & Color Groups -->
+    <div class="center-ws-grid ${leftCollapsed ? 'cws-left-collapsed' : ''}">
+      <!-- Left: Part List & Color Groups (Collapsible) -->
       <div class="cws-side">
-        <h3 class="sec-title">İmalat Parçaları (${totalParts}) <small id="nestingSelectedCount">${selectedIds.size?selectedIds.size+' seçili':''}</small></h3>
+        <div class="cws-side-header">
+          <h3 class="sec-title">İmalat Parçaları (${totalParts}) <small id="nestingSelectedCount">${selectedIds.size?selectedIds.size+' seçili':''}</small></h3>
+          ${!leftCollapsed && sheets.length ? `<button type="button" id="cwsToggleAllGroups" class="cws-side-mini-btn" title="${anyGroupOpen ? 'Tüm parça gruplarını daralt' : 'Tüm parça gruplarını aç'}">${anyGroupOpen ? 'Tümünü Kapat' : 'Tümünü Aç'}</button>` : ''}
+          <button type="button" id="cwsToggleLeftPanel" class="cws-side-mini-btn" aria-expanded="${!leftCollapsed}" title="${leftCollapsed ? 'Parça panelini aç' : 'Parça panelini daralt (tuvali genişlet)'}">${leftCollapsed ? '»' : '«'}</button>
+        </div>
         ${isSidewallMode ? `
           <div class="cws-sidewall-banner">
             <div>
@@ -96,8 +105,9 @@ export function renderNestingCenter(state, ctx) {
             </div>
             <div class="nest-group-list">
               ${partGroups.map(g => `
-                <details class="nest-group-box ${activeGroup === g.id ? 'focused' : ''}" data-nest-group="${escapeHtml(g.id)}" open>
+                <details class="nest-group-box ${activeGroup === g.id ? 'focused' : ''}" data-nest-group="${escapeHtml(g.id)}"${openGroupsSet.has(g.id) ? ' open' : ''}>
                   <summary class="nest-group-head">
+                    <span class="nest-group-caret" aria-hidden="true">▸</span>
                     <input type="color" class="nest-group-color-pick" data-nest-group-color="${escapeHtml(g.id)}" value="${g.color}" title="${escapeHtml(g.label)} grup rengini seç">
                     <span class="nest-group-title">${escapeHtml(g.label)} <small>(${g.items.length})</small></span>
                     <button type="button" class="nest-group-act" data-nest-group-select="${escapeHtml(g.id)}" title="Bu gruptaki tüm parçaları seç">Seç</button>
@@ -110,9 +120,16 @@ export function renderNestingCenter(state, ctx) {
               `).join('')}
             </div>
           ` : `
-            <div style="display:flex;flex-direction:column;gap:4px">
-              ${(activeSheet?.placements || []).map(p => renderPartRow(p)).join('')}
-            </div>
+            <details class="nest-group-box" data-nest-group="all"${openGroupsSet.has('all') ? ' open' : ''}>
+              <summary class="nest-group-head">
+                <span class="nest-group-caret" aria-hidden="true">▸</span>
+                <span class="nest-group-title">Parça Listesi <small>(${activeSheet?.placements?.length || 0})</small></span>
+                <button type="button" class="nest-group-act" data-nest-select-all-btn title="Tümünü seç (Ctrl+A)">Tümünü Seç</button>
+              </summary>
+              <div class="nest-group-rows">
+                ${(activeSheet?.placements || []).map(p => renderPartRow(p)).join('')}
+              </div>
+            </details>
           `}
         `}
         ${(n.unplaced || []).length ? `
