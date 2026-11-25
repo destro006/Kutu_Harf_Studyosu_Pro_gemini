@@ -190,7 +190,7 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v7'));
-assert(rootHtml.includes('./src/main.js?v=20261125-v10'));
+assert(rootHtml.includes('./src/main.js?v=20261125-v11'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -403,3 +403,17 @@ const cwsHtml = renderNestingCenter(cwsState, { activeSheetIdx: 0 });
 assert(cwsHtml.includes('id="cwsSendCorel"') && cwsHtml.includes('id="cwsExpCorel"') && cwsHtml.includes('id="cwsCorelSetup"'));
 assert(rootHtml.includes('id="corelBridgeModal"'));
 console.log('✓ CorelDRAW 1-click live COM bridge, colored SVG, VBA macro, and UI controls verified');
+
+// 12. Photomontage fixes: full-sign framing, halo capture preservation, cross-tab & Katmanlar visibility, Enter confirmation
+const signEngineSrc = fs.readFileSync(new URL('../src/render/SignEngine.js', import.meta.url), 'utf8');
+assert(signEngineSrc.includes('mesh.userData.isHalo=true') && signEngineSrc.includes('opts.fitToSign'));
+assert(signEngineSrc.includes('!child.userData?.layerId&&!child.userData?.isHalo'));
+assert(signEngineSrc.includes('mat.blending = THREE.NormalBlending'));
+
+const pmOverlaySrc = fs.readFileSync(new URL('../src/ui/PhotomontageOverlay.js', import.meta.url), 'utf8');
+assert(pmOverlaySrc.includes('id="pmConfirmBtn"') && pmOverlaySrc.includes("e.key !== 'Enter'"));
+assert(pmOverlaySrc.includes('id="pmEditPerspBtn"') && pmOverlaySrc.includes("signImg.addEventListener('load', updateTransform)"));
+
+assert(mainJs.includes('fitToSign: true') && mainJs.includes('data-pm-layer="true"'));
+assert(!mainJs.includes("state.activeWorkspace==='background'&&state.photomontage.photoUrl"));
+console.log('✓ Photomontage full framing, halo preservation, Katmanlar layer & Enter confirmation verified');

@@ -463,13 +463,30 @@ function updateStageChrome(state) {
     b.classList.toggle('on', b.dataset.wall === state.scene.wallId);
   });
 
-  // Photomontage preview sync
-  if(is3DWorkspace(state)&&state.activeWorkspace==='background'&&state.photomontage.photoUrl&&signEngine&&!signEngine.isDisposed){
-    if(!dragBeforeState&&lastPhotomontageScene!==lastSceneResult){
-      lastPhotomontageUrl=signEngine.capturePng(900,560,{transparent:true});lastPhotomontageScene=lastSceneResult;
+  // Photomontage preview sync (visible across all 3D tabs when photo is loaded and visible)
+  if (is3DWorkspace(state) && state.photomontage?.photoUrl && state.photomontage.visible !== false && signEngine && !signEngine.isDisposed) {
+    const pmKey = pmRenderKey(state);
+    if (!dragBeforeState && (lastPhotomontageScene !== pmKey || !lastPhotomontageUrl)) {
+      lastPhotomontageUrl = capturePhotomontageSign(state);
+      lastPhotomontageScene = pmKey;
     }
-    if(lastPhotomontageUrl)photomontageOverlay?.render(state,lastPhotomontageUrl);
-  }else photomontageOverlay?.container.classList.add('hidden');
+    if (lastPhotomontageUrl) photomontageOverlay?.render(state, lastPhotomontageUrl);
+  } else {
+    photomontageOverlay?.render({ photomontage: { photoUrl: null } }, null);
+  }
+}
+
+function pmRenderKey(state) {
+  const l = state.lighting || {};
+  const objs = (state.objects || []).map(o => `${o.id}:${o.visible}:${o.text}:${o.fontId}:${o.faceMaterial}:${o.faceColor}:${o.lightingMode}:${o.backColor}:${o.backIntensity}:${o.frontColor}:${o.frontIntensity}:${o.xMm}:${o.yMm}:${o.scaleX}:${o.scaleY}`).join('|');
+  return [state.scene?.night, l.enabled, l.mode, l.colorHex, l.frontColor, l.frontIntensity, l.backColor, l.backIntensity, l.haloSpread, l.wallDistanceMm, objs].join('~');
+}
+
+function capturePhotomontageSign(state) {
+  const sz = lastSceneResult?.sizeM || signEngine?.lastSizeM || { w: 2.0, h: 0.45 };
+  const capW = 1400;
+  const capH = Math.max(380, Math.min(1000, Math.round(capW * ((sz.h + 0.30) / Math.max(0.5, sz.w + 0.36)))));
+  return signEngine.capturePng(capW, capH, { transparent: true, fitToSign: true });
 }
 
 function editLighting(key,value){
@@ -1666,9 +1683,10 @@ function renderLightingWs(state) {
 }
 
 function renderLayersWs(state) {
+  const pm = state.photomontage;
   return `
     <section class="sec">
-      <h3 class="sec-title">Katman Yöneticisi <small>${state.objects.length} nesne</small></h3>
+      <h3 class="sec-title">Katman Yöneticisi <small>${state.objects.length + (pm?.photoUrl ? 1 : 0)} öğe</small></h3>
       <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
         <button type="button" id="btnGrp" class="sec-btn">Grupla</button>
         <button type="button" id="btnUngrp" class="sec-btn">Grubu Çöz</button>
@@ -1686,6 +1704,14 @@ function renderLayersWs(state) {
             <button type="button" class="icon-btn" data-dn="${o.id}" title="Aşağı Taşı">↓</button>
           </div>
         `).join('')}
+        ${pm?.photoUrl ? `
+          <div class="layer-item ${pm.visible !== false ? 'on' : ''}" id="pmLayerRow" data-pm-layer="true" style="margin-top:8px;border-color:rgba(255,181,71,.3)">
+            <button type="button" class="icon-btn" id="btnLayerPmVis" title="Arka Plan Görünürlüğü">${pm.visible !== false ? '👁' : '🚫'}</button>
+            <button type="button" class="icon-btn" id="btnLayerPmPersp" title="${pm.confirmed ? 'Perspektifi Düzenle' : 'Perspektifi Onayla (Enter)'}">${pm.confirmed ? '⤢' : '✓'}</button>
+            <span class="layer-name" title="${escapeAttr(pm.photoName || 'Cephe Arka Plan Fotoğrafı')}">🖼 Arka Plan: ${escapeHtml(pm.photoName || 'Cephe Fotoğrafı')}</span>
+            <button type="button" class="icon-btn" id="btnLayerPmDel" title="Arka Plan Fotoğrafını Kaldır" style="color:var(--danger)">🗑</button>
+          </div>
+        ` : ''}
       </div>
     </section>
   `;
@@ -1728,7 +1754,10 @@ function renderBackgroundWs(state) {
         <input id="pmPhotoUpload" type="file" accept="image/png,image/jpeg,image/webp" class="hidden">
       </label>
       ${pm.photoUrl ? `
-        <p style="font-size:12px;color:var(--ok);margin:0 0 8px">Yüklü: ${escapeHtml(pm.photoName)}. Sahnedeki 4 sarı köşe tutamacını sürükleyerek perspektifi oturtun.</p>
+        <p style="font-size:12px;color:var(--ok);margin:0 0 8px">Yüklü: ${escapeHtml(pm.photoName)} · ${pm.confirmed ? '<b>Perspektif Onaylı</b>' : '4 sarı köşeyi sürükleyip Enter ile onaylayın.'}</p>
+        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+          <button type="button" id="btnTogglePmConfirm" class="${pm.confirmed ? 'sec-btn' : 'cta-btn'}">${pm.confirmed ? '⤢ Perspektifi Düzenle' : '✓ Perspektifi Onayla (Enter)'}</button>
+        </div>
         <div class="field-row"><label>Duvar Gölge Şiddeti</label><input id="pmShadow" type="range" min="0" max="1" step="0.05" value="${pm.wallShadow}"></div>
         <div class="field-row"><label>Ortam Işık Uyumu</label><input id="pmAmbient" type="range" min="0" max="1" step="0.05" value="${pm.ambientMatch}"></div>
         <div style="display:flex;gap:6px;margin-top:8px">
@@ -2250,6 +2279,21 @@ function bindWorkspaceEvents(ws, root) {
     root.querySelector('#btnUngrp')?.addEventListener('click', () => mutate('Grubu çöz', s => ungroupSelectedLayers(s)));
     root.querySelector('#btnDupLayer')?.addEventListener('click', () => mutate('Çoğalt', s => duplicateSelectedLayers(s)));
     root.querySelector('#btnDelLayer')?.addEventListener('click', () => mutate('Sil', s => deleteSelectedLayers(s)));
+    root.querySelector('#btnLayerPmVis')?.addEventListener('click', () => {
+      store.update(s => { s.photomontage.visible = s.photomontage.visible === false; });
+      updateStageChrome(store.get());
+      renderActiveWorkspace();
+    });
+    root.querySelector('#btnLayerPmPersp')?.addEventListener('click', () => {
+      store.update(s => { s.photomontage.confirmed = !s.photomontage.confirmed; s.photomontage.visible = true; });
+      updateStageChrome(store.get());
+      renderActiveWorkspace();
+    });
+    root.querySelector('#btnLayerPmDel')?.addEventListener('click', () => mutate('Arka plan fotoğrafı kaldır', s => {
+      s.photomontage.photoUrl = null;
+      s.photomontage.confirmed = false;
+      s.photomontage.visible = true;
+    }));
   } else if (ws === 'background') {
     root.querySelector('#bgWallScaleRange')?.addEventListener('input', e => applyWallScaleChange(e.target.value, false));
     root.querySelector('#bgWallScaleRange')?.addEventListener('change', e => applyWallScaleChange(e.target.value, true));
@@ -2262,12 +2306,23 @@ function bindWorkspaceEvents(ws, root) {
       if (!f) return;
       const reader = new FileReader();
       reader.onload = () => {
+        lastPhotomontageScene = null;
+        lastPhotomontageUrl = null;
         mutate('Müşteri fotoğrafı', s => {
           s.photomontage.photoUrl = reader.result;
           s.photomontage.photoName = f.name;
+          s.photomontage.visible = true;
+          s.photomontage.confirmed = false;
         });
       };
       reader.readAsDataURL(f);
+    });
+    root.querySelector('#btnTogglePmConfirm')?.addEventListener('click', () => {
+      const next = !store.get().photomontage?.confirmed;
+      store.update(s => { s.photomontage.confirmed = next; });
+      updateStageChrome(store.get());
+      renderActiveWorkspace();
+      if (next) studioToast('✓ Perspektif onaylandı.');
     });
     root.querySelector('#pmShadow')?.addEventListener('input', e => {
       store.update(s => { s.photomontage.wallShadow = Number(e.target.value); });
@@ -4027,8 +4082,33 @@ function init() {
     return signEngine;
   };
 
-  photomontageOverlay = new PhotomontageOverlay(document.getElementById('photomontageLayer'), (corners) => {
-    store.update(s => { s.photomontage.cornersNorm = corners; });
+  photomontageOverlay = new PhotomontageOverlay(document.getElementById('photomontageLayer'), {
+    onCornersChange: (corners) => {
+      store.update(s => { s.photomontage.cornersNorm = corners; });
+    },
+    onConfirm: () => {
+      store.update(s => { s.photomontage.confirmed = true; });
+      updateStageChrome(store.get());
+      renderActiveWorkspace();
+      studioToast('✓ Perspektif onaylandı. Tekrar düzenlemek için "Perspektifi Düzenle"ye tıklayın.');
+    },
+    onEdit: () => {
+      store.update(s => { s.photomontage.confirmed = false; });
+      updateStageChrome(store.get());
+      renderActiveWorkspace();
+    },
+    onResetCorners: () => {
+      store.update(s => {
+        s.photomontage.cornersNorm = [
+          { x: 0.22, y: 0.28 },
+          { x: 0.78, y: 0.28 },
+          { x: 0.78, y: 0.62 },
+          { x: 0.22, y: 0.62 },
+        ];
+      });
+      updateStageChrome(store.get());
+    },
+    onExport: () => photomontageOverlay.exportComposite(store.get(), signEngine),
   });
 
   // Workspace tabs (click to switch, drag to tear-off floating window or dock under another tab)

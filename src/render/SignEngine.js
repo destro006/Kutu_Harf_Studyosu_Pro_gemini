@@ -964,7 +964,9 @@ export class SignEngine {
       const halo=createHaloTexture(job.shapes,{minX:box.min.x,maxX:box.max.x,minY:box.min.y,maxY:box.max.y},{wallDistanceMm:job.light.wallDistanceMm,haloSpread:job.light.haloSpread,falloff:job.light.falloff,letterHeightM:height});
       halo.texture._disposeOnClear=true;
       const mesh=new THREE.Mesh(new THREE.PlaneGeometry(halo.widthM,halo.heightM),new THREE.MeshBasicMaterial({map:halo.texture,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
-      mesh.position.set(halo.cxM,halo.cyM,.002);mesh.renderOrder=2;mesh.raycast=()=>{};this.signGroup.add(mesh);refs.halo=mesh;
+      mesh.position.set(halo.cxM,halo.cyM,.002);mesh.renderOrder=2;mesh.raycast=()=>{};
+      mesh.userData.isHalo=true;mesh.userData.haloOwnerId=job.obj.id;
+      this.signGroup.add(mesh);refs.halo=mesh;
       // The contour mask alone illuminates the wall. Point lights create circular hotspots.
       refs.height=height;this.applyObjectLightAppearance(refs,job.light);
     }
@@ -1136,17 +1138,18 @@ export class SignEngine {
     const groups = [this.wallGroup, this.pageGroup, this.selectionGroup];
     const previousGroups = groups.map(g => g.visible);
     const children = this.signGroup.children.map(child => ({child, visible:child.visible}));
+    const savedHalos = [];
     try {
       if (opts.transparent || selectedIds) {
         this.scene.background = null;
         this.renderer.setClearColor(0x000000, 0);
         for (const group of groups) group.visible = false;
       }
-      if(opts.transparent&&!selectedIds)for(const {child} of children)if(!child.userData?.layerId)child.visible=false;
+      if(opts.transparent&&!selectedIds)for(const {child} of children)if(!child.userData?.layerId&&!child.userData?.isHalo)child.visible=false;
       if (selectedIds) {
         const bounds = new THREE.Box3();
         for (const {child} of children) {
-          child.visible = child.visible && selectedIds.has(child.userData?.layerId);
+          child.visible = child.visible && selectedIds.has(child.userData?.layerId || child.userData?.haloOwnerId);
           if (child.visible) bounds.expandByObject(child);
         }
         if (!bounds.isEmpty()) {
@@ -1158,6 +1161,33 @@ export class SignEngine {
           const viewDirection = cameraPos.clone().sub(this.orbit.target).normalize();
           this.camera.position.copy(center).addScaledVector(viewDirection, Math.max(0.25, distance));
           this.camera.lookAt(center);
+        }
+      } else if (opts.fitToSign) {
+        const bounds = new THREE.Box3();
+        for (const { child } of children) {
+          if (child.visible) bounds.expandByObject(child);
+        }
+        if (!bounds.isEmpty()) {
+          const center = bounds.getCenter(new THREE.Vector3());
+          const size = bounds.getSize(new THREE.Vector3());
+          const aspect = width / Math.max(1, height);
+          const fov = THREE.MathUtils.degToRad(this.camera.fov);
+          const halfH = Math.max(size.y * 0.5, (size.x * 0.5) / Math.max(aspect, 0.1));
+          const distance = (halfH / Math.max(0.01, Math.tan(fov * 0.5))) * 1.12 + size.z * 0.6;
+          this.camera.position.set(center.x, center.y, center.z + Math.max(0.25, distance));
+          this.camera.lookAt(center);
+        }
+      }
+      if (opts.transparent) {
+        for (const { child } of children) {
+          if (child.userData?.isHalo && child.visible && child.material && child.material.opacity > 0) {
+            const mat = child.material;
+            savedHalos.push({ mat, blending: mat.blending, opacity: mat.opacity, color: mat.color.clone() });
+            mat.blending = THREE.NormalBlending;
+            const peak = Math.max(1, mat.color.r, mat.color.g, mat.color.b);
+            mat.color.multiplyScalar(1 / peak);
+            mat.opacity = Math.min(0.96, Math.max(mat.opacity * 1.85, 0.62));
+          }
         }
       }
       this.renderer.setPixelRatio(1);
@@ -1174,6 +1204,11 @@ export class SignEngine {
       }
       return this.renderer.domElement.toDataURL('image/png');
     } finally {
+      for (const h of savedHalos) {
+        h.mat.blending = h.blending;
+        h.mat.opacity = h.opacity;
+        h.mat.color.copy(h.color);
+      }
       this.camera.position.copy(cameraPos);
       this.camera.quaternion.copy(cameraQuat);
       this.camera.aspect = prevAspect;

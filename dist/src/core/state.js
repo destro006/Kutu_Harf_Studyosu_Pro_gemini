@@ -107,6 +107,8 @@ export function createDefaultState() {
     photomontage: {
       photoUrl: null,
       photoName: '',
+      visible: true,
+      confirmed: false,
       cornersNorm: [
         { x: 0.22, y: 0.28 },
         { x: 0.78, y: 0.28 },
