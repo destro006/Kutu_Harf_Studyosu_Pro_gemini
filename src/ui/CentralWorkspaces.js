@@ -54,6 +54,8 @@ export function renderNestingCenter(state, ctx) {
   }
   const partGroups = [...partGroupsMap.values()];
   const activeGroup = (ctx.activePartGroup && partGroupsMap.has(ctx.activePartGroup)) ? ctx.activePartGroup : null;
+  const isSidewallMode = (n.targetPart || 'all') === 'sidewalls';
+  const totalStripLenMm = sheets.reduce((sum, sh) => sum + sh.placements.filter(p => p.partGroup === 'sidewall_strip').reduce((a, p) => a + (p.bounds?.width || 0), 0), 0);
   const renderPartRow = (p, colorDot = null) => `
     <div class="layer-item nesting-part-row ${selectedIds.has(p.id) ? 'on' : ''}" data-cws-pid="${escapeHtml(p.id)}" aria-selected="${selectedIds.has(p.id)}">
       <input type="checkbox" data-cws-check aria-label="${escapeHtml(p.label)} seç" ${selectedIds.has(p.id)?'checked':''}>
@@ -71,6 +73,15 @@ export function renderNestingCenter(state, ctx) {
       <!-- Left: Part List & Color Groups -->
       <div class="cws-side">
         <h3 class="sec-title">İmalat Parçaları (${totalParts}) <small id="nestingSelectedCount">${selectedIds.size?selectedIds.size+' seçili':''}</small></h3>
+        ${isSidewallMode ? `
+          <div class="cws-sidewall-banner">
+            <div>
+              <strong>Kenar Çıtaları Modu Aktif</strong>
+              <small>${totalParts} şerit · Toplam ${(totalStripLenMm / 1000).toFixed(2)} m kesim</small>
+            </div>
+            <button type="button" id="cwsBackToFaces" class="sec-btn">← Harf Yüzeylerine Dön</button>
+          </div>
+        ` : ''}
         ${(n.importedTabs||[]).find(t=>t.id===n.activeTabId)?.warnings?.length?`<details class="nesting-import-converters"><summary>İçe aktarma notları</summary>${(n.importedTabs.find(t=>t.id===n.activeTabId).warnings||[]).map(x=>`<p>${escapeHtml(x)}</p>`).join('')}</details>`:''}
         ${!sheets.length ? '<p style="font-size:12px;color:var(--muted)">Parça listesi için "Otomatik Yerleştir"e tıklayın.</p>' : `
           ${partGroups.length > 1 ? `
@@ -123,6 +134,7 @@ export function renderNestingCenter(state, ctx) {
           <div class="cws-nesting-actions">
             <button type="button" id="cwsSendCorel" class="corel-btn" title="Nesting parçalarını, plaka ebatını ve seçili renkleri tek tıkla CorelDRAW'a aktar">✦ Corel'e Aktar</button>
             <button type="button" id="cwsRunNesting" class="cta-btn" title="İçe aktarmadan sonra hassas true-shape optimizasyonu; işlem sürerken tekrar tıklayarak iptal edin">Otomatik Yerleştir</button>
+            <button type="button" id="cwsSidewallStrips" class="sec-btn cws-strips-btn ${isSidewallMode ? 'on' : ''}" title="Yalnızca kutu harflerin kenar dönüş çıtalarını (yanak şeritlerini) kesime hazırla">${isSidewallMode ? '✓ Kenar Çıtaları (Aktif)' : '▭ Kenar Çıtaları'}</button>
             <span class="cws-action-sep" aria-hidden="true"></span>
             <button type="button" id="cwsReoptUnlocked" class="sec-btn">Kilitsizleri Optimize Et</button>
             <button type="button" id="cwsDeletePart" class="sec-btn cws-del-btn" ${removableCount?'':'disabled'} title="Seçilen parçaları yalnızca bu nesting işinden sil">${removableCount>1?'Seçilenleri Sil ('+removableCount+')':'Parçayı Sil'}</button>

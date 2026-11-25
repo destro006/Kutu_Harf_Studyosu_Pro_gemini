@@ -27,8 +27,14 @@ import { detectVectorFormat } from '../src/manufacturing/VectorFormatDetect.js';
 import { importDxfText, importSvgText, importHpglText } from '../src/manufacturing/VectorFileImport.js';
 import { cleanCdrSvg, dwgDatabaseToDxf } from '../src/manufacturing/NativeCadImport.js';
 import { importWmfEmf } from '../src/manufacturing/WmfEmfImport.js';
-import { extractNestingItems, FILELI_NESTING_GROUPS } from '../src/manufacturing/NestingEngine.js';
+import { extractNestingItems, FILELI_NESTING_GROUPS, SIDEWALL_STRIP_GROUP } from '../src/manufacturing/NestingEngine.js';
 import { renderNestingSvg } from '../src/ui/NestingView.js';
+import { parseFont } from '../src/vendor/opentype.mjs';
+import { layoutTextMm } from '../src/geometry/FontManager.js';
+import { buildChannelComponent } from '../src/geometry/ChannelLetterGeometry.js';
+import { healPolygonWithHoles, pointInPolygon, hasSelfIntersection } from '../src/geometry/PolygonOffset.js';
+import { calculateProjectCosts, COST_ROLE_LABELS } from '../src/manufacturing/CostEngine.js';
+import { PostProcessor } from '../src/render/PostProcessor.js';
 
 // 1. Machine profiles catalogue (>= 40 profiles, 5 original IDs intact, dialect G-Code & HPGL)
 assert(MACHINE_PROFILES.length >= 40, `Expected >=40 profiles, got ${MACHINE_PROFILES.length}`);
@@ -201,10 +207,10 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v8'));
-assert(rootHtml.includes('./src/main.js?v=20261126-v20'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v20'));
+assert(rootHtml.includes('./src/main.js?v=20261126-v21'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v21'));
 assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
-assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v20'));
+assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v21'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -545,3 +551,88 @@ assert(grpSvg.includes('nest-group-dimmed'), 'Non-active color groups must be vi
 assert(grpSvg.includes('fill="none"') && !grpSvg.includes('fill-opacity'), 'Nesting SVG must use stroke-only outlines with zero interior fills');
 assert(mainJs.includes('async function repackNestingSettings(label,updateNesting,quickImport=false)'));
 console.log('✓ Fileli 3-color grouped nesting, non-fileli exclusion, left-panel group controls & repack true-shape fix verified');
+
+// 15. Cinzel 'Z' & universal node auto-healing, vivid Fileli/Pleksi glow, return sidewall costing & Kenar Çıtaları nesting button
+const loadFontFile = p => {
+  const b = fs.readFileSync(new URL(p, import.meta.url));
+  return parseFont(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+};
+const cinzelFonts = [
+  loadFontFile('../public/fonts/cinzel-latin-700-normal-C-gK7hA8.woff'),
+  loadFontFile('../public/fonts/cinzel-latin-ext-700-normal-CORa-yIv.woff'),
+];
+const markanizLay = layoutTextMm(cinzelFonts, 'MARKANIZ', 400);
+for (const fw of [5, 8]) {
+  const zGlyph = markanizLay.glyphs.find(g => g.char === 'Z');
+  const zBuilt = buildChannelComponent(zGlyph.shapes, { constructionType: 'fileli', depthMm: 80, fileWidthMm: fw, metalThicknessMm: 1 });
+  assert.equal(zBuilt.warnings.length, 0, `Cinzel Z at fw=${fw} must have zero warnings`);
+  assert(zBuilt.fileGeos.length >= 1 && zBuilt.acrylicGeos.length >= 1);
+  const fPos = zBuilt.fileGeos[0].attributes.position;
+  const fNorm = zBuilt.fileGeos[0].attributes.normal;
+  let actualFileArea = 0;
+  for (let i = 0; i < fPos.count; i += 3) {
+    if (fNorm.getZ(i) > 0.9) {
+      const ax = fPos.getX(i) * 1000, ay = fPos.getY(i) * 1000;
+      const bx = fPos.getX(i + 1) * 1000, by = fPos.getY(i + 1) * 1000;
+      const cx = fPos.getX(i + 2) * 1000, cy = fPos.getY(i + 2) * 1000;
+      actualFileArea += Math.abs((bx - ax) * (cy - ay) - (cx - ax) * (by - ay)) * 0.5;
+    }
+  }
+  const relErr = Math.abs(actualFileArea - zBuilt.metrics.fileAreaMm2) / Math.max(1, zBuilt.metrics.fileAreaMm2);
+  assert(relErr < 0.03, `Cinzel Z fw=${fw} file mesh front area (${actualFileArea.toFixed(0)}) must match ring area (${zBuilt.metrics.fileAreaMm2.toFixed(0)}), relErr=${relErr.toFixed(4)}`);
+  for (const pt of zBuilt.exportContours.acrylic[0].outer) {
+    assert(pointInPolygon(pt, zBuilt.polygonsMm[0].outer), `Acrylic vertex must stay inside outer contour for Z at fw=${fw}`);
+  }
+  for (const g of [...zBuilt.outerGeos, ...zBuilt.fileGeos, ...zBuilt.acrylicGeos]) g.dispose();
+}
+
+// Synthetic open-gap / duplicate-node / self-intersecting bowtie polygon auto-healing
+const dirtyOpenPoly = [
+  { x: 0, y: 0 }, { x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 100, y: 100 }, { x: 40, y: 100 }, { x: 60, y: 60 }, { x: 0, y: 100 },
+];
+const healedDirty = healPolygonWithHoles(dirtyOpenPoly, []);
+assert(healedDirty.outer.length >= 3 && !hasSelfIntersection(healedDirty.outer), 'Dirty/bowtie contours must auto-heal cleanly');
+
+// Fileli/Pleksi glow & bloom calibration
+const postSrc = fs.readFileSync(new URL('../src/render/PostProcessor.js', import.meta.url), 'utf8');
+assert(postSrc.includes('this.bloomThreshold = lit ?'), 'PostProcessor must lower HDR bloom threshold when signage is lit');
+assert(signEngineSrc.includes('frontGlows') && signEngineSrc.includes('isFrontGlow') && signEngineSrc.includes("addGlowPlane(depthM * 0.45, 'side'"), 'SignEngine must render face + acrylic sidewall glow planes');
+
+// Costing: return sidewalls (kenar dönüşleri) included for metal, fileli & pleksi
+assert.equal(COST_ROLE_LABELS.side, 'Kenar Dönüşü (Yanak)');
+const aGlyph = markanizLay.glyphs.find(g => g.char === 'A');
+const aBuilt = buildChannelComponent(aGlyph.shapes, { constructionType: 'fileli', depthMm: 80, fileWidthMm: 5, metalThicknessMm: 1 });
+assert(aBuilt.exportContours.sidewallStrips.some(s => s.kind === 'outer') && aBuilt.exportContours.sidewallStrips.some(s => s.kind === 'hole'), 'Both outer and hole return strips must be emitted');
+for (const g of [...aBuilt.outerGeos, ...aBuilt.fileGeos, ...aBuilt.acrylicGeos]) g.dispose();
+
+const pleksiCostState = createDefaultState();
+pleksiCostState.objects[0].constructionType = 'pleksi';
+pleksiCostState.objects[0].acrylicMaterial = 'opalPleksi';
+const pleksiCosts = calculateProjectCosts({
+  componentCount: 1, totalWidthMm: 400, totalHeightMm: 400,
+  outerAreaM2: 0.1, metalFaceAreaM2: 0, sideAreaM2: 0.12, sidewallAreaM2: 0.12, acrylicAreaM2: 0.1, fileAreaM2: 0,
+  perimeterM: 1.5, cuttingLengthM: 1.5, totalLedModules: 8, powerSupplies: 1,
+  components: [{ objectId: pleksiCostState.objects[0].id, label: 'A', constructionType: 'pleksi', outerAreaCm2: 1000, acrylicAreaCm2: 1000, fileAreaCm2: 0, sidewallAreaCm2: 1200, perimeterMm: 1500, cuttingLengthMm: 1500, ledCount: 8 }],
+}, pleksiCostState);
+assert(pleksiCosts.lines.some(l => l.key === 'side:opalPleksi' && l.costAmount > 0), 'Pleksi return sidewall cost must be billed');
+
+// Dedicated 'Kenar Çıtaları' button & sidewall strip nesting mode
+const stripState = createDefaultState();
+stripState.nesting.sheetWidthMm = 1000;
+stripState.nesting.sheetHeightMm = 600;
+stripState.nesting.targetPart = 'sidewalls';
+const longMetric = [{
+  objectId: 'o1', label: 'A', constructionType: 'fileli', depthMm: 80,
+  polygonsMm: aBuilt.polygonsMm, exportContours: aBuilt.exportContours,
+}];
+const stripItems = extractNestingItems(longMetric, stripState);
+assert(stripItems.length >= 2 && stripItems.every(it => it.partGroup === SIDEWALL_STRIP_GROUP.id), 'Sidewall strip mode must emit ONLY rectangular sidewall_strip parts');
+assert(stripItems.every(it => Math.max(...it.outer.map(p => p.x)) <= 970), 'Strips longer than sheet usable span must split cleanly to avoid unplaced overflows');
+const stripUiHtml = renderNestingCenter(stripState, { activeSheetIdx: 0 });
+assert(stripUiHtml.includes('id="cwsSidewallStrips"') && stripUiHtml.includes('cws-sidewall-banner') && stripUiHtml.includes('id="cwsBackToFaces"'));
+const stripSheetMacro = generateCorelVbaMacro([{
+  index: 1, name: 'Levha 1', materialGroup: 'Kenar Çıtaları · 80 mm', widthMm: 1000, heightMm: 600,
+  placements: [{ id: stripItems[0].id, label: stripItems[0].label, partGroup: SIDEWALL_STRIP_GROUP.id, angleDeg: 0, outer: stripItems[0].outer, holes: [] }],
+}]);
+assert(decodedPs1.includes('KENAR_CITALARI') && stripSheetMacro.includes('KENAR_CITALARI'));
+console.log('✓ Cinzel Z & node auto-healing, vivid Fileli/Pleksi lighting glow, return sidewall costing & Kenar Çıtaları nesting verified');

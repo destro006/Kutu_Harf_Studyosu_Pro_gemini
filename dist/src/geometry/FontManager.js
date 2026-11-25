@@ -297,12 +297,38 @@ function commandsToShapes(commands, scale, offsetX) {
   const sp = new ShapePath();
   const tx = x => offsetX + x * scale;
   const ty = y => -y * scale;
+  let startX = 0, startY = 0, curX = 0, curY = 0, hasSub = false;
+  const closeIfOpen = () => {
+    if (hasSub && Math.hypot(curX - startX, curY - startY) > 1e-4) {
+      sp.lineTo(startX, startY);
+    }
+    hasSub = false;
+  };
   for (const c of commands) {
-    if (c.type === 'M') sp.moveTo(tx(c.x), ty(c.y));
-    else if (c.type === 'L') sp.lineTo(tx(c.x), ty(c.y));
-    else if (c.type === 'Q') sp.quadraticCurveTo(tx(c.x1), ty(c.y1), tx(c.x), ty(c.y));
-    else if (c.type === 'C') sp.bezierCurveTo(tx(c.x1), ty(c.y1), tx(c.x2), ty(c.y2), tx(c.x), ty(c.y));
+    if (c.type === 'M') {
+      closeIfOpen();
+      startX = curX = tx(c.x);
+      startY = curY = ty(c.y);
+      hasSub = true;
+      sp.moveTo(curX, curY);
+    } else if (c.type === 'L') {
+      const nx = tx(c.x), ny = ty(c.y);
+      if (hasSub && Math.hypot(nx - curX, ny - curY) < 1e-5) continue;
+      curX = nx; curY = ny;
+      sp.lineTo(nx, ny);
+    } else if (c.type === 'Q') {
+      const cx1 = tx(c.x1), cy1 = ty(c.y1), nx = tx(c.x), ny = ty(c.y);
+      curX = nx; curY = ny;
+      sp.quadraticCurveTo(cx1, cy1, nx, ny);
+    } else if (c.type === 'C') {
+      const cx1 = tx(c.x1), cy1 = ty(c.y1), cx2 = tx(c.x2), cy2 = ty(c.y2), nx = tx(c.x), ny = ty(c.y);
+      curX = nx; curY = ny;
+      sp.bezierCurveTo(cx1, cy1, cx2, cy2, nx, ny);
+    } else if (c.type === 'Z') {
+      closeIfOpen();
+    }
   }
+  closeIfOpen();
   sp.userData = { style: { fillRule: 'nonzero' } };
   return unionConnectedGlyphShapes(sp.toShapes());
 }

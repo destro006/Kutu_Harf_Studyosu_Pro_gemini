@@ -171,6 +171,8 @@ export class PostProcessor {
     this.enabled = true;
     this.exposure = 1.0;
     this.bloomIntensity = 0.4;
+    this.bloomThreshold = 1.0;
+    this.bloomRadius = 0.75;
     this.vignetteDarkness = 0.72;
     this.transparentBg = false;
     this.quality = 'high';
@@ -270,7 +272,9 @@ export class PostProcessor {
     this.exposure = Number.isFinite(exposure) ? exposure : 1.0;
     this.transparentBg = Boolean(transparentBg);
     this.quality = quality || 'high';
-    this.bloomIntensity = night ? (lit ? 1.25 : 0.4) : 0.35;
+    this.bloomThreshold = lit ? (night ? 0.74 : 0.86) : 1.0;
+    this.bloomIntensity = night ? (lit ? 1.58 : 0.4) : (lit ? 0.68 : 0.35);
+    this.bloomRadius = lit ? 0.86 : 0.75;
     this.vignetteDarkness = this.transparentBg ? 0.0 : (night ? 0.72 : 0.45);
     this.enabled = this.quality !== 'performance' && !this.transparentBg;
 
@@ -319,6 +323,7 @@ export class PostProcessor {
       this.renderer.render(scene, camera);
 
       // 2. Threshold + Karis firefly-clamped prefilter to mip 0
+      this.prefilterMat.uniforms.threshold.value = this.bloomThreshold;
       this.prefilterMat.uniforms.tDiffuse.value = this.sceneTarget.texture;
       this.prefilterMat.uniforms.texelSize.value.set(1 / this.width, 1 / this.height);
       this._runPass(this.prefilterMat, this.mipDown[0]);
@@ -332,6 +337,7 @@ export class PostProcessor {
       }
 
       // 4. Progressive additive tent upsample (mip 4 -> mipUp[0])
+      this.upsampleMat.uniforms.radius.value = this.bloomRadius;
       let higherTex = this.mipDown[4].texture;
       let higherW = this.mipDown[4].width;
       let higherH = this.mipDown[4].height;

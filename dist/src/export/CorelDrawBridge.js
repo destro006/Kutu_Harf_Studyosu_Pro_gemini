@@ -203,8 +203,8 @@ export function generateCorelVbaMacro(payload) {
       const pName = String(part.label || 'Parca').replace(/"/g, "'");
       const [pr, pg, pb] = part.colorRgb || [br, bg, bb];
       const grp = part.partGroup || 'body';
-      const lVar = grp === 'file_frame' ? 'lFile' : grp === 'fileli_acrylic' ? 'lAc' : grp === 'fileli_dekota' ? 'lDek' : null;
-      const lTitle = grp === 'file_frame' ? 'FILE_CERCEVE' : grp === 'fileli_acrylic' ? 'PLEKSI_AKRILIK' : grp === 'fileli_dekota' ? 'ARKA_DEKOTA' : null;
+      const lVar = grp === 'file_frame' ? 'lFile' : grp === 'fileli_acrylic' ? 'lAc' : grp === 'fileli_dekota' ? 'lDek' : grp === 'sidewall_strip' ? 'lStrip' : null;
+      const lTitle = grp === 'file_frame' ? 'FILE_CERCEVE' : grp === 'fileli_acrylic' ? 'PLEKSI_AKRILIK' : grp === 'fileli_dekota' ? 'ARKA_DEKOTA' : grp === 'sidewall_strip' ? 'KENAR_CITALARI' : null;
       if (lVar && !vbaLayers.has(lVar)) {
         vbaLayers.set(lVar, lTitle);
         lines.push(`  Dim ${lVar} As Layer: Set ${lVar} = p.CreateLayer("${lTitle}")`);
@@ -520,6 +520,9 @@ function Import-NestingToCorel($payload) {
         } elseif ($grp -eq "fileli_dekota") {
           if (-not $groupLayers.ContainsKey("ARKA_DEKOTA")) { $groupLayers["ARKA_DEKOTA"] = $page.CreateLayer("ARKA_DEKOTA") }
           $targetLayer = $groupLayers["ARKA_DEKOTA"]
+        } elseif ($grp -eq "sidewall_strip") {
+          if (-not $groupLayers.ContainsKey("KENAR_CITALARI")) { $groupLayers["KENAR_CITALARI"] = $page.CreateLayer("KENAR_CITALARI") }
+          $targetLayer = $groupLayers["KENAR_CITALARI"]
         }
 
         $pRgb = $bodyRgb

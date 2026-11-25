@@ -7,7 +7,7 @@ import { EnvironmentManager, ENVIRONMENT_PRESETS } from './EnvironmentManager.js
 import { buildSceneLights, createHaloTexture } from './LightingSystem.js';
 import { PostProcessor } from './PostProcessor.js';
 import { loadWallPixels, createWallTextures, computeWallRepeat, normalizeWallId } from '../photomontage/BackgroundLibrary.js';
-import { buildChannelComponent } from '../geometry/ChannelLetterGeometry.js';
+import { buildChannelComponent, polygonMmToThreeShape } from '../geometry/ChannelLetterGeometry.js';
 import { layoutTextMm } from '../geometry/FontManager.js';
 
 const _refIds = new WeakMap();
@@ -714,8 +714,9 @@ export class SignEngine {
         if (typeof faceMat.userData?.updateLed === 'function') frontMats.push(faceMat);
       }
 
-      const lightRef = { front: frontMats, halo: null, points: [], night, mode };
+      const lightRef = { front: frontMats, frontGlows: [], halo: null, points: [], night, mode };
       this._objectLightRefs.set(obj.id, lightRef);
+      const localFrontGlowShapes = [];
       let shapesMmGroups = [];
       let objGeomIdentity = '';
 
@@ -891,6 +892,15 @@ export class SignEngine {
           compMeshGroup.add(mesh);
         }
 
+        if (hasFront && (cType === 'pleksi' || cType === 'fileli') && !transparentBg) {
+          const glowContours = cType === 'fileli'
+            ? (built.exportContours?.acrylic?.length ? built.exportContours.acrylic : built.polygonsMm)
+            : built.polygonsMm;
+          for (const poly of glowContours || []) {
+            if (poly.outer?.length >= 3) localFrontGlowShapes.push(polygonMmToThreeShape(poly.outer, poly.holes || [], 0.001));
+          }
+        }
+
         // Collect world-space shapes for halo plane (including object Z rotation)
         if (hasHalo) {
           const toWorld = p => {
@@ -921,6 +931,52 @@ export class SignEngine {
             }
             objectHaloShapes.push(sh);
           }
+        }
+      }
+
+      if (hasFront && (cType === 'pleksi' || cType === 'fileli') && localFrontGlowShapes.length && !transparentBg) {
+        const gBox = new THREE.Box2();
+        for (const sh of localFrontGlowShapes) for (const pt of sh.getPoints(6)) gBox.expandByPoint(pt);
+        if (!gBox.isEmpty()) {
+          const gHeight = Math.max(0.05, gBox.max.y - gBox.min.y);
+          const fGlow = createHaloTexture(
+            localFrontGlowShapes,
+            { minX: gBox.min.x, maxX: gBox.max.x, minY: gBox.min.y, maxY: gBox.max.y },
+            {
+              wallDistanceMm: cType === 'pleksi' ? 28 : 13,
+              haloSpread: cType === 'pleksi' ? 0.78 : 0.40,
+              falloff: 1.15,
+              letterHeightM: gHeight,
+            }
+          );
+          fGlow.texture._disposeOnClear = true;
+          const depthM = (buildCfg.depthMm || 80) * 0.001;
+          const addGlowPlane = (zPos, kind, scaleXY = 1) => {
+            const gm = new THREE.Mesh(
+              new THREE.PlaneGeometry(fGlow.widthM * scaleXY, fGlow.heightM * scaleXY),
+              new THREE.MeshBasicMaterial({
+                map: fGlow.texture,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                toneMapped: false,
+                side: THREE.DoubleSide,
+              })
+            );
+            gm.position.set(fGlow.cxM, fGlow.cyM, zPos);
+            gm.renderOrder = 3;
+            gm.raycast = () => {};
+            gm.userData.isFrontGlow = true;
+            gm.userData.frontGlowKind = kind;
+            gm.userData.haloOwnerId = obj.id;
+            compMeshGroup.add(gm);
+            lightRef.frontGlows.push(gm);
+          };
+          addGlowPlane(depthM + 0.0008, 'front', cType === 'pleksi' ? 1.01 : 0.99);
+          if (cType === 'pleksi') {
+            addGlowPlane(depthM * 0.45, 'side', 1.03);
+          }
+          this.applyObjectLightAppearance(lightRef, light);
         }
       }
 
@@ -1200,6 +1256,15 @@ export class SignEngine {
             const peak = Math.max(1, mat.color.r, mat.color.g, mat.color.b);
             mat.color.multiplyScalar(1 / peak);
             mat.opacity = Math.min(0.96, Math.max(mat.opacity * 1.85, 0.62));
+          } else {
+            child.traverse?.(node => {
+              if (node.userData?.isFrontGlow && node.material && node.material.opacity > 0) {
+                const mat = node.material;
+                savedHalos.push({ mat, blending: mat.blending, opacity: mat.opacity, color: mat.color.clone() });
+                mat.blending = THREE.NormalBlending;
+                mat.opacity = Math.min(0.65, mat.opacity * 0.9);
+              }
+            });
           }
         }
       }
@@ -1237,7 +1302,20 @@ export class SignEngine {
 
   applyObjectLightAppearance(refs,light){
     for(const mat of refs.front)mat.userData.updateLed(light.frontColor,light.frontIntensity);
-    const intensity=light.backIntensity,night=refs.night;
+    const fInt = Math.max(0, Number(light.frontIntensity) || 0);
+    const night = refs.night;
+    const hasFrontGlowMode = light.enabled !== false && (light.mode === 'front' || light.mode === 'both');
+    for (const gm of refs.frontGlows || []) {
+      const visible = hasFrontGlowMode && fInt > 0;
+      gm.visible = visible;
+      if (visible && gm.material) {
+        const isSide = gm.userData?.frontGlowKind === 'side';
+        const gain = (night ? (isSide ? 1.45 : 1.15) : (isSide ? 0.65 : 0.45)) * Math.min(2.2, fInt);
+        gm.material.color.set(light.frontColor).multiplyScalar(gain);
+        gm.material.opacity = Math.min(0.85, (night ? (isSide ? 0.34 : 0.24) : (isSide ? 0.16 : 0.10)) * Math.min(2.0, fInt) + 0.04);
+      }
+    }
+    const intensity=light.backIntensity;
     if(refs.halo){
       refs.halo.visible=intensity>0;
       refs.halo.material.color.set(light.backColor).multiplyScalar((night ? 2.4 : 0.95) * intensity + 0.15);

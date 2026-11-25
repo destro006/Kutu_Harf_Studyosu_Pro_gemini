@@ -11,7 +11,7 @@ import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v15';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v20';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v21';
 import {nextNestingSelection,deleteNestingParts,moveNestingParts} from './manufacturing/NestingSelection.js?v=nest7';
 import { generateNestedGcode, generateNestedHpgl,validateNestedProduction,MACHINE_PROFILES,getMachineProfile } from './export/CncGcodeExporter.js';
 import { HistoryManager } from './core/history.js';
@@ -24,9 +24,9 @@ import {
   serializeProject,
   writeAutosave,
 } from './core/projectSerializer.js';
-import { FontManager } from './geometry/FontManager.js?v=qa8';
+import { FontManager } from './geometry/FontManager.js?v=20261126-v21';
 import { generateCutoutPreview, parseSvgLogo, traceRasterLogo } from './geometry/LogoTracer.js';
-import { SignEngine, QUALITY_PROFILES } from './render/SignEngine.js?v=20261125-v15';
+import { SignEngine, QUALITY_PROFILES } from './render/SignEngine.js?v=20261126-v21';
 import { ACRYLIC_PALETTE, MATERIAL_PRESETS, PAINT_PALETTE } from './render/MaterialLibrary.js';
 import { RAL_COLORS, RAL_GROUPS } from './render/RalColors.js';
 import { ENVIRONMENT_PRESETS } from './render/EnvironmentManager.js';
@@ -34,7 +34,7 @@ import { LIGHT_COLOR_PRESETS, LIGHTING_MODES } from './render/LightingSystem.js'
 import {detectVectorFormat} from './manufacturing/VectorFormatDetect.js';
 import { BACKGROUND_SCENES } from './photomontage/BackgroundLibrary.js';
 import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js?v=20261125-v15';
-import { renderNestingSvg } from './ui/NestingView.js?v=20261126-v19';
+import { renderNestingSvg } from './ui/NestingView.js?v=20261126-v21';
 import { applySurfaceMaterialPreset, getDisplayedSurfaceMaterial } from './core/MaterialActions.js';
 import { getExportSelection } from './export/ExportScope.js';
 import { EXPORT_FORMAT_GROUPS, getExportFormat, formatSupportsSource } from './export/ExportFormatCatalog.js';
@@ -48,7 +48,7 @@ import {
   sendNestingToCorel,
   pullSelectionFromCorel,
   wakeCorelBridgeProtocol,
-} from './export/CorelDrawBridge.js?v=20261126-v19';
+} from './export/CorelDrawBridge.js?v=20261126-v21';
 import {
   CNC_TRANSPORT_MODES,
   loadMachineConnection,
@@ -572,10 +572,11 @@ function applyConstructionType(s, ctype) {
     const wasOff = s.lighting.enabled === false;
     s.lighting.enabled = true;
     if (wasOff || !s.lighting.mode || s.lighting.mode === 'none') s.lighting.mode = 'front';
+    else if (s.lighting.mode === 'halo') s.lighting.mode = 'both';
     for (const o of s.objects) {
-      if (ids.has(o.id) && !o.locked && (wasOff || !o.lightingMode || o.lightingMode === 'none')) {
-        o.lightingMode = 'front';
-      }
+      if (!ids.has(o.id) || o.locked) continue;
+      if (wasOff || !o.lightingMode || o.lightingMode === 'none') o.lightingMode = 'front';
+      else if (o.lightingMode === 'halo') o.lightingMode = 'both';
     }
   } else if (ctype === 'halo') {
     const wasOff = s.lighting.enabled === false;
@@ -3524,6 +3525,22 @@ function bindNestingCenterEvents(root) {
   root.querySelector('#cwsDeletePart')?.addEventListener('click',()=>editSelectedNesting('delete'));
   root.querySelector('#cwsSendCorel')?.addEventListener('click', () => triggerSendToCorel(true));
   root.querySelector('#cwsRunNesting')?.addEventListener('click', () => runAutoNesting());
+  const toggleSidewallStripsMode = (forceMode = null) => {
+    const cur = store.get().nesting?.targetPart || 'all';
+    const nextTarget = forceMode ?? (cur === 'sidewalls' ? 'all' : 'sidewalls');
+    activeNestingGroup = null;
+    clearNestingSelection();
+    if (store.get().nesting?.activeTabId === 'import') {
+      mutateData('Nesting kaynağı', s => { switchNestingTab(s.nesting, 'design'); }, false);
+    }
+    return repackNestingSettings(
+      nextTarget === 'sidewalls' ? 'Kenar Çıtaları Nesting' : 'Harf Yüzeyleri Nesting',
+      n => { n.targetPart = nextTarget; n.sheets = []; n.unplaced = []; },
+      false
+    );
+  };
+  root.querySelector('#cwsSidewallStrips')?.addEventListener('click', () => toggleSidewallStripsMode());
+  root.querySelector('#cwsBackToFaces')?.addEventListener('click', () => toggleSidewallStripsMode('all'));
   root.querySelector('#cwsReoptUnlocked')?.addEventListener('click', () => {
     if (activeNestingGroup) return repackNestingSettings('Grup Optimizasyonu', () => {}, false);
     return runAutoNesting();

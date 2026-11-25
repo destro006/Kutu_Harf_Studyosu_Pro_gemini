@@ -35,7 +35,7 @@ export function formatMoney(amount, currency = 'TRY') {
 }
 
 export const COST_ROLE_LABELS = {
-  face: 'Metal Ön Yüz', side: 'Metal Yanak', file: 'Ön File', acrylic: 'Pleksi', process: 'İmalat / Hizmet',
+  face: 'Metal Ön Yüz', side: 'Kenar Dönüşü (Yanak)', file: 'Ön File', acrylic: 'Pleksi', process: 'İmalat / Hizmet',
 };
 export const COST_ROLE_UNITS = { face: 'm²', side: 'm²', file: 'm²', acrylic: 'm²' };
 const PROCESS_CATALOG = [
@@ -149,9 +149,12 @@ export function calculateProjectCosts(metrics, state) {
       const fileArea=nonNegative(c.fileAreaCm2)/10000;
       const sideArea=nonNegative(c.sidewallAreaCm2)/10000;
       const faceId=o.faceMaterial || state.materials?.faceId || 'aynaKrom';
-      const sideId=(o.sideFollowsFace ?? state.materials?.sideFollowsFace) ? faceId : (o.sideMaterial || state.materials?.sideId || faceId);
       const fileId=o.fileMaterial || state.fileli?.fileMaterial || faceId;
-      const acrylicId=o.acrylicMaterial || 'opalPleksi';
+      const acrylicId=(type==='pleksi' && faceId==='renkliPleksi') ? 'renkliPleksi' : (o.acrylicMaterial || 'opalPleksi');
+      const sideFollows = (o.sideFollowsFace ?? state.materials?.sideFollowsFace) !== false;
+      const sideId = type === 'pleksi'
+        ? acrylicId
+        : (sideFollows ? (type === 'fileli' ? fileId : faceId) : (o.sideMaterial || state.materials?.sideId || faceId));
       const usedAcrylic=type==='pleksi' ? Math.max(acrylicArea,outer) : acrylicArea;
       if(usedAcrylic) add(`acrylic:${acrylicId}`,usedAcrylic);
       if(type==='fileli'){

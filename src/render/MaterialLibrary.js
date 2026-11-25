@@ -486,15 +486,15 @@ export function createSignMaterial(presetId, overrides = {}, lightContext = {}) 
   const mat = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(colorHex),
     metalness: 0,
-    roughness: Math.max(0.04, Math.min(0.8, roughness)),
-    clearcoat: lit ? 0.65 : 1.0,
+    roughness: lit ? Math.max(0.08, Math.min(0.6, roughness)) : Math.max(0.04, Math.min(0.8, roughness)),
+    clearcoat: lit ? 0.24 : 1.0,
     clearcoatRoughness: 0.06,
     sheen: 0.2,
     transparent: lit ? false : (opacity < 0.99 || transmission > 0.05),
     opacity: lit ? 1.0 : opacity,
     transmission: lit ? 0 : transmission * 0.45,
     ior: 1.49,
-    envMapIntensity: lit ? envMapIntensity * 0.55 : envMapIntensity,
+    envMapIntensity: lit ? envMapIntensity * 0.22 : envMapIntensity,
   });
 
   if (lit) {
@@ -508,14 +508,14 @@ export function createSignMaterial(presetId, overrides = {}, lightContext = {}) 
       }
       const eff = safeInt <= 1 ? safeInt : 1 + Math.log1p(safeInt - 1) * 0.55;
       if (isOpal) {
-        const tint = Math.min(0.96, 0.85 + 0.11 * Math.min(1, safeInt));
+        const tint = Math.min(0.96, 0.86 + 0.10 * Math.min(1, safeInt));
         mat.color.set(mixHex(colorHex, hex, tint));
         mat.emissive.set(hex);
-        mat.emissiveIntensity = (night ? 1.15 : 0.85) * eff;
+        mat.emissiveIntensity = (night ? 1.68 : 1.32) * eff;
       } else {
         mat.color.set(mixHex(colorHex, hex, 0.45));
-        mat.emissive.set(mixHex(colorHex, hex, 0.70));
-        mat.emissiveIntensity = (night ? 1.0 : 0.72) * eff;
+        mat.emissive.set(mixHex(colorHex, hex, 0.72));
+        mat.emissiveIntensity = (night ? 1.55 : 1.18) * eff;
       }
     };
     mat.userData.updateLed(glowHex, lightIntensity);

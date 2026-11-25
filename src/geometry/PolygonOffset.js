@@ -1,13 +1,125 @@
+import Clipper from '../../public/vendor/cad/clipper-runtime.js';
+
 /**
  * Computational Geometry & Robust Polygon Offsetting / Boolean Engine (in millimeters)
  * Used for:
  *  - Authentic Turkish "Fileli Kutu Harf" inward border offsetting (outer dimensions preserved)
+ *  - Universal node & winding auto-healing for fonts, SVGs, DXFs and logos
  *  - Narrow-stroke & self-intersection detection with Turkish warnings
  *  - 2D CAD Boolean operations (Union, Difference, Intersection)
  *  - Polygon collision/containment tests for True-Shape Nesting
  */
 
 const EPS = 1e-6;
+const CLIPPER_SCALE = 1000;
+
+function toClipperPath(pts, ccw = null) {
+  const path = (pts || [])
+    .filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y))
+    .map(p => ({ X: Math.round(p.x * CLIPPER_SCALE), Y: Math.round(p.y * CLIPPER_SCALE) }));
+  if (path.length >= 3 && ccw !== null && Clipper.Clipper.Orientation(path) !== ccw) {
+    path.reverse();
+  }
+  return path;
+}
+
+function fromClipperPath(path) {
+  return (path || []).map(p => ({ x: p.X / CLIPPER_SCALE, y: p.Y / CLIPPER_SCALE }));
+}
+
+function clipperPolyAreaMm2(path) {
+  return Math.abs(Clipper.Clipper.Area(path)) / (CLIPPER_SCALE * CLIPPER_SCALE);
+}
+
+function cleanClipperPath(path, cleanTolMm = 0.04) {
+  if (!path || path.length < 3) return [];
+  const tol = Math.max(5, Math.round(cleanTolMm * CLIPPER_SCALE));
+  const cleaned = Clipper.Clipper.CleanPolygon(path, tol);
+  if (cleaned && cleaned.length >= 3) return cleaned;
+  return path;
+}
+
+function extractPolyTreeRings(tree, cleanTolMm = 0.03, minAreaMm2 = 0.25) {
+  const out = [];
+  const visit = (node) => {
+    for (const child of node.Childs()) {
+      if (!child.IsHole()) {
+        const cPath = cleanClipperPath(child.Contour(), cleanTolMm);
+        if (cPath.length >= 3 && clipperPolyAreaMm2(cPath) >= minAreaMm2) {
+          const outer = ensureWinding(fromClipperPath(cPath), true);
+          const holes = [];
+          for (const hNode of child.Childs()) {
+            if (!hNode.IsHole()) continue;
+            const hPath = cleanClipperPath(hNode.Contour(), cleanTolMm);
+            if (hPath.length >= 3 && clipperPolyAreaMm2(hPath) >= minAreaMm2) {
+              holes.push(ensureWinding(fromClipperPath(hPath), false));
+            }
+          }
+          if (outer.length >= 3) out.push({ outer, holes });
+        }
+      }
+      visit(child);
+    }
+  };
+  visit(tree);
+  return out;
+}
+
+/**
+ * Auto-heals open gaps, zero-length/collinear segments, self-intersections and winding.
+ */
+export function healContourRing(ring, ccw = true, cleanTolMm = 0.04) {
+  const valid = (ring || []).filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+  const pre = ensureWinding(deduplicateRing(valid, 1e-4), ccw);
+  if (pre.length < 3) return pre;
+  try {
+    const path = toClipperPath(pre, ccw);
+    if (path.length < 3) return pre;
+    const cleaned = cleanClipperPath(path, cleanTolMm);
+    const simplified = Clipper.Clipper.SimplifyPolygon(cleaned, Clipper.PolyFillType.pftNonZero);
+    if (!simplified || !simplified.length) return pre;
+    let best = simplified[0];
+    let bestArea = clipperPolyAreaMm2(best);
+    for (let i = 1; i < simplified.length; i++) {
+      const a = clipperPolyAreaMm2(simplified[i]);
+      if (a > bestArea) { bestArea = a; best = simplified[i]; }
+    }
+    if (!best || best.length < 3) return pre;
+    const healed = ensureWinding(fromClipperPath(best), ccw);
+    return healed.length >= 3 ? healed : pre;
+  } catch {
+    return pre;
+  }
+}
+
+/**
+ * Heals outer ring (CCW) and holes (CW) and guarantees holes stay inside outer via Clipper.
+ */
+export function healPolygonWithHoles(outerCCW, holesCW = [], cleanTolMm = 0.03) {
+  const outer = healContourRing(outerCCW, true, cleanTolMm);
+  if (outer.length < 3) return { outer: [], holes: [] };
+  const rawHoles = (holesCW || [])
+    .map(h => healContourRing(h, false, cleanTolMm))
+    .filter(h => h.length >= 3 && polygonArea(h) >= 0.25);
+  if (!rawHoles.length) return { outer, holes: [] };
+  try {
+    const cl = new Clipper.Clipper();
+    cl.AddPath(toClipperPath(outer, true), Clipper.PolyType.ptSubject, true);
+    for (const h of rawHoles) {
+      cl.AddPath(toClipperPath(h, true), Clipper.PolyType.ptClip, true);
+    }
+    const tree = new Clipper.PolyTree();
+    if (!cl.Execute(Clipper.ClipType.ctDifference, tree, Clipper.PolyFillType.pftNonZero, Clipper.PolyFillType.pftNonZero)) {
+      return { outer, holes: rawHoles };
+    }
+    const rings = extractPolyTreeRings(tree, cleanTolMm, 0.25);
+    if (!rings.length) return { outer, holes: rawHoles };
+    rings.sort((a, b) => polygonArea(b.outer) - polygonArea(a.outer));
+    return { outer: rings[0].outer, holes: rings[0].holes };
+  } catch {
+    return { outer, holes: rawHoles };
+  }
+}
 
 /**
  * Signed area of a 2D polygon ring (positive = CCW, negative = CW).
@@ -316,97 +428,145 @@ function resolveSimpleBowties(pts) {
  * @param {number} fileWidthMm
  */
 export function computeFileliContours(outerCCW, holesCW, fileWidthMm) {
-  const outer = ensureWinding(outerCCW, true);
+  const healed = healPolygonWithHoles(outerCCW, holesCW, 0.025);
+  const outer = healed.outer.length >= 3 ? healed.outer : ensureWinding(outerCCW, true);
+  const holes = healed.holes;
+
+  if (outer.length < 3) {
+    return {
+      ok: false,
+      warning: 'Geçersiz kontur (3 noktadan az).',
+      outer,
+      holes,
+      acrylicOuter: null,
+      acrylicHoles: [],
+      acrylicPolys: [],
+      fileRings: [],
+    };
+  }
+
   if (fileWidthMm <= 0.05) {
     return {
       ok: true,
       warning: null,
       outer,
-      holes: holesCW.map(h => ensureWinding(h, false)),
+      holes,
       acrylicOuter: outer,
-      acrylicHoles: holesCW.map(h => ensureWinding(h, false)),
+      acrylicHoles: holes,
+      acrylicPolys: [{ outer, holes }],
       fileRings: [],
     };
   }
 
-  const innerRes = offsetRing(outer, -fileWidthMm);
-  if (!innerRes.ok) {
+  const holeArea = holes.reduce((acc, h) => acc + polygonArea(h), 0);
+  const origNetArea = Math.max(0, polygonArea(outer) - holeArea);
+  if (origNetArea <= 0.5) {
     return {
       ok: false,
-      warning: `File (${fileWidthMm} mm): ${innerRes.reason}`,
+      warning: 'Geçersiz kontur alanı.',
       outer,
-      holes: holesCW.map(h => ensureWinding(h, false)),
+      holes,
       acrylicOuter: null,
       acrylicHoles: [],
+      acrylicPolys: [],
       fileRings: [],
     };
   }
 
-  const acrylicOuter = ensureWinding(innerRes.points, true);
-  const acrylicHoles = [];
-  const holeFileRings = [];
+  const cleanTol = Math.min(0.05, Math.max(0.015, fileWidthMm * 0.12));
 
-  for (const h of holesCW) {
-    const hCCW = ensureWinding(h, true);
-    // Expanding hole outward (into the letter stroke) by fileWidthMm
-    const expRes = offsetRing(hCCW, +fileWidthMm);
-    if (!expRes.ok) {
+  try {
+    // 1. Robust ClipperOffset PolyTree inward offset simultaneously handles outer boundary,
+    //    inner holes (CW orientation), sharp serif corners (Z, M, N, R), and multiple islands.
+    const co = new Clipper.ClipperOffset(2.2, 0.2 * CLIPPER_SCALE);
+    co.AddPath(toClipperPath(outer, true), Clipper.JoinType.jtMiter, Clipper.EndType.etClosedPolygon);
+    for (const h of holes) {
+      co.AddPath(toClipperPath(h, false), Clipper.JoinType.jtMiter, Clipper.EndType.etClosedPolygon);
+    }
+
+    const acTree = new Clipper.PolyTree();
+    co.Execute(acTree, -fileWidthMm * CLIPPER_SCALE);
+    const acrylicPolys = extractPolyTreeRings(acTree, cleanTol, 0.5);
+
+    const netAreaOf = (p) => Math.max(0, polygonArea(p.outer) - p.holes.reduce((s, h) => s + polygonArea(h), 0));
+    acrylicPolys.sort((a, b) => netAreaOf(b) - netAreaOf(a));
+    const totalAcrylicArea = acrylicPolys.reduce((s, p) => s + netAreaOf(p), 0);
+
+    if (!acrylicPolys.length || totalAcrylicArea <= origNetArea * 0.015) {
       return {
         ok: false,
-        warning: `İç boşluk filesi (${fileWidthMm} mm): ${expRes.reason}`,
+        warning: `File (${fileWidthMm} mm): File genişliği bu harfin veya logonun dar kolları için çok büyük (iç alan kayboldu).`,
         outer,
-        holes: holesCW.map(x => ensureWinding(x, false)),
+        holes,
         acrylicOuter: null,
         acrylicHoles: [],
+        acrylicPolys: [],
         fileRings: [],
       };
     }
-    const expandedHoleCCW = ensureWinding(expRes.points, true);
-    // Verify expanded hole doesn't swallow the acrylicOuter
-    let holeCrossesOuter = false;
-    for (let i = 0; i < expandedHoleCCW.length && !holeCrossesOuter; i++) {
-      const a = expandedHoleCCW[i], b = expandedHoleCCW[(i + 1) % expandedHoleCCW.length];
-      for (let j = 0; j < acrylicOuter.length; j++) {
-        if (segmentsIntersect(a, b, acrylicOuter[j], acrylicOuter[(j + 1) % acrylicOuter.length], false)) {
-          holeCrossesOuter = true;
-          break;
-        }
+
+    // 2. Boolean Difference (EvenOdd): exact metal file frame = (outer \ holes) \ acrylicPolys
+    const diffCl = new Clipper.Clipper();
+    diffCl.AddPath(toClipperPath(outer, true), Clipper.PolyType.ptSubject, true);
+    for (const h of holes) {
+      diffCl.AddPath(toClipperPath(h, false), Clipper.PolyType.ptSubject, true);
+    }
+    for (const ap of acrylicPolys) {
+      diffCl.AddPath(toClipperPath(ap.outer, true), Clipper.PolyType.ptClip, true);
+      for (const ah of ap.holes) {
+        diffCl.AddPath(toClipperPath(ah, false), Clipper.PolyType.ptClip, true);
       }
     }
-    if (!pointInPolygon(expandedHoleCCW[0], acrylicOuter) || holeCrossesOuter) {
+    const frameTree = new Clipper.PolyTree();
+    if (!diffCl.Execute(Clipper.ClipType.ctDifference, frameTree, Clipper.PolyFillType.pftEvenOdd, Clipper.PolyFillType.pftEvenOdd)) {
       return {
         ok: false,
-        warning: `File genişliği (${fileWidthMm} mm) iç boşluk ile dış sınır arasındaki kol için çok büyük.`,
+        warning: `File (${fileWidthMm} mm): File çerçeve konturu hesaplanamadı.`,
         outer,
-        holes: holesCW.map(x => ensureWinding(x, false)),
+        holes,
         acrylicOuter: null,
         acrylicHoles: [],
+        acrylicPolys: [],
         fileRings: [],
       };
     }
-    acrylicHoles.push(ensureWinding(expandedHoleCCW, false));
-    // File ring around the hole: outer = expandedHoleCCW, inner hole = original hole CW
-    holeFileRings.push({
-      outer: expandedHoleCCW,
-      holes: [ensureWinding(hCCW, false)],
-    });
+
+    const fileRings = extractPolyTreeRings(frameTree, cleanTol, 0.25);
+    if (!fileRings.length) {
+      return {
+        ok: false,
+        warning: `File (${fileWidthMm} mm): File çerçevesi oluşturulamadı.`,
+        outer,
+        holes,
+        acrylicOuter: null,
+        acrylicHoles: [],
+        acrylicPolys: [],
+        fileRings: [],
+      };
+    }
+
+    return {
+      ok: true,
+      warning: null,
+      outer,
+      holes,
+      acrylicOuter: acrylicPolys[0].outer,
+      acrylicHoles: acrylicPolys[0].holes,
+      acrylicPolys,
+      fileRings,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      warning: `File (${fileWidthMm} mm): ${err?.message || 'Ofset hesaplama hatası.'}`,
+      outer,
+      holes,
+      acrylicOuter: null,
+      acrylicHoles: [],
+      acrylicPolys: [],
+      fileRings: [],
+    };
   }
-
-  // Main outer file ring: outer = original outer CCW, inner hole = acrylicOuter CW
-  const outerFileRing = {
-    outer,
-    holes: [ensureWinding(acrylicOuter, false)],
-  };
-
-  return {
-    ok: true,
-    warning: null,
-    outer,
-    holes: holesCW.map(h => ensureWinding(h, false)),
-    acrylicOuter,
-    acrylicHoles,
-    fileRings: [outerFileRing, ...holeFileRings],
-  };
 }
 
 /**

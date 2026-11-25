@@ -2,6 +2,7 @@ import THREE from '../vendor/three.js';
 import {
   computeFileliContours,
   ensureWinding,
+  healPolygonWithHoles,
   polygonArea,
   polygonBounds,
   polygonPerimeter,
@@ -21,17 +22,13 @@ import {
 const MM_TO_M = 0.001;
 
 export function shapeToPolygonMm(shape, curveSegments = 16) {
-  const outer = ensureWinding(
-    shape.getPoints(curveSegments).map(p => ({ x: p.x, y: p.y })),
-    true
-  );
-  const holes = (shape.holes || []).map(h =>
-    ensureWinding(
-      h.getPoints(curveSegments).map(p => ({ x: p.x, y: p.y })),
-      false
-    )
-  );
-  return { outer, holes };
+  const rawOuter = shape.getPoints(curveSegments).map(p => ({ x: p.x, y: p.y }));
+  const rawHoles = (shape.holes || []).map(h => h.getPoints(curveSegments).map(p => ({ x: p.x, y: p.y })));
+  const healed = healPolygonWithHoles(rawOuter, rawHoles, 0.025);
+  return {
+    outer: healed.outer.length >= 3 ? healed.outer : ensureWinding(rawOuter, true),
+    holes: healed.outer.length >= 3 ? healed.holes : rawHoles.map(h => ensureWinding(h, false)),
+  };
 }
 
 export function polygonMmToThreeShape(outer, holes = [], scale = MM_TO_M) {
@@ -123,12 +120,30 @@ export function buildChannelComponent(shapesMm, config) {
 
     exportOuterContours.push({ outer: poly.outer, holes: poly.holes });
 
-    // Flat sidewall return strip development
-    const stripLen = computeSidewallStripLengthMm(outerPerim, metalThicknessMm, 0.42, poly.outer.length);
+    // Flat sidewall return strip development (outer contour + every inner hole contour)
+    const outerStripLen = computeSidewallStripLengthMm(outerPerim, metalThicknessMm, 0.42, poly.outer.length);
     exportSidewallStrips.push({
-      widthMm: stripLen,
+      kind: 'outer',
+      holeIndex: 0,
+      widthMm: outerStripLen,
       heightMm: depthMm,
       thicknessMm: metalThicknessMm,
+      rawPerimeterMm: outerPerim,
+      cornerCount: poly.outer.length,
+    });
+    poly.holes.forEach((h, hi) => {
+      const hPerim = polygonPerimeter(h);
+      if (hPerim > 1) {
+        exportSidewallStrips.push({
+          kind: 'hole',
+          holeIndex: hi + 1,
+          widthMm: computeSidewallStripLengthMm(hPerim, metalThicknessMm, 0.42, h.length),
+          heightMm: depthMm,
+          thicknessMm: metalThicknessMm,
+          rawPerimeterMm: hPerim,
+          cornerCount: h.length,
+        });
+      }
     });
 
     if (constructionType === 'fileli') {
@@ -196,15 +211,18 @@ export function buildChannelComponent(shapesMm, config) {
             fGeo.translate(0, 0, bodyDepthMm * MM_TO_M);
             fileGeos.push(fGeo);
           }
-          const acHoleArea = res.acrylicHoles.reduce((acc, h) => acc + polygonArea(h), 0);
-          acrylicAreaMm2 += Math.max(0, polygonArea(res.acrylicOuter) - acHoleArea);
-          exportAcrylicContours.push({ outer: res.acrylicOuter, holes: res.acrylicHoles });
-          const acShapeM = polygonMmToThreeShape(res.acrylicOuter, res.acrylicHoles, MM_TO_M);
+          const acPolys = res.acrylicPolys?.length ? res.acrylicPolys : [{ outer: res.acrylicOuter, holes: res.acrylicHoles }];
           const acThick = Math.max(1.5, acrylicThicknessMm);
-          const acGeo = extrudeShapeMm(acShapeM, acThick, 0, 1);
           const acZ = Math.max(2, bodyDepthMm - acrylicInsetMm - acThick);
-          acGeo.translate(0, 0, acZ * MM_TO_M);
-          acrylicGeos.push(acGeo);
+          for (const ap of acPolys) {
+            const acHoleArea = (ap.holes || []).reduce((acc, h) => acc + polygonArea(h), 0);
+            acrylicAreaMm2 += Math.max(0, polygonArea(ap.outer) - acHoleArea);
+            exportAcrylicContours.push({ outer: ap.outer, holes: ap.holes || [] });
+            const acShapeM = polygonMmToThreeShape(ap.outer, ap.holes || [], MM_TO_M);
+            const acGeo = extrudeShapeMm(acShapeM, acThick, 0, 1);
+            acGeo.translate(0, 0, acZ * MM_TO_M);
+            acrylicGeos.push(acGeo);
+          }
         }
       }
     } else if (constructionType === 'pleksi') {

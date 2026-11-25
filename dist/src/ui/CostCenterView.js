@@ -7,7 +7,7 @@ const dec = n => Number(Number(n||0).toFixed(2));
 const show = (v,fallback='') => esc(v == null?fallback:v);
 const roleOf = key => String(key||'').split(':')[0];
 const RATE_ROLES = [
-  ['face','Ön Yüz Metali'],['side','Yanak Metali'],['file','Ön File'],['acrylic','Pleksi'],['process','İmalat & Hizmet'],
+  ['face','Ön Yüz Metali'],['side','Kenar Dönüşü (Yanak)'],['file','Ön File'],['acrylic','Pleksi'],['process','İmalat & Hizmet'],
 ];
 function option(value,label,active){return `<option value="${value}"${active===value?' selected':''}>${label}</option>`;}
 function field(label,key,val,type='text',attrs=''){
@@ -57,7 +57,7 @@ function summary(state,metrics,cost){
    <div><span>Harf / Parça</span><b>${dec(metrics.componentCount)} adet</b></div>
    <div><span>Metal ön yüz</span><b>${formatAreaM2(metrics.metalFaceAreaM2,unit)}</b></div>
    <div><span>Pleksi / File</span><b>${formatAreaM2(metrics.acrylicAreaM2,unit)} / ${formatAreaM2(metrics.fileAreaM2,unit)}</b></div>
-   <div><span>Yanak alanı</span><b>${formatAreaM2(metrics.sidewallAreaM2,unit)}</b></div>
+   <div><span>Kenar dönüşü (Yanak)</span><b>${formatAreaM2(metrics.sidewallAreaM2,unit)} · ${formatMmAsUnit(metrics.perimeterM*1000,unit,2)} ${unit}</b></div>
    <div><span>Kesim / Büküm</span><b>${formatMmAsUnit(metrics.cuttingLengthM*1000,unit,2)} / ${formatMmAsUnit(metrics.perimeterM*1000,unit,2)} ${unit}</b></div>
    <div><span>LED / Güç kaynağı</span><b>${dec(metrics.totalLedModules)} / ${dec(metrics.powerSupplies)} adet</b></div></div>
    <p class="cst-help">Metrajlar mevcut 3D/2D nesnelerinden hesaplanır; malzeme fire, tedarik ve montaj toleranslarını kendi tarifenize göre kontrol edin.</p>

@@ -5,6 +5,7 @@ import {
   pointInPolygon,
   polygonArea,
   polygonBounds,
+  polygonPerimeter,
   polygonsIntersect,
   segmentsIntersect,
 } from '../geometry/PolygonOffset.js';
@@ -83,15 +84,109 @@ export const FILELI_NESTING_GROUPS = {
   fileli_dekota: { id: 'fileli_dekota', label: 'Arka Dekota', color: '#34d399', layer: 'ARKA_DEKOTA' },
 };
 
+export const SIDEWALL_STRIP_GROUP = {
+  id: 'sidewall_strip',
+  label: 'Kenar Çıtaları (Yanak)',
+  color: '#f59e0b',
+  layer: 'KENAR_CITALARI',
+};
+
+/**
+ * Extracts unfolded return sidewall strips (kenar dönüş çıtaları) for laser/router cutting.
+ * Splits strips longer than the usable sheet span into clean butt-joint segments so 0 strips go unplaced.
+ */
+export function extractSidewallStripItems(metricsList, state) {
+  const n = state.nesting || {};
+  const copies = Math.max(1, Number(n.copies || 1));
+  const wMm = Math.max(100, Number(n.sheetWidthMm) || 3000);
+  const hMm = Math.max(100, Number(n.sheetHeightMm) || 1500);
+  const mL = Number(n.marginLeftMm ?? n.marginMm ?? 15);
+  const mR = Number(n.marginRightMm ?? n.marginMm ?? 15);
+  const mT = Number(n.marginTopMm ?? n.marginMm ?? 15);
+  const mB = Number(n.marginBottomMm ?? n.marginMm ?? 15);
+  const usableW = Math.max(100, wMm - mL - mR);
+  const usableH = Math.max(100, hMm - mT - mB);
+  const maxSpan = Math.max(200, Math.max(usableW, usableH) - 2);
+  const byObjId = new Map((state.objects || []).map(o => [o.id, o]));
+  const items = [];
+
+  for (let c = 0; c < copies; c++) {
+    for (const m of metricsList || []) {
+      const obj = byObjId.get(m.objectId) || {};
+      const depthMm = Math.max(5, Number(m.depthMm ?? obj.depthMm ?? state.dimensions?.depthMm ?? 80));
+      const cType = m.constructionType || obj.constructionType || state.constructionType || 'metal';
+      const defaultThick = Number(state.fileli?.metalThicknessMm || 1);
+      const rawStrips = (m.exportContours?.sidewallStrips || []).filter(s => s && Number(s.widthMm) > 1);
+      const fallbackStrips = rawStrips.length
+        ? rawStrips
+        : (m.polygonsMm || []).flatMap(poly => [
+            { kind: 'outer', holeIndex: 0, widthMm: polygonPerimeter(poly.outer), heightMm: depthMm, thicknessMm: defaultThick },
+            ...(poly.holes || []).map((h, hi) => ({ kind: 'hole', holeIndex: hi + 1, widthMm: polygonPerimeter(h), heightMm: depthMm, thicknessMm: defaultThick })),
+          ]).filter(s => s.widthMm > 1);
+
+      const matName = cType === 'pleksi'
+        ? (obj.acrylicMaterial || 'opalPleksi')
+        : ((obj.sideFollowsFace ?? state.materials?.sideFollowsFace) !== false
+          ? (cType === 'fileli' ? (obj.fileMaterial || state.fileli?.fileMaterial || 'aynaAltin') : (obj.faceMaterial || state.materials?.faceId || 'aynaAltin'))
+          : (obj.sideMaterial || state.materials?.sideId || 'aynaAltin'));
+
+      fallbackStrips.forEach((st, idx) => {
+        const stripH = Math.max(5, Number(st.heightMm) || depthMm);
+        const totalLen = Number(st.widthMm) || 0;
+        if (totalLen <= 1) return;
+        const segCount = Math.max(1, Math.ceil(totalLen / maxSpan));
+        const segLen = totalLen / segCount;
+        const kindLabel = st.kind === 'hole' ? 'İç Delik Çıtası' : 'Dış Kenar Çıtası';
+
+        for (let si = 0; si < segCount; si++) {
+          const outer = [
+            { x: 0, y: 0 },
+            { x: segLen, y: 0 },
+            { x: segLen, y: stripH },
+            { x: 0, y: stripH },
+          ];
+          const segSuffix = segCount > 1 ? ` (${si + 1}/${segCount})` : '';
+          items.push({
+            id: `${m.objectId}_${m.label}_strip_${idx}_${si}_c${c}_${items.length}`,
+            projectId: state.projectId || 'proj_default',
+            projectName: state.projectName || 'Proje',
+            parentId: m.objectId,
+            label: `${m.label} · ${kindLabel}${segSuffix} (${Math.round(segLen)}×${Math.round(stripH)})`,
+            partType: 'Kenar Çıtası',
+            partGroup: SIDEWALL_STRIP_GROUP.id,
+            partGroupLabel: SIDEWALL_STRIP_GROUP.label,
+            partColor: SIDEWALL_STRIP_GROUP.color,
+            dxfLayer: SIDEWALL_STRIP_GROUP.layer,
+            operation: 'CUT_OUTER',
+            material: matName,
+            thicknessMm: Number(st.thicknessMm) || defaultThick,
+            materialGroup: `Kenar Çıtaları · ${Math.round(stripH)} mm Yanak`,
+            outer,
+            holes: [],
+            areaMm2: segLen * stripH,
+            locked: false,
+            stripTotalLenMm: totalLen,
+          });
+        }
+      });
+    }
+  }
+  return items;
+}
+
 /**
  * Extracts nestable manufacturing components from current scene metricsList,
  * preserving projectId, parentId, partId, material, thickness, finish, and exact contours.
  * Fileli construction emits 3 color-coded groups (File Çerçeve, Pleksi, Arka Dekota)
  * on one unified sheet batch; non-fileli constructions emit only outer body parts.
+ * When nesting.targetPart === 'sidewalls', extracts ONLY unfolded return sidewall strips.
  */
 export function extractNestingItems(metricsList, state) {
   const copies = Math.max(1, Number(state.nesting?.copies || 1));
   const targetPart = state.nesting?.targetPart || 'all';
+  if (targetPart === 'sidewalls') {
+    return extractSidewallStripItems(metricsList, state);
+  }
   const items = [];
 
   for (let c = 0; c < copies; c++) {
