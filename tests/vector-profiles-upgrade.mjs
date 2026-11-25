@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
 import { MACHINE_PROFILES, MACHINE_PROFILE_CATEGORIES, getMachineProfile, generateNestedGcode, generateNestedHpgl } from '../src/export/CncGcodeExporter.js';
 import { postScriptToPdf } from '../src/manufacturing/PostScriptWasmImport.js';
 import { extractAiOutlineFallback } from '../src/manufacturing/LegacyPostScriptImport.js';
@@ -175,6 +176,156 @@ const between = rootHtml.slice(tracerBtn + 'data-main-ws="tracer"'.length, nesti
 assert(!between.includes('data-main-ws='), 'Image Tracer tab must sit immediately left of Nesting');
 const traceStudioHtml = fs.readFileSync(new URL('../public/trace-studio/index.html', import.meta.url), 'utf8');
 assert(traceStudioHtml.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && traceStudioHtml.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
+assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes("if (state.viewMode === 'vector')"));
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
-console.log('✓ Image Tracer tab, bridge, and position left of Nesting verified');
+assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v7'));
+assert(rootHtml.includes('./src/main.js?v=20261125-v7'));
+console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
+
+// 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
+const scriptMatch = traceStudioHtml.match(/<script>([\s\S]*)<\/script>\s*<\/body>/);
+assert(scriptMatch, 'Expected inline script in public/trace-studio/index.html');
+const makeStubEl = () => ({
+  style: {},
+  classList: { toggle() {}, add() {}, remove() {}, contains: () => false },
+  addEventListener() {},
+  querySelectorAll: () => [],
+  querySelector: () => null,
+  getContext: () => ({
+    clearRect() {}, drawImage() {}, putImageData() {}, fillRect() {},
+    beginPath() {}, roundRect() {}, moveTo() {}, lineTo() {}, closePath() {}, arc() {}, fill() {}, fillText() {},
+    getImageData: (_x, _y, w = 1, h = 1) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h })
+  }),
+  width: 32, height: 32, checked: true, value: '', textContent: '', innerHTML: '', disabled: false, dataset: {}
+});
+const elCache = new Map();
+const sandbox = {
+  window: { addEventListener() {}, opener: null, parent: null },
+  document: {
+    getElementById(id) { if (!elCache.has(id)) elCache.set(id, makeStubEl()); return elCache.get(id); },
+    querySelectorAll: () => [],
+    createElement: () => makeStubEl()
+  },
+  requestAnimationFrame: () => 0,
+  setTimeout: () => 0,
+  clearTimeout() {},
+  Uint8ClampedArray, Float32Array, Int32Array, Uint32Array, Set, Map, Math
+};
+sandbox.ImageData = class ImageData { constructor(d, w, h) { this.data = d; this.width = w; this.height = h; } };
+vm.runInNewContext(scriptMatch[1], sandbox);
+const engine = sandbox.window.__TRACE_ENHANCE_ENGINE__;
+assert(engine && Array.isArray(engine.PRESETS) && engine.PRESETS.length === 8, 'Expected 8 presets in Image Tracer engine');
+
+// Build a synthetic 96x64 RGBA test image covering:
+// - top-left (x<48, y<32): flat muted warm badge with dark text-like stripes
+// - top-right (x>=48, y<32): sharp edge + midtone muted teal/gold block
+// - bottom-left (x<48, y>=32): noisy flat gradient
+// - bottom-right (x>=48, y>=32): off-white background with thin dark strokes
+const W = 96, H = 64;
+const srcBuf = new Uint8ClampedArray(W * H * 4);
+for (let y = 0; y < H; y++) {
+  for (let x = 0; x < W; x++) {
+    const i = (y * W + x) * 4;
+    let r = 232, g = 234, b = 238;
+    if (x < 48 && y < 32) {
+      r = 160; g = 135; b = 105;
+      if ((y >= 10 && y <= 20) && (x % 6 === 2 || x % 6 === 3)) { r = 42; g = 40; b = 38; }
+    } else if (x >= 48 && y < 32) {
+      r = x < 72 ? 95 : 175;
+      g = x < 72 ? 148 : 138;
+      b = x < 72 ? 152 : 90;
+      if (y === 16 || y === 17) { r = 220; g = 175; b = 95; }
+    } else if (x < 48 && y >= 32) {
+      const base = 110 + ((x * 2) % 60);
+      const noise = ((Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1) * 28 - 14;
+      r = base + noise; g = base + 8 + noise; b = base + 14 + noise;
+    } else {
+      r = 228; g = 228; b = 230;
+      if ((x === 68 || x === 78) && y >= 38 && y <= 58) { r = 55; g = 55; b = 58; }
+      if (y === 48 && x >= 60 && x <= 86) { r = 55; g = 55; b = 58; }
+    }
+    srcBuf[i] = Math.max(0, Math.min(255, Math.round(r)));
+    srcBuf[i + 1] = Math.max(0, Math.min(255, Math.round(g)));
+    srcBuf[i + 2] = Math.max(0, Math.min(255, Math.round(b)));
+    srcBuf[i + 3] = 255;
+  }
+}
+
+const outputs = new Map();
+for (const p of engine.PRESETS) {
+  outputs.set(p.id, engine.runPresetDspPipelineSync(srcBuf, W, H, p.id, 0.25, 4));
+}
+
+// Check all 28 unordered pairs are clearly distinct
+const ids = engine.PRESETS.map(p => p.id);
+for (let a = 0; a < ids.length; a++) {
+  for (let b = a + 1; b < ids.length; b++) {
+    const ba = outputs.get(ids[a]), bb = outputs.get(ids[b]);
+    let sumAbs = 0, maxAbs = 0;
+    for (let k = 0; k < W * H; k++) {
+      const i = k * 4;
+      for (let ch = 0; ch < 3; ch++) {
+        const d = Math.abs(ba[i + ch] - bb[i + ch]);
+        sumAbs += d;
+        if (d > maxAbs) maxAbs = d;
+      }
+    }
+    const mad = sumAbs / (W * H * 3);
+    assert(mad > 1.0 && maxAbs >= 12, `Presets ${ids[a]} vs ${ids[b]} too similar (MAD=${mad.toFixed(2)}, max=${maxAbs})`);
+  }
+}
+
+const avgChroma = (buf) => {
+  let s = 0, n = 0;
+  for (let y = 4; y < 28; y++) {
+    for (let x = 52; x < 92; x++) {
+      const i = (y * W + x) * 4;
+      s += Math.max(buf[i], buf[i + 1], buf[i + 2]) - Math.min(buf[i], buf[i + 1], buf[i + 2]);
+      n++;
+    }
+  }
+  return s / n;
+};
+const edgeEnergy = (buf) => {
+  let s = 0, n = 0;
+  for (let y = 12; y < 22; y++) {
+    for (let x = 66; x < 78; x++) {
+      const i = (y * W + x) * 4;
+      s += Math.abs(buf[i] - buf[i + 4]) + Math.abs(buf[i] - buf[i + W * 4]);
+      n++;
+    }
+  }
+  return s / n;
+};
+const noiseDiff = (buf) => {
+  let s = 0, n = 0;
+  for (let y = 36; y < 60; y++) {
+    for (let x = 4; x < 44; x++) {
+      const i = (y * W + x) * 4;
+      const g = 0.299 * buf[i] + 0.587 * buf[i + 1] + 0.114 * buf[i + 2];
+      const gr = 0.299 * buf[i + 4] + 0.587 * buf[i + 5] + 0.114 * buf[i + 6];
+      s += Math.abs(g - gr);
+      n++;
+    }
+  }
+  return s / n;
+};
+const strokeMinLum = (buf) => {
+  let m = 255;
+  for (let y = 40; y < 56; y++) {
+    const i = (y * W + 68) * 4;
+    const lum = 0.299 * buf[i] + 0.587 * buf[i + 1] + 0.114 * buf[i + 2];
+    if (lum < m) m = lum;
+  }
+  return m;
+};
+
+assert(avgChroma(outputs.get('digital_art')) > avgChroma(outputs.get('photo_3d_soft')) + 8, 'digital_art must boost chroma saturation');
+assert(edgeEnergy(outputs.get('photo_sharp')) > edgeEnergy(outputs.get('photo_3d_soft')) + 15, 'photo_sharp must have crisper edges than photo_3d_soft');
+assert(edgeEnergy(outputs.get('diffusion_razor')) > edgeEnergy(outputs.get('photo_3d_nr')) + 10, 'diffusion_razor must have crisper edges than photo_3d_nr');
+assert(noiseDiff(outputs.get('photo_3d_soft')) < noiseDiff(outputs.get('photo_sharp')), 'photo_3d_soft must reduce noise vs photo_sharp');
+assert(noiseDiff(outputs.get('photo_3d_nr')) < noiseDiff(srcBuf), 'photo_3d_nr must reduce input noise');
+assert(strokeMinLum(outputs.get('photo_text')) < strokeMinLum(outputs.get('photo_3d_soft')), 'photo_text must deepen ink strokes vs photo_3d_soft');
+assert(strokeMinLum(outputs.get('pixel_line')) < strokeMinLum(outputs.get('photo_3d_soft')), 'pixel_line must deepen ink strokes vs photo_3d_soft');
+console.log('✓ All 8 Image Tracer enhancement presets verified as visually & mathematically distinct');

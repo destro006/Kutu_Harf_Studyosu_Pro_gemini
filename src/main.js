@@ -2801,7 +2801,7 @@ function setMainWorkspace(ws) {
   const tracerWrap = document.getElementById('tracerCenterWrap');
   tracerWrap?.classList.toggle('hidden', ws !== 'tracer');
   if (ws === 'tracer' && tracerWrap && !tracerWrap.querySelector('#traceStudioFrame')) {
-    tracerWrap.innerHTML = '<iframe id="traceStudioFrame" class="tracer-iframe" src="./public/trace-studio/index.html" title="Image Tracer Stüdyosu"></iframe>';
+    tracerWrap.innerHTML = '<iframe id="traceStudioFrame" class="tracer-iframe" src="./public/trace-studio/index.html?v=20261125-v7" title="Image Tracer Stüdyosu"></iframe>';
   }
   document.getElementById('nestingCenterWrap')?.classList.toggle('hidden', ws !== 'nesting');
   document.getElementById('cncCenterWrap')?.classList.toggle('hidden', ws !== 'cnc');

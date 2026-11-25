@@ -612,14 +612,78 @@
 <script>
 (() => {
   const PRESETS = [
-    { id: 'art_vector', name: 'Art & Vector Graphics', desc: 'Logo, yazı ve tabela grafiği (Trace için önerilen).', sharp: 85, denoise: 45, contrast: 26, edgeBoost: 1.45, flatDefault: true, grad: 'linear-gradient(135deg,#d4a24c,#10b981)' },
-    { id: 'photo_text', name: 'Photo LN + Text', desc: 'Tabela fotoğrafı ve ekran görüntüsü netleştirme.', sharp: 90, denoise: 30, contrast: 28, edgeBoost: 1.35, flatDefault: true, grad: 'linear-gradient(135deg,#6366f1,#ec4899)' },
-    { id: 'pixel_line', name: 'Pixel & Line Art', desc: 'Küçük piksel ve çizgi logoları keskin büyütme.', sharp: 120, denoise: 20, contrast: 34, edgeBoost: 1.65, flatDefault: true, grad: 'linear-gradient(135deg,#84cc16,#0f172a)' },
-    { id: 'diffusion_razor', name: 'Diffusion Razor', desc: 'AI üretimi ve sert kenarlı illüstrasyonlar.', sharp: 110, denoise: 28, contrast: 20, edgeBoost: 1.4, flatDefault: true, grad: 'linear-gradient(135deg,#ec4899,#06b6d4)' },
-    { id: 'digital_art', name: 'Digital Art Supreme', desc: 'Kurumsal görsellerde canlı doku güçlendirme.', sharp: 75, denoise: 35, contrast: 22, edgeBoost: 1.15, flatDefault: false, grad: 'linear-gradient(135deg,#f43f5e,#d4a24c)' },
-    { id: 'photo_sharp', name: 'Photo Sharp UHD', desc: 'Yüksek dokulu fotoğraflar için detay artırma.', sharp: 95, denoise: 12, contrast: 18, edgeBoost: 1.2, flatDefault: false, grad: 'linear-gradient(135deg,#0ea5e9,#d4a24c)' },
-    { id: 'photo_3d_nr', name: 'Photo, 3D + NR', desc: 'Gradyan ve 3D renderlarda gürültü giderme.', sharp: 55, denoise: 65, contrast: 12, edgeBoost: 1.0, flatDefault: false, grad: 'linear-gradient(135deg,#14b8a6,#334155)' },
-    { id: 'photo_3d_soft', name: 'Photo, 3D Soft', desc: 'Doğal yumuşak kenarlı pürüzsüzleştirme.', sharp: 32, denoise: 72, contrast: 8, edgeBoost: 0.85, flatDefault: false, grad: 'linear-gradient(135deg,#b45309,#334155)' }
+    {
+      id: 'art_vector', name: 'Art & Vector Graphics', desc: 'Logo, yazı ve tabela grafiği (Trace için önerilen).',
+      sharp: 85, denoise: 45, contrast: 26, edgeBoost: 1.35, flatDefault: true,
+      upscaleMode: 'catmull', gfPasses: 1, gfRadius: 2, gfEps: 0.0045, flatLockMode: 'strong',
+      shockPasses: 2, shockStrength: 1.0, unsharpRadius: 1, unsharpGain: 1.15, haloSlack: 18,
+      localClarity: 0.16, contrastAmt: 0.26, vibrance: 0.10, warmth: 0.0, gamma: 1.0,
+      inkDarken: 0.0, whiteLift: 0.0, softBlurMix: 0.0,
+      grad: 'linear-gradient(135deg,#d4a24c,#10b981)'
+    },
+    {
+      id: 'photo_text', name: 'Photo LN + Text', desc: 'Tabela fotoğrafı ve ekran görüntüsü netleştirme.',
+      sharp: 95, denoise: 28, contrast: 42, edgeBoost: 1.45, flatDefault: false,
+      upscaleMode: 'catmull', gfPasses: 1, gfRadius: 1, gfEps: 0.0020, flatLockMode: 'none',
+      shockPasses: 2, shockStrength: 1.15, unsharpRadius: 1, unsharpGain: 1.75, haloSlack: 34,
+      localClarity: 0.48, contrastAmt: 0.42, vibrance: -0.08, warmth: 0.0, gamma: 0.96,
+      inkDarken: 0.30, whiteLift: 0.14, softBlurMix: 0.0,
+      grad: 'linear-gradient(135deg,#6366f1,#ec4899)'
+    },
+    {
+      id: 'pixel_line', name: 'Pixel & Line Art', desc: 'Küçük piksel ve çizgi logoları keskin büyütme.',
+      sharp: 120, denoise: 10, contrast: 55, edgeBoost: 1.65, flatDefault: true,
+      upscaleMode: 'nearest', gfPasses: 0, gfRadius: 0, gfEps: 0.0, flatLockMode: 'snap',
+      shockPasses: 0, shockStrength: 0.0, unsharpRadius: 1, unsharpGain: 1.45, haloSlack: 40,
+      localClarity: 0.0, contrastAmt: 0.55, vibrance: 0.05, warmth: 0.0, gamma: 0.95,
+      inkDarken: 0.42, whiteLift: 0.12, softBlurMix: 0.0,
+      grad: 'linear-gradient(135deg,#84cc16,#0f172a)'
+    },
+    {
+      id: 'diffusion_razor', name: 'Diffusion Razor', desc: 'AI üretimi ve sert kenarlı illüstrasyonlar.',
+      sharp: 115, denoise: 30, contrast: 34, edgeBoost: 1.55, flatDefault: true,
+      upscaleMode: 'catmull', gfPasses: 1, gfRadius: 2, gfEps: 0.0030, flatLockMode: 'light',
+      shockPasses: 3, shockStrength: 1.45, unsharpRadius: 2, unsharpGain: 2.10, haloSlack: 42,
+      localClarity: 0.52, contrastAmt: 0.34, vibrance: 0.22, warmth: 0.0, gamma: 1.0,
+      inkDarken: 0.14, whiteLift: 0.0, softBlurMix: 0.0,
+      grad: 'linear-gradient(135deg,#ec4899,#06b6d4)'
+    },
+    {
+      id: 'digital_art', name: 'Digital Art Supreme', desc: 'Kurumsal görsellerde canlı doku güçlendirme.',
+      sharp: 78, denoise: 26, contrast: 30, edgeBoost: 1.15, flatDefault: false,
+      upscaleMode: 'catmull', gfPasses: 1, gfRadius: 1, gfEps: 0.0018, flatLockMode: 'none',
+      shockPasses: 1, shockStrength: 0.70, unsharpRadius: 2, unsharpGain: 1.20, haloSlack: 26,
+      localClarity: 0.44, contrastAmt: 0.30, vibrance: 0.55, warmth: 0.07, gamma: 0.98,
+      inkDarken: 0.0, whiteLift: 0.0, softBlurMix: 0.0,
+      grad: 'linear-gradient(135deg,#f43f5e,#d4a24c)'
+    },
+    {
+      id: 'photo_sharp', name: 'Photo Sharp UHD', desc: 'Yüksek dokulu fotoğraflar için detay artırma.',
+      sharp: 108, denoise: 8, contrast: 28, edgeBoost: 1.30, flatDefault: false,
+      upscaleMode: 'catmull', gfPasses: 0, gfRadius: 0, gfEps: 0.0, flatLockMode: 'none',
+      shockPasses: 1, shockStrength: 0.55, unsharpRadius: 1, unsharpGain: 2.30, haloSlack: 48,
+      localClarity: 0.60, contrastAmt: 0.28, vibrance: 0.14, warmth: 0.0, gamma: 1.0,
+      inkDarken: 0.0, whiteLift: 0.0, softBlurMix: 0.0,
+      grad: 'linear-gradient(135deg,#0ea5e9,#d4a24c)'
+    },
+    {
+      id: 'photo_3d_nr', name: 'Photo, 3D + NR', desc: 'Gradyan ve 3D renderlarda gürültü giderme.',
+      sharp: 35, denoise: 72, contrast: 10, edgeBoost: 0.75, flatDefault: false,
+      upscaleMode: 'catmull', gfPasses: 2, gfRadius: 3, gfEps: 0.014, flatLockMode: 'none',
+      shockPasses: 0, shockStrength: 0.0, unsharpRadius: 1, unsharpGain: 0.25, haloSlack: 10,
+      localClarity: 0.05, contrastAmt: 0.08, vibrance: 0.04, warmth: 0.0, gamma: 1.0,
+      inkDarken: 0.0, whiteLift: 0.0, softBlurMix: 0.14,
+      grad: 'linear-gradient(135deg,#14b8a6,#334155)'
+    },
+    {
+      id: 'photo_3d_soft', name: 'Photo, 3D Soft', desc: 'Doğal yumuşak kenarlı pürüzsüzleştirme.',
+      sharp: 12, denoise: 84, contrast: -18, edgeBoost: 0.50, flatDefault: false,
+      upscaleMode: 'catmull', gfPasses: 2, gfRadius: 4, gfEps: 0.028, flatLockMode: 'none',
+      shockPasses: 0, shockStrength: 0.0, unsharpRadius: 1, unsharpGain: 0.0, haloSlack: 0,
+      localClarity: -0.24, contrastAmt: -0.18, vibrance: -0.12, warmth: 0.03, gamma: 1.06,
+      inkDarken: 0.0, whiteLift: 0.0, softBlurMix: 0.44,
+      grad: 'linear-gradient(135deg,#b45309,#334155)'
+    }
   ];
 
   const $ = (id) => document.getElementById(id);
@@ -846,8 +910,8 @@
 
     const preset = PRESETS.find(p => p.id === state.presetId) || PRESETS[0];
     const noiseRatio = Math.min(1, Math.max(0, (flatNoiseVal - 1.2) / 14));
-    const autoDenoise = Math.round(Math.min(80, Math.max(0, noiseRatio * 68 + (noiseRatio > 0.12 ? preset.denoise * 0.25 : 0))));
-    const autoSharp = Math.round(Math.min(135, Math.max(40, preset.sharp * 0.8 + (1 - noiseRatio) * 30)));
+    const autoDenoise = Math.round(Math.min(95, Math.max(0, preset.denoise * 0.78 + noiseRatio * 28)));
+    const autoSharp = Math.round(Math.min(140, Math.max(0, preset.sharp * 0.85 + (1 - noiseRatio) * 18 * (preset.unsharpGain > 0 ? 1 : 0))));
     const autoBgTol = Math.round(Math.min(72, Math.max(20, 24 + perim.variance * 0.8)));
 
     state.autoParams = {
@@ -859,8 +923,9 @@
 
     $('rngBgTol').value = autoBgTol;
     $('lblBgTol').textContent = autoBgTol;
-    $('scanNoise').textContent = noiseRatio > 0.55 ? `Yüksek (%${autoDenoise})` : noiseRatio > 0.25 ? `Orta (%${autoDenoise})` : `Düşük (%${autoDenoise})`;
-    $('scanSharp').textContent = `+%${autoSharp} · Knt %${preset.contrast}`;
+    const noiseLabel = preset.denoise >= 65 ? 'Güçlü NR' : noiseRatio > 0.55 ? 'Yüksek' : noiseRatio > 0.25 ? 'Orta' : 'Düşük';
+    $('scanNoise').textContent = `${noiseLabel} (%${autoDenoise})`;
+    $('scanSharp').textContent = `${preset.sharp <= 20 ? 'Yumuşak' : '+%' + autoSharp} · Knt ${preset.contrast >= 0 ? '+' : ''}%${preset.contrast}`;
     $('scanBg').textContent = perim.hasAlpha ? 'Şeffaf PNG' : perim.variance < 12 ? `Düz (Tol ${autoBgTol})` : `Dokulu (Tol ${autoBgTol})`;
     $('scanTrace').textContent = `${state.autoParams.traceColors} Renk · Eşik ${state.autoParams.traceThresh}`;
     updateBgBadge();
@@ -886,9 +951,15 @@
         state.presetId = p.id;
         $('chkFlatColorLock').checked = p.flatDefault;
         $('statusModel').textContent = `Model: ${p.name}`;
+        if (state.viewMode === 'vector') {
+          state.svgText = '';
+          $('traceBadge').textContent = 'Güncelle';
+          $('traceBadge').className = 'badge';
+          setViewMode('compare');
+        }
         renderPresets();
         analyzeImageAuto(state.sourceCanvas);
-        runEnhancement(true);
+        runEnhancement(false);
       });
     });
   }
@@ -994,8 +1065,7 @@
     return new ImageData(outBuf, outW, outH);
   }
 
-  async function applyAnisotropicShockFilter(buf, w, h, strength, passes, myRun) {
-    let cur = buf;
+  function shockFilterStep(cur, w, h, strength, yStart = 1, yEnd = h - 1, out = new Uint8ClampedArray(cur)) {
     const sampleBilinear = (src, x, y, ch) => {
       const cx = x < 0 ? 0 : x > w - 1 ? w - 1 : x;
       const cy = y < 0 ? 0 : y > h - 1 ? h - 1 : y;
@@ -1009,67 +1079,392 @@
       return top + (bot - top) * fy;
     };
     const lum = (src, idx) => 0.299 * src[idx] + 0.587 * src[idx + 1] + 0.114 * src[idx + 2];
-    const shockStep = Math.min(0.48, Math.max(0.20, strength * 0.36));
+    const shockStep = Math.min(0.50, Math.max(0.06, strength * 0.34));
 
+    for (let y = yStart; y < yEnd; y++) {
+      const rowM = (y - 1) * w, row = y * w, rowP = (y + 1) * w;
+      for (let x = 1; x < w - 1; x++) {
+        const idx = (row + x) * 4;
+        if (cur[idx + 3] < 245) continue;
+        const aMin = Math.min(
+          cur[(rowM + x - 1) * 4 + 3], cur[(rowM + x) * 4 + 3], cur[(rowM + x + 1) * 4 + 3],
+          cur[(row + x - 1) * 4 + 3], cur[(row + x + 1) * 4 + 3],
+          cur[(rowP + x - 1) * 4 + 3], cur[(rowP + x) * 4 + 3], cur[(rowP + x + 1) * 4 + 3]
+        );
+        if (aMin < 200) continue;
+
+        const lTL = lum(cur, (rowM + x - 1) * 4), lT = lum(cur, (rowM + x) * 4), lTR = lum(cur, (rowM + x + 1) * 4);
+        const lL = lum(cur, (row + x - 1) * 4), lC = lum(cur, idx), lR = lum(cur, (row + x + 1) * 4);
+        const lBL = lum(cur, (rowP + x - 1) * 4), lB = lum(cur, (rowP + x) * 4), lBR = lum(cur, (rowP + x + 1) * 4);
+
+        const gx = ((lTR + 2 * lR + lBR) - (lTL + 2 * lL + lBL)) * 0.125;
+        const gy = ((lBL + 2 * lB + lBR) - (lTL + 2 * lT + lTR)) * 0.125;
+        const mag = Math.hypot(gx, gy);
+        if (mag <= 8) continue;
+
+        const nx = gx / mag, ny = gy / mag;
+        const tx = -ny, ty = nx;
+
+        const lp0 = 0.299 * sampleBilinear(cur, x + nx, y + ny, 0) + 0.587 * sampleBilinear(cur, x + nx, y + ny, 1) + 0.114 * sampleBilinear(cur, x + nx, y + ny, 2);
+        const lm0 = 0.299 * sampleBilinear(cur, x - nx, y - ny, 0) + 0.587 * sampleBilinear(cur, x - nx, y - ny, 1) + 0.114 * sampleBilinear(cur, x - nx, y - ny, 2);
+        const lap = lp0 + lm0 - 2 * lC;
+        const isRamp = (lp0 - lC) * (lC - lm0) > 0;
+        const dir = (isRamp && Math.abs(lap) > 2.0) ? (lap > 0 ? -1 : 1) : 0;
+
+        for (let ch = 0; ch < 3; ch++) {
+          const c = cur[idx + ch];
+          const tPos = sampleBilinear(cur, x + 0.85 * tx, y + 0.85 * ty, ch);
+          const tNeg = sampleBilinear(cur, x - 0.85 * tx, y - 0.85 * ty, ch);
+          const tAvg = 0.5 * (tPos + tNeg);
+          const tBlend = Math.abs(c - tAvg) < 22 ? 0.14 : 0;
+          const base = c * (1 - tBlend) + tAvg * tBlend;
+
+          const pPlus = sampleBilinear(cur, x + nx, y + ny, ch);
+          const pMinus = sampleBilinear(cur, x - nx, y - ny, ch);
+          let val = dir === 0 ? base : base * (1 - shockStep) + (dir > 0 ? pPlus : pMinus) * shockStep;
+          const mn = Math.min(c, pPlus, pMinus), mx = Math.max(c, pPlus, pMinus);
+          if (val < mn) val = mn;
+          if (val > mx) val = mx;
+          out[idx + ch] = Math.round(val);
+        }
+      }
+    }
+    return out;
+  }
+
+  async function applyAnisotropicShockFilter(buf, w, h, strength, passes, myRun) {
+    if (passes <= 0 || strength <= 0) return buf;
+    let cur = buf;
     for (let pass = 0; pass < passes; pass++) {
       const out = new Uint8ClampedArray(cur);
-      for (let y = 1; y < h - 1; y++) {
-        if (y % 140 === 0) {
-          setProgress(74 + ((pass * h + y) / (passes * h)) * 12, `Anizotropik kenar netleştirme (${pass + 1}/${passes})...`);
-          await yieldFrame();
-          if (myRun !== state.runId) return null;
-        }
-        const rowM = (y - 1) * w, row = y * w, rowP = (y + 1) * w;
-        for (let x = 1; x < w - 1; x++) {
-          const idx = (row + x) * 4;
-          if (cur[idx + 3] < 245) continue;
-          const aMin = Math.min(
-            cur[(rowM + x - 1) * 4 + 3], cur[(rowM + x) * 4 + 3], cur[(rowM + x + 1) * 4 + 3],
-            cur[(row + x - 1) * 4 + 3], cur[(row + x + 1) * 4 + 3],
-            cur[(rowP + x - 1) * 4 + 3], cur[(rowP + x) * 4 + 3], cur[(rowP + x + 1) * 4 + 3]
-          );
-          if (aMin < 200) continue;
-
-          const lTL = lum(cur, (rowM + x - 1) * 4), lT = lum(cur, (rowM + x) * 4), lTR = lum(cur, (rowM + x + 1) * 4);
-          const lL = lum(cur, (row + x - 1) * 4), lC = lum(cur, idx), lR = lum(cur, (row + x + 1) * 4);
-          const lBL = lum(cur, (rowP + x - 1) * 4), lB = lum(cur, (rowP + x) * 4), lBR = lum(cur, (rowP + x + 1) * 4);
-
-          const gx = ((lTR + 2 * lR + lBR) - (lTL + 2 * lL + lBL)) * 0.125;
-          const gy = ((lBL + 2 * lB + lBR) - (lTL + 2 * lT + lTR)) * 0.125;
-          const mag = Math.hypot(gx, gy);
-          if (mag <= 8) continue;
-
-          const nx = gx / mag, ny = gy / mag;
-          const tx = -ny, ty = nx;
-
-          const lp0 = 0.299 * sampleBilinear(cur, x + nx, y + ny, 0) + 0.587 * sampleBilinear(cur, x + nx, y + ny, 1) + 0.114 * sampleBilinear(cur, x + nx, y + ny, 2);
-          const lm0 = 0.299 * sampleBilinear(cur, x - nx, y - ny, 0) + 0.587 * sampleBilinear(cur, x - nx, y - ny, 1) + 0.114 * sampleBilinear(cur, x - nx, y - ny, 2);
-          const lap = lp0 + lm0 - 2 * lC;
-          const isRamp = (lp0 - lC) * (lC - lm0) > 0;
-          const dir = (isRamp && Math.abs(lap) > 2.0) ? (lap > 0 ? -1 : 1) : 0;
-
-          for (let ch = 0; ch < 3; ch++) {
-            const c = cur[idx + ch];
-            const tPos = sampleBilinear(cur, x + 0.85 * tx, y + 0.85 * ty, ch);
-            const tNeg = sampleBilinear(cur, x - 0.85 * tx, y - 0.85 * ty, ch);
-            const tAvg = 0.5 * (tPos + tNeg);
-            const tBlend = Math.abs(c - tAvg) < 22 ? 0.14 : 0;
-            const base = c * (1 - tBlend) + tAvg * tBlend;
-
-            const pPlus = sampleBilinear(cur, x + nx, y + ny, ch);
-            const pMinus = sampleBilinear(cur, x - nx, y - ny, ch);
-            let val = dir === 0 ? base : base * (1 - shockStep) + (dir > 0 ? pPlus : pMinus) * shockStep;
-            const mn = Math.min(c, pPlus, pMinus), mx = Math.max(c, pPlus, pMinus);
-            if (val < mn) val = mn;
-            if (val > mx) val = mx;
-            out[idx + ch] = Math.round(val);
-          }
-        }
+      for (let y = 1; y < h - 1; y += 140) {
+        setProgress(74 + ((pass * h + y) / (passes * h)) * 12, `Anizotropik kenar netleştirme (${pass + 1}/${passes})...`);
+        await yieldFrame();
+        if (myRun !== state.runId) return null;
+        shockFilterStep(cur, w, h, strength, y, Math.min(h - 1, y + 140), out);
       }
       cur = out;
     }
     return cur;
   }
+
+  // O(N) Kaiming He Guided Image Filter (radius-independent edge-preserving smoothing)
+  function boxFilter(src, w, h, r, tmpBuf, outBuf) {
+    const win = 2 * r + 1;
+    const invWin = 1 / win;
+    for (let y = 0; y < h; y++) {
+      const row = y * w;
+      let sum = 0;
+      for (let k = -r; k <= r; k++) {
+        const cx = k < 0 ? 0 : k >= w ? w - 1 : k;
+        sum += src[row + cx];
+      }
+      tmpBuf[row] = sum * invWin;
+      for (let x = 1; x < w; x++) {
+        const addX = x + r >= w ? w - 1 : x + r;
+        const remX = x - 1 - r < 0 ? 0 : x - 1 - r;
+        sum += src[row + addX] - src[row + remX];
+        tmpBuf[row + x] = sum * invWin;
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      let sum = 0;
+      for (let k = -r; k <= r; k++) {
+        const cy = k < 0 ? 0 : k >= h ? h - 1 : k;
+        sum += tmpBuf[cy * w + x];
+      }
+      outBuf[x] = sum * invWin;
+      for (let y = 1; y < h; y++) {
+        const addY = y + r >= h ? h - 1 : y + r;
+        const remY = y - 1 - r < 0 ? 0 : y - 1 - r;
+        sum += tmpBuf[addY * w + x] - tmpBuf[remY * w + x];
+        outBuf[y * w + x] = sum * invWin;
+      }
+    }
+    return outBuf;
+  }
+
+  function createGuidedScratch(total) {
+    return {
+      I: new Float32Array(total), II: new Float32Array(total),
+      meanI: new Float32Array(total), corrI: new Float32Array(total), varI: new Float32Array(total),
+      pBuf: new Float32Array(total), ipBuf: new Float32Array(total),
+      meanP: new Float32Array(total), corrIP: new Float32Array(total),
+      aBuf: new Float32Array(total), bBuf: new Float32Array(total),
+      meanA: new Float32Array(total), meanB: new Float32Array(total),
+      tmp: new Float32Array(total)
+    };
+  }
+
+  function guidedFilterStep(cur, w, h, r, eps, s) {
+    const total = w * h;
+    const { I, II, meanI, corrI, varI, pBuf, ipBuf, meanP, corrIP, aBuf, bBuf, meanA, meanB, tmp } = s;
+    for (let k = 0; k < total; k++) {
+      const i4 = k * 4;
+      const lum = (0.299 * cur[i4] + 0.587 * cur[i4 + 1] + 0.114 * cur[i4 + 2]) / 255;
+      I[k] = lum;
+      II[k] = lum * lum;
+    }
+    boxFilter(I, w, h, r, tmp, meanI);
+    boxFilter(II, w, h, r, tmp, corrI);
+    for (let k = 0; k < total; k++) {
+      const v = corrI[k] - meanI[k] * meanI[k];
+      varI[k] = v > 0 ? v : 0;
+    }
+    const nextBuf = new Uint8ClampedArray(cur);
+    for (let ch = 0; ch < 3; ch++) {
+      for (let k = 0; k < total; k++) {
+        const pv = cur[k * 4 + ch] / 255;
+        pBuf[k] = pv;
+        ipBuf[k] = I[k] * pv;
+      }
+      boxFilter(pBuf, w, h, r, tmp, meanP);
+      boxFilter(ipBuf, w, h, r, tmp, corrIP);
+      for (let k = 0; k < total; k++) {
+        const cov = corrIP[k] - meanI[k] * meanP[k];
+        const ak = cov / (varI[k] + eps);
+        aBuf[k] = ak;
+        bBuf[k] = meanP[k] - ak * meanI[k];
+      }
+      boxFilter(aBuf, w, h, r, tmp, meanA);
+      boxFilter(bBuf, w, h, r, tmp, meanB);
+      for (let k = 0; k < total; k++) {
+        const q = (meanA[k] * I[k] + meanB[k]) * 255;
+        nextBuf[k * 4 + ch] = q < 0 ? 0 : q > 255 ? 255 : Math.round(q);
+      }
+    }
+    return nextBuf;
+  }
+
+  function applyInteriorFlatLock(buf, w, h, mode = 'strong', traceColors = 4) {
+    if (!mode || mode === 'none') return;
+    const isSnap = mode === 'snap';
+    const isLight = mode === 'light';
+    const gradLimit = isSnap ? 28 : isLight ? 14 : 20;
+    const samples = [];
+    const sStep = Math.max(1, Math.floor(Math.sqrt((w * h) / 5000)));
+    for (let y = 2; y < h - 2; y += sStep) {
+      for (let x = 2; x < w - 2; x += sStep) {
+        const idx = (y * w + x) * 4;
+        if (buf[idx + 3] < 200) continue;
+        const rt = idx + 4, dn = idx + w * 4;
+        const grad = Math.abs(buf[idx] - buf[rt]) + Math.abs(buf[idx + 1] - buf[rt + 1]) + Math.abs(buf[idx + 2] - buf[rt + 2]) +
+                     Math.abs(buf[idx] - buf[dn]) + Math.abs(buf[idx + 1] - buf[dn + 1]) + Math.abs(buf[idx + 2] - buf[dn + 2]);
+        if (grad < gradLimit) samples.push([buf[idx], buf[idx + 1], buf[idx + 2]]);
+      }
+    }
+    if (samples.length < 16) return;
+    const maxK = Math.min(isSnap ? 8 : 10, Math.max(3, traceColors + 3));
+    const cents = [samples[0].slice()];
+    while (cents.length < maxK) {
+      let far = null, farD = 0;
+      for (let i = 0; i < samples.length; i += 2) {
+        const s = samples[i]; let md = Infinity;
+        for (const c of cents) { const d = (s[0]-c[0])**2+(s[1]-c[1])**2+(s[2]-c[2])**2; if (d < md) md = d; }
+        if (md > farD) { farD = md; far = s; }
+      }
+      if (!far || farD < 1200) break;
+      cents.push(far.slice());
+    }
+    for (let it = 0; it < 6; it++) {
+      const sums = cents.map(() => [0, 0, 0, 0]);
+      for (const s of samples) {
+        let best = 0, bestD = Infinity;
+        for (let c = 0; c < cents.length; c++) {
+          const d = (s[0]-cents[c][0])**2+(s[1]-cents[c][1])**2+(s[2]-cents[c][2])**2;
+          if (d < bestD) { bestD = d; best = c; }
+        }
+        sums[best][0]+=s[0]; sums[best][1]+=s[1]; sums[best][2]+=s[2]; sums[best][3]++;
+      }
+      for (let c = 0; c < cents.length; c++) if (sums[c][3]) {
+        cents[c][0] = Math.round(sums[c][0]/sums[c][3]);
+        cents[c][1] = Math.round(sums[c][1]/sums[c][3]);
+        cents[c][2] = Math.round(sums[c][2]/sums[c][3]);
+      }
+    }
+    const rTol = isSnap ? 38 : isLight ? 22 : 28;
+    const tightR2 = rTol * rTol * 3;
+    const strength = isSnap ? 1.0 : isLight ? 0.65 : 0.92;
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const idx = (y * w + x) * 4;
+        if (buf[idx + 3] < 220) continue;
+        const lt = idx-4, rt = idx+4, up = idx-w*4, dn = idx+w*4;
+        const grad = Math.abs(buf[rt]-buf[lt])+Math.abs(buf[rt+1]-buf[lt+1])+Math.abs(buf[rt+2]-buf[lt+2])+
+                     Math.abs(buf[dn]-buf[up])+Math.abs(buf[dn+1]-buf[up+1])+Math.abs(buf[dn+2]-buf[up+2]);
+        if (grad > gradLimit) continue;
+        let best = 0, bestD = Infinity;
+        for (let c = 0; c < cents.length; c++) {
+          const d = (buf[idx]-cents[c][0])**2+(buf[idx+1]-cents[c][1])**2+(buf[idx+2]-cents[c][2])**2;
+          if (d < bestD) { bestD = d; best = c; }
+        }
+        if (bestD < tightR2) {
+          const t = Math.min(1, strength * (grad < 8 ? 1 : (gradLimit - grad) / Math.max(1, gradLimit - 8)) * (1 - Math.sqrt(bestD / tightR2) * 0.25));
+          buf[idx] = Math.round(buf[idx]*(1-t)+cents[best][0]*t);
+          buf[idx+1] = Math.round(buf[idx+1]*(1-t)+cents[best][1]*t);
+          buf[idx+2] = Math.round(buf[idx+2]*(1-t)+cents[best][2]*t);
+        }
+      }
+    }
+  }
+
+  function applyPresetDetailGrade(clean, outBuf, w, h, preset, flatLock) {
+    const total = w * h;
+    let base = clean;
+    const tmp = new Float32Array(total);
+    const chIn = new Float32Array(total);
+    const chOut = new Float32Array(total);
+
+    if (preset.softBlurMix > 0) {
+      const softR = Math.max(1, Math.min(6, Math.round(Math.min(w, h) / 140) + 1));
+      const mix = Math.min(0.85, preset.softBlurMix);
+      const blended = new Uint8ClampedArray(clean);
+      for (let ch = 0; ch < 3; ch++) {
+        for (let k = 0; k < total; k++) chIn[k] = clean[k * 4 + ch];
+        boxFilter(chIn, w, h, softR, tmp, chOut);
+        for (let k = 0; k < total; k++) {
+          blended[k * 4 + ch] = Math.round(clean[k * 4 + ch] * (1 - mix) + chOut[k] * mix);
+        }
+      }
+      base = blended;
+    }
+
+    const L = new Float32Array(total);
+    for (let k = 0; k < total; k++) {
+      const i4 = k * 4;
+      L[k] = 0.299 * base[i4] + 0.587 * base[i4 + 1] + 0.114 * base[i4 + 2];
+    }
+
+    let lFine = null;
+    if (preset.unsharpGain > 0) {
+      lFine = new Float32Array(total);
+      boxFilter(L, w, h, Math.max(1, preset.unsharpRadius || 1), tmp, lFine);
+    }
+
+    let lMed = null;
+    if (Math.abs(preset.localClarity || 0) > 0.01) {
+      lMed = new Float32Array(total);
+      const clarityR = Math.max(3, Math.min(14, Math.round(Math.min(w, h) * 0.015)));
+      boxFilter(L, w, h, clarityR, tmp, lMed);
+    }
+
+    const haloSlack = preset.haloSlack || 0;
+    const unsharpGain = preset.unsharpGain || 0;
+    const localClarity = preset.localClarity || 0;
+    const contrastAmt = preset.contrastAmt || 0;
+    const gamma = preset.gamma || 1.0;
+    const inkDarken = preset.inkDarken || 0;
+    const whiteLift = preset.whiteLift || 0;
+    const vibrance = preset.vibrance || 0;
+    const warmth = preset.warmth || 0;
+
+    for (let k = 0; k < total; k++) {
+      const i4 = k * 4;
+      const curL = L[k];
+      let dSharp = 0;
+      if (lFine) {
+        const diff = curL - lFine[k];
+        if (Math.abs(diff) > 1.0) {
+          dSharp = diff * unsharpGain;
+          if (dSharp < -haloSlack) dSharp = -haloSlack;
+          else if (dSharp > haloSlack) dSharp = haloSlack;
+        }
+      }
+
+      let dClarity = 0;
+      if (lMed) {
+        dClarity = (curL - lMed[k]) * localClarity;
+        if (dClarity < -42) dClarity = -42;
+        else if (dClarity > 42) dClarity = 42;
+      }
+
+      let tL = curL + dSharp + dClarity;
+      if (tL < 0) tL = 0;
+      else if (tL > 255) tL = 255;
+
+      let norm = tL / 255;
+      if (gamma !== 1.0 && norm > 0) norm = Math.pow(norm, gamma);
+      if (contrastAmt !== 0) {
+        const s = norm + contrastAmt * (norm - 0.5) * (1 - (2 * norm - 1) * (2 * norm - 1)) * 1.45;
+        norm = s < 0 ? 0 : s > 1 ? 1 : s;
+      }
+      tL = norm * 255;
+
+      if (inkDarken > 0 && tL < 115) {
+        tL -= (115 - tL) * inkDarken * 0.45;
+        if (tL < 0) tL = 0;
+      }
+      if (whiteLift > 0 && tL > 205) {
+        tL += (tL - 205) * whiteLift * 0.55;
+        if (tL > 255) tL = 255;
+      }
+
+      const deltaL = tL - curL;
+      let r = base[i4] + deltaL;
+      let g = base[i4 + 1] + deltaL;
+      let b = base[i4 + 2] + deltaL;
+
+      if (vibrance !== 0 || warmth !== 0) {
+        const avg = (r + g + b) / 3;
+        const mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
+        const mn = r < g ? (r < b ? r : b) : (g < b ? g : b);
+        const sat = Math.max(0, Math.min(1, (mx - mn) / 255));
+        const vibScale = 1 + vibrance * (1 - sat * 0.55);
+        r = avg + (r - avg) * vibScale;
+        g = avg + (g - avg) * vibScale;
+        b = avg + (b - avg) * vibScale;
+        if (warmth !== 0) {
+          r += warmth * 24;
+          g += warmth * 10;
+          b -= warmth * 18;
+        }
+      }
+
+      outBuf[i4] = r < 0 ? 0 : r > 255 ? 255 : Math.round(r);
+      outBuf[i4 + 1] = g < 0 ? 0 : g > 255 ? 255 : Math.round(g);
+      outBuf[i4 + 2] = b < 0 ? 0 : b > 255 ? 255 : Math.round(b);
+
+      let a = clean[i4 + 3];
+      if (flatLock && a > 10 && a < 245) {
+        a = a > 128 ? a + (255 - a) * 0.35 : a * 0.65;
+      }
+      outBuf[i4 + 3] = a < 0 ? 0 : a > 255 ? 255 : Math.round(a);
+    }
+    return outBuf;
+  }
+
+  function runPresetDspPipelineSync(srcBuf, w, h, presetId, flatNoise = 0.05, traceColors = 4) {
+    const preset = PRESETS.find(p => p.id === presetId) || PRESETS[0];
+    const flatLock = preset.flatDefault;
+    let cur = new Uint8ClampedArray(srcBuf);
+    if (preset.gfPasses > 0) {
+      const scratch = createGuidedScratch(w * h);
+      const r = Math.max(1, Math.min(6, preset.gfRadius));
+      const eps = preset.gfEps * (1 + flatNoise * 0.9);
+      for (let pass = 0; pass < preset.gfPasses; pass++) {
+        cur = guidedFilterStep(cur, w, h, r, eps, scratch);
+      }
+    }
+    const lockMode = flatLock
+      ? (preset.flatLockMode && preset.flatLockMode !== 'none' ? preset.flatLockMode : 'strong')
+      : 'none';
+    if (lockMode === 'strong' || lockMode === 'snap' || (lockMode === 'light' && flatNoise > 0.04)) {
+      applyInteriorFlatLock(cur, w, h, lockMode, traceColors);
+    }
+    if (preset.shockPasses > 0 && preset.shockStrength > 0) {
+      for (let pass = 0; pass < preset.shockPasses; pass++) {
+        cur = shockFilterStep(cur, w, h, preset.shockStrength);
+      }
+    }
+    const out = new Uint8ClampedArray(cur.length);
+    applyPresetDetailGrade(cur, out, w, h, preset, flatLock);
+    return out;
+  }
+
+  window.__TRACE_ENHANCE_ENGINE__ = {
+    PRESETS, boxFilter, guidedFilterStep, shockFilterStep,
+    applyInteriorFlatLock, applyPresetDetailGrade, runPresetDspPipelineSync
+  };
 
   async function runEnhancement(silent = false) {
     const src = state.sourceCanvas;
@@ -1101,182 +1496,30 @@
       if (myRun !== state.runId) return;
 
       const flatLock = $('chkFlatColorLock').checked;
-      const denoiseAmt = state.autoParams.denoise / 100;
-      const sharpAmt = (state.autoParams.sharp / 100) * (preset.edgeBoost || 1);
-      const contrastAmt = state.autoParams.contrast / 100;
-      const flatNoise = state.autoParams.flatNoise ?? denoiseAmt;
-
-      // O(N) Kaiming He Guided Image Filter (radius-independent edge-preserving smoothing)
-      const boxFilter = (src, w, h, r, tmpBuf, outBuf) => {
-        const win = 2 * r + 1;
-        const invWin = 1 / win;
-        for (let y = 0; y < h; y++) {
-          const row = y * w;
-          let sum = 0;
-          for (let k = -r; k <= r; k++) {
-            const cx = k < 0 ? 0 : k >= w ? w - 1 : k;
-            sum += src[row + cx];
-          }
-          tmpBuf[row] = sum * invWin;
-          for (let x = 1; x < w; x++) {
-            const addX = x + r >= w ? w - 1 : x + r;
-            const remX = x - 1 - r < 0 ? 0 : x - 1 - r;
-            sum += src[row + addX] - src[row + remX];
-            tmpBuf[row + x] = sum * invWin;
-          }
-        }
-        for (let x = 0; x < w; x++) {
-          let sum = 0;
-          for (let k = -r; k <= r; k++) {
-            const cy = k < 0 ? 0 : k >= h ? h - 1 : k;
-            sum += tmpBuf[cy * w + x];
-          }
-          outBuf[x] = sum * invWin;
-          for (let y = 1; y < h; y++) {
-            const addY = y + r >= h ? h - 1 : y + r;
-            const remY = y - 1 - r < 0 ? 0 : y - 1 - r;
-            sum += tmpBuf[addY * w + x] - tmpBuf[remY * w + x];
-            outBuf[y * w + x] = sum * invWin;
-          }
-        }
-        return outBuf;
-      };
+      const flatNoise = state.autoParams.flatNoise ?? (state.autoParams.denoise / 100);
+      const isPixelMode = preset.upscaleMode === 'nearest';
+      const gfPasses = preset.gfPasses || 0;
+      const gfRadius = Math.max(1, Math.min(6, preset.gfRadius || 1));
+      const gfEps = (preset.gfEps || 0.002) * (1 + flatNoise * 0.9);
+      const lockMode = flatLock
+        ? (preset.flatLockMode && preset.flatLockMode !== 'none' ? preset.flatLockMode : 'strong')
+        : 'none';
+      const shouldFlatLock = lockMode === 'strong' || lockMode === 'snap' || (lockMode === 'light' && flatNoise > 0.04);
 
       const guidedFilterRGBA = async (srcBuf, w, h, r, eps, passesCount) => {
-        const total = w * h;
+        if (passesCount <= 0) return new Uint8ClampedArray(srcBuf);
+        const scratch = createGuidedScratch(w * h);
         let cur = new Uint8ClampedArray(srcBuf);
-        const I = new Float32Array(total);
-        const II = new Float32Array(total);
-        const meanI = new Float32Array(total);
-        const corrI = new Float32Array(total);
-        const varI = new Float32Array(total);
-        const pBuf = new Float32Array(total);
-        const ipBuf = new Float32Array(total);
-        const meanP = new Float32Array(total);
-        const corrIP = new Float32Array(total);
-        const aBuf = new Float32Array(total);
-        const bBuf = new Float32Array(total);
-        const meanA = new Float32Array(total);
-        const meanB = new Float32Array(total);
-        const tmp = new Float32Array(total);
-
         for (let pass = 0; pass < passesCount; pass++) {
           setProgress(28 + pass * 18, `Kaiming He Guided Filter (${pass + 1}/${passesCount})...`);
           await yieldFrame();
           if (myRun !== state.runId) return null;
-
-          for (let k = 0; k < total; k++) {
-            const i4 = k * 4;
-            const lum = (0.299 * cur[i4] + 0.587 * cur[i4 + 1] + 0.114 * cur[i4 + 2]) / 255;
-            I[k] = lum;
-            II[k] = lum * lum;
-          }
-          boxFilter(I, w, h, r, tmp, meanI);
-          boxFilter(II, w, h, r, tmp, corrI);
-          for (let k = 0; k < total; k++) {
-            const v = corrI[k] - meanI[k] * meanI[k];
-            varI[k] = v > 0 ? v : 0;
-          }
-
-          const nextBuf = new Uint8ClampedArray(cur);
-          for (let ch = 0; ch < 3; ch++) {
-            for (let k = 0; k < total; k++) {
-              const pv = cur[k * 4 + ch] / 255;
-              pBuf[k] = pv;
-              ipBuf[k] = I[k] * pv;
-            }
-            boxFilter(pBuf, w, h, r, tmp, meanP);
-            boxFilter(ipBuf, w, h, r, tmp, corrIP);
-            for (let k = 0; k < total; k++) {
-              const cov = corrIP[k] - meanI[k] * meanP[k];
-              const ak = cov / (varI[k] + eps);
-              aBuf[k] = ak;
-              bBuf[k] = meanP[k] - ak * meanI[k];
-            }
-            boxFilter(aBuf, w, h, r, tmp, meanA);
-            boxFilter(bBuf, w, h, r, tmp, meanB);
-            for (let k = 0; k < total; k++) {
-              const q = (meanA[k] * I[k] + meanB[k]) * 255;
-              nextBuf[k * 4 + ch] = q < 0 ? 0 : q > 255 ? 255 : Math.round(q);
-            }
-          }
-          cur = nextBuf;
+          cur = guidedFilterStep(cur, w, h, r, eps, scratch);
         }
         return cur;
       };
 
-      const applyInteriorFlatLock = (buf, w, h) => {
-        const samples = [];
-        const sStep = Math.max(1, Math.floor(Math.sqrt((w * h) / 5000)));
-        for (let y = 2; y < h - 2; y += sStep) {
-          for (let x = 2; x < w - 2; x += sStep) {
-            const idx = (y * w + x) * 4;
-            if (buf[idx + 3] < 200) continue;
-            const rt = idx + 4, dn = idx + w * 4;
-            const grad = Math.abs(buf[idx] - buf[rt]) + Math.abs(buf[idx + 1] - buf[rt + 1]) + Math.abs(buf[idx + 2] - buf[rt + 2]) +
-                         Math.abs(buf[idx] - buf[dn]) + Math.abs(buf[idx + 1] - buf[dn + 1]) + Math.abs(buf[idx + 2] - buf[dn + 2]);
-            if (grad < 18) samples.push([buf[idx], buf[idx + 1], buf[idx + 2]]);
-          }
-        }
-        if (samples.length < 16) return;
-        const maxK = Math.min(10, Math.max(3, state.autoParams.traceColors + 3));
-        const cents = [samples[0].slice()];
-        while (cents.length < maxK) {
-          let far = null, farD = 0;
-          for (let i = 0; i < samples.length; i += 2) {
-            const s = samples[i]; let md = Infinity;
-            for (const c of cents) { const d = (s[0]-c[0])**2+(s[1]-c[1])**2+(s[2]-c[2])**2; if (d < md) md = d; }
-            if (md > farD) { farD = md; far = s; }
-          }
-          if (!far || farD < 1200) break;
-          cents.push(far.slice());
-        }
-        for (let it = 0; it < 6; it++) {
-          const sums = cents.map(() => [0, 0, 0, 0]);
-          for (const s of samples) {
-            let best = 0, bestD = Infinity;
-            for (let c = 0; c < cents.length; c++) {
-              const d = (s[0]-cents[c][0])**2+(s[1]-cents[c][1])**2+(s[2]-cents[c][2])**2;
-              if (d < bestD) { bestD = d; best = c; }
-            }
-            sums[best][0]+=s[0]; sums[best][1]+=s[1]; sums[best][2]+=s[2]; sums[best][3]++;
-          }
-          for (let c = 0; c < cents.length; c++) if (sums[c][3]) {
-            cents[c][0] = Math.round(sums[c][0]/sums[c][3]);
-            cents[c][1] = Math.round(sums[c][1]/sums[c][3]);
-            cents[c][2] = Math.round(sums[c][2]/sums[c][3]);
-          }
-        }
-        const tightR2 = 28 * 28 * 3;
-        for (let y = 1; y < h - 1; y++) {
-          for (let x = 1; x < w - 1; x++) {
-            const idx = (y * w + x) * 4;
-            if (buf[idx + 3] < 220) continue;
-            const lt = idx-4, rt = idx+4, up = idx-w*4, dn = idx+w*4;
-            const grad = Math.abs(buf[rt]-buf[lt])+Math.abs(buf[rt+1]-buf[lt+1])+Math.abs(buf[rt+2]-buf[lt+2])+
-                         Math.abs(buf[dn]-buf[up])+Math.abs(buf[dn+1]-buf[up+1])+Math.abs(buf[dn+2]-buf[up+2]);
-            if (grad > 18) continue;
-            let best = 0, bestD = Infinity;
-            for (let c = 0; c < cents.length; c++) {
-              const d = (buf[idx]-cents[c][0])**2+(buf[idx+1]-cents[c][1])**2+(buf[idx+2]-cents[c][2])**2;
-              if (d < bestD) { bestD = d; best = c; }
-            }
-            if (bestD < tightR2) {
-              const t = Math.min(1, (grad < 8 ? 1 : (18 - grad) / 10) * (1 - Math.sqrt(bestD / tightR2) * 0.25));
-              buf[idx] = Math.round(buf[idx]*(1-t)+cents[best][0]*t);
-              buf[idx+1] = Math.round(buf[idx+1]*(1-t)+cents[best][1]*t);
-              buf[idx+2] = Math.round(buf[idx+2]*(1-t)+cents[best][2]*t);
-            }
-          }
-        }
-      };
-
-      const gfPasses = flatNoise > 0.08 ? 1 : 0;
-      const gfRadius = flatNoise > 0.45 ? 2 : 1;
-      const gfEps = flatLock
-        ? (0.0012 + flatNoise * 0.0055)
-        : (0.0008 + flatNoise * 0.0065);
-      const usePyramid = state.presetId !== 'pixel_line' && Math.max(outW / src.width, outH / src.height) > 2.2;
+      const usePyramid = !isPixelMode && Math.max(outW / src.width, outH / src.height) > 2.2;
 
       let imgData = null;
       let clean = null;
@@ -1287,11 +1530,13 @@
         const stCtx = stageCanvas.getContext('2d', { willReadFrequently: true });
         stCtx.drawImage(src, 0, 0);
 
-        if (gfPasses > 0 || (flatLock && flatNoise > 0.06)) {
+        if (gfPasses > 0 || shouldFlatLock) {
           const sImg = stCtx.getImageData(0, 0, src.width, src.height);
-          let clean1x = gfPasses > 0 ? await guidedFilterRGBA(sImg.data, src.width, src.height, gfRadius, gfEps, gfPasses) : new Uint8ClampedArray(sImg.data);
+          let clean1x = gfPasses > 0
+            ? await guidedFilterRGBA(sImg.data, src.width, src.height, Math.min(3, gfRadius), gfEps, 1)
+            : new Uint8ClampedArray(sImg.data);
           if (!clean1x || myRun !== state.runId) { stageCanvas.width = 1; stageCanvas.height = 1; return; }
-          if (flatLock && flatNoise > 0.06) applyInteriorFlatLock(clean1x, src.width, src.height);
+          if (shouldFlatLock) applyInteriorFlatLock(clean1x, src.width, src.height, lockMode, state.autoParams.traceColors);
           stCtx.putImageData(new ImageData(clean1x, src.width, src.height), 0, 0);
         }
 
@@ -1306,34 +1551,42 @@
 
         for (let si = 0; si < stages.length; si++) {
           const [sw, sh] = stages[si];
-          setProgress(12 + Math.round((si / stages.length) * 70), `Piramit süper çözünürlük (${si + 1}/${stages.length} · ${sw}×${sh})...`);
+          setProgress(12 + Math.round((si / stages.length) * 60), `Piramit süper çözünürlük (${si + 1}/${stages.length} · ${sw}×${sh})...`);
           const stData = await bicubicUpscale(stageCanvas, sw, sh, false, myRun);
           if (!stData || myRun !== state.runId) { stageCanvas.width = 1; stageCanvas.height = 1; return; }
-          const stClean = await applyAnisotropicShockFilter(stData.data, sw, sh, sharpAmt, 1, myRun);
-          if (!stClean || myRun !== state.runId) { stageCanvas.width = 1; stageCanvas.height = 1; return; }
+          let stClean = stData.data;
+          if (preset.shockPasses > 0 && preset.shockStrength > 0) {
+            const stPasses = si === stages.length - 1 ? Math.min(2, preset.shockPasses) : 1;
+            stClean = await applyAnisotropicShockFilter(stData.data, sw, sh, preset.shockStrength, stPasses, myRun);
+            if (!stClean || myRun !== state.runId) { stageCanvas.width = 1; stageCanvas.height = 1; return; }
+          }
           if (si < stages.length - 1) {
             stageCanvas.width = sw; stageCanvas.height = sh;
             stageCanvas.getContext('2d', { willReadFrequently: true }).putImageData(new ImageData(stClean, sw, sh), 0, 0);
           } else {
-            clean = stClean;
+            clean = gfPasses > 0
+              ? await guidedFilterRGBA(stClean, sw, sh, gfRadius, gfEps, gfPasses)
+              : stClean;
+            if (!clean || myRun !== state.runId) { stageCanvas.width = 1; stageCanvas.height = 1; return; }
             imgData = stData;
           }
         }
         stageCanvas.width = 1; stageCanvas.height = 1;
       } else {
-        imgData = await bicubicUpscale(src, outW, outH, state.presetId === 'pixel_line', myRun);
+        imgData = await bicubicUpscale(src, outW, outH, isPixelMode, myRun);
         if (!imgData || myRun !== state.runId) return;
         clean = gfPasses > 0 ? await guidedFilterRGBA(imgData.data, outW, outH, gfRadius, gfEps, gfPasses) : new Uint8ClampedArray(imgData.data);
         if (!clean || myRun !== state.runId) return;
-        if (flatLock && flatNoise > 0.06) {
+        if (shouldFlatLock) {
           setProgress(66, 'Düz renk alanları sabitleniyor...');
           await yieldFrame();
           if (myRun !== state.runId) return;
-          applyInteriorFlatLock(clean, outW, outH);
+          applyInteriorFlatLock(clean, outW, outH, lockMode, state.autoParams.traceColors);
         }
-        // True Osher-Rudin anisotropic directional shock edge steepening (2 light monotonic passes)
-        clean = await applyAnisotropicShockFilter(clean, outW, outH, sharpAmt, 2, myRun);
-        if (!clean || myRun !== state.runId) return;
+        if (preset.shockPasses > 0 && preset.shockStrength > 0) {
+          clean = await applyAnisotropicShockFilter(clean, outW, outH, preset.shockStrength, preset.shockPasses, myRun);
+          if (!clean || myRun !== state.runId) return;
+        }
       }
 
       const enh = state.enhancedCanvas;
@@ -1341,63 +1594,11 @@
       const ectx = enh.getContext('2d', { willReadFrequently: true });
       const data = imgData.data;
 
-      // Copy full buffer (including 1px borders) then run final detail/clarity pass
-      data.set(clean);
-      setProgress(88, 'Detay & netlik dengeleniyor...');
+      setProgress(88, `Model ton & netlik uygulanıyor (${preset.name})...`);
       await yieldFrame();
       if (myRun !== state.runId) return;
 
-      if (flatLock) {
-        const gain = Math.min(1.65, 0.95 + sharpAmt * 0.60);
-        for (let y = 1; y < outH - 1; y++) {
-          for (let x = 1; x < outW - 1; x++) {
-            const idx = (y * outW + x) * 4;
-            const up = idx - outW*4, dn = idx + outW*4, lt = idx - 4, rt = idx + 4;
-            const ul = up - 4, ur = up + 4, dl = dn - 4, dr = dn + 4;
-            for (let ch = 0; ch < 4; ch++) {
-              const c = clean[idx + ch];
-              const blur = (c*4 + (clean[up+ch]+clean[dn+ch]+clean[lt+ch]+clean[rt+ch])*2 + (clean[ul+ch]+clean[ur+ch]+clean[dl+ch]+clean[dr+ch])) / 16;
-              const nbrs = [clean[up+ch],clean[dn+ch],clean[lt+ch],clean[rt+ch],clean[ul+ch],clean[ur+ch],clean[dl+ch],clean[dr+ch]];
-              let mn = c, mx = c;
-              for (let n = 0; n < 8; n++) { if (nbrs[n] < mn) mn = nbrs[n]; if (nbrs[n] > mx) mx = nbrs[n]; }
-              let val = Math.abs(c - blur) > 1.5 ? (c + (c - blur) * (ch === 3 ? 1.15 : gain)) : c;
-              if (val < mn) val = mn; if (val > mx) val = mx;
-              data[idx + ch] = val < 0 ? 0 : val > 255 ? 255 : Math.round(val);
-            }
-          }
-        }
-      } else {
-        // Luminance-only unsharp mask + soft S-curve local clarity (prevents hue shift on photos)
-        const lumGain = sharpAmt * 1.15;
-        const cAmt = contrastAmt * 0.55;
-        const lumAt = (i) => 0.299 * clean[i] + 0.587 * clean[i + 1] + 0.114 * clean[i + 2];
-        for (let y = 1; y < outH - 1; y++) {
-          for (let x = 1; x < outW - 1; x++) {
-            const idx = (y * outW + x) * 4;
-            const up = idx - outW*4, dn = idx + outW*4, lt = idx - 4, rt = idx + 4;
-            const ul = up - 4, ur = up + 4, dl = dn - 4, dr = dn + 4;
-            const lC = lumAt(idx);
-            const lNbrs = [lumAt(up), lumAt(dn), lumAt(lt), lumAt(rt), lumAt(ul), lumAt(ur), lumAt(dl), lumAt(dr)];
-            const lBlur = (lC * 4 + (lNbrs[0] + lNbrs[1] + lNbrs[2] + lNbrs[3]) * 2 + (lNbrs[4] + lNbrs[5] + lNbrs[6] + lNbrs[7])) / 16;
-            let mnL = lC, mxL = lC;
-            for (let n = 0; n < 8; n++) { if (lNbrs[n] < mnL) mnL = lNbrs[n]; if (lNbrs[n] > mxL) mxL = lNbrs[n]; }
-            let targetL = Math.abs(lC - lBlur) > 2 ? lC + (lC - lBlur) * lumGain : lC;
-            if (targetL < mnL) targetL = mnL;
-            if (targetL > mxL) targetL = mxL;
-            const norm = targetL / 255;
-            const sCurve = norm + cAmt * (norm - 0.5) * (1 - (2 * norm - 1) ** 2);
-            const deltaL = sCurve * 255 - lC;
-            for (let ch = 0; ch < 3; ch++) {
-              const v = clean[idx + ch] + deltaL;
-              data[idx + ch] = v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
-            }
-            const aC = clean[idx + 3];
-            const aBlur = (aC*4 + (clean[up+3]+clean[dn+3]+clean[lt+3]+clean[rt+3])*2 + (clean[ul+3]+clean[ur+3]+clean[dl+3]+clean[dr+3])) / 16;
-            let aVal = Math.abs(aC - aBlur) > 2 ? aC + (aC - aBlur) * 1.15 : aC;
-            data[idx + 3] = aVal < 0 ? 0 : aVal > 255 ? 255 : Math.round(aVal);
-          }
-        }
-      }
+      applyPresetDetailGrade(clean, data, outW, outH, preset, flatLock);
       ectx.putImageData(imgData, 0, 0);
 
       state.workingCanvas.width = outW; state.workingCanvas.height = outH;
@@ -1409,7 +1610,7 @@
       setTimeout(() => setProgress(null), 300);
       setStatus(`İyileştirme tamamlandı (${preset.name})`);
       $('statusSize').textContent = wasCapped ? `Giriş: ${src.width}×${src.height} → Çıkış: ${outW}×${outH} px (${state.scale}× sınır)` : `Giriş: ${src.width}×${src.height} → Çıkış: ${outW}×${outH} px`;
-      if (!silent) showToast(`Görsel ${state.scale}× büyütülüp netleştirildi.`);
+      if (!silent) showToast(`Model: ${preset.name} (${state.scale}× · ${outW}×${outH}px)`);
     } finally {
       state.isProcessing = false;
       $('btnProcess').disabled = false;
@@ -2926,16 +3127,21 @@
     const src = state.sourceCanvas, work = state.workingCanvas;
     if (!work.width) return;
     miniPreviewCanvas.width = work.width; miniPreviewCanvas.height = work.height;
-    miniPreviewCanvas.getContext('2d', { willReadFrequently: true }).drawImage(work, 0, 0);
+    const mctx = miniPreviewCanvas.getContext('2d', { willReadFrequently: true });
+    mctx.clearRect(0, 0, work.width, work.height);
+    mctx.drawImage(work, 0, 0);
     $('miniDimBadge').textContent = `${work.width}×${work.height}`;
 
     beforeCanvas.width = work.width; beforeCanvas.height = work.height;
     const bctx = beforeCanvas.getContext('2d', { willReadFrequently: true });
+    bctx.clearRect(0, 0, work.width, work.height);
     bctx.imageSmoothingEnabled = false;
     bctx.drawImage(src, 0, 0, work.width, work.height);
 
     afterCanvas.width = work.width; afterCanvas.height = work.height;
-    afterCanvas.getContext('2d', { willReadFrequently: true }).drawImage(work, 0, 0);
+    const actx = afterCanvas.getContext('2d', { willReadFrequently: true });
+    actx.clearRect(0, 0, work.width, work.height);
+    actx.drawImage(work, 0, 0);
     applyZoom();
     updateSplitUI();
   }
@@ -2963,7 +3169,9 @@
     beforeClip.style.display = isCmp ? 'block' : 'none';
     splitHandle.style.display = isCmp ? 'block' : 'none';
     $('lblBefore').style.display = isCmp ? 'block' : 'none';
-    $('lblAfter').textContent = (state.bgRemoved || state.hasNativeAlpha) ? 'İyileştirilmiş + Şeffaf' : 'İyileştirilmiş';
+    const activePreset = PRESETS.find(p => p.id === state.presetId);
+    const baseLbl = (state.bgRemoved || state.hasNativeAlpha) ? 'İyileştirilmiş + Şeffaf' : 'İyileştirilmiş';
+    $('lblAfter').textContent = activePreset ? `${baseLbl} · ${activePreset.name}` : baseLbl;
     if (isCmp) {
       beforeClip.style.clipPath = `inset(0 ${100 - state.splitPct}% 0 0)`;
       splitHandle.style.left = `${state.splitPct}%`;
