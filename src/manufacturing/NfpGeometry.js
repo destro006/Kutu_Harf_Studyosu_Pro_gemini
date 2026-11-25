@@ -96,14 +96,16 @@ function simplifyProxy(pts, tol = 0.65) {
     }
     if (filtered.length >= 3) clean = filtered;
   }
-  if (clean.length > 44) {
-    let t = tol;
-    for (let k = 0; k < 5 && clean.length > 44; k++) {
+  if (clean.length > 32) {
+    const b = boundsOf(clean);
+    const diag = Math.hypot(b.maxX - b.minX, b.maxY - b.minY);
+    let t = Math.max(tol, diag * 0.0055);
+    for (let k = 0; k < 6 && clean.length > 32; k++) {
       clean = rdpClosed(clean, t);
-      t *= 1.65;
+      t *= 1.5;
     }
-    if (clean.length > 48) {
-      const step = Math.ceil(clean.length / 44);
+    if (clean.length > 32) {
+      const step = Math.ceil(clean.length / 32);
       clean = clean.filter((_, i) => i % step === 0);
     }
   }
@@ -246,7 +248,7 @@ function computeNormalizedForbiddenPaths(fixedNorm, movingNorm, clearance) {
   const piecesB = convexDecompose(negMoving);
 
   let unioned = null;
-  if (piecesA && piecesB && piecesA.length * piecesB.length <= 256) {
+  if (piecesA && piecesB && piecesA.length * piecesB.length <= 625) {
     const sums = [];
     for (const pa of piecesA) {
       for (const pb of piecesB) {
@@ -276,7 +278,8 @@ function computeNormalizedForbiddenPaths(fixedNorm, movingNorm, clearance) {
   const offset = new Clipper.ClipperOffset(2, 0.25 * S);
   offset.AddPaths(unioned, Clipper.JoinType.jtRound, Clipper.EndType.etClosedPolygon);
   const out = [];
-  offset.Execute(out, Math.ceil((clearance + 0.03) * S));
+  // Conservative offset ensures simplified-proxy NFP vertices clear exact curved contours.
+  offset.Execute(out, Math.ceil((clearance + 0.55) * S));
   return out;
 }
 

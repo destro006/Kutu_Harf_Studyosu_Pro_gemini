@@ -35,6 +35,7 @@ export function parseHexRgb(hex, fallback = [200, 147, 67]) {
 export function buildCorelNestingPayload(sheets = [], previewColors = {}, projectName = 'KutuHarf_Nesting') {
   const body = parseHexRgb(previewColors?.body, [200, 147, 67]);
   const holes = parseHexRgb(previewColors?.holes, [200, 147, 67]);
+  const groupColors = previewColors?.groups || {};
   const normalizedSheets = (sheets || []).map((sh, idx) => {
     const mL = Number(sh.marginLeftMm ?? sh.marginMm ?? 15);
     const mR = Number(sh.marginRightMm ?? sh.marginMm ?? 15);
@@ -50,13 +51,21 @@ export function buildCorelNestingPayload(sheets = [], previewColors = {}, projec
       marginRightMm: mR,
       marginTopMm: mT,
       marginBottomMm: mB,
-      placements: (sh.placements || []).map((p, pi) => ({
-        id: p.id || `part_${pi + 1}`,
-        label: p.label || `Parça ${pi + 1}`,
-        angleDeg: Number(p.angleDeg || 0),
-        outer: (p.outer || []).map(pt => ({ x: Number(pt.x.toFixed(4)), y: Number(pt.y.toFixed(4)) })),
-        holes: (p.holes || []).map(h => h.map(pt => ({ x: Number(pt.x.toFixed(4)), y: Number(pt.y.toFixed(4)) }))),
-      })),
+      placements: (sh.placements || []).map((p, pi) => {
+        const grp = p.partGroup || 'body';
+        const pCol = parseHexRgb(groupColors[grp] || p.partColor || body.hex, [body.r, body.g, body.b]);
+        return {
+          id: p.id || `part_${pi + 1}`,
+          label: p.label || `Parça ${pi + 1}`,
+          partGroup: grp,
+          partGroupLabel: p.partGroupLabel || 'Gövde',
+          colorHex: pCol.hex,
+          colorRgb: [pCol.r, pCol.g, pCol.b],
+          angleDeg: Number(p.angleDeg || 0),
+          outer: (p.outer || []).map(pt => ({ x: Number(pt.x.toFixed(4)), y: Number(pt.y.toFixed(4)) })),
+          holes: (p.holes || []).map(h => h.map(pt => ({ x: Number(pt.x.toFixed(4)), y: Number(pt.y.toFixed(4)) }))),
+        };
+      }),
     };
   });
 
@@ -106,11 +115,12 @@ export function generateCorelColoredSvg(sheets, previewColors = {}, projectName 
 
     for (const p of sh.placements) {
       if (!p.outer.length) continue;
+      const pFill = p.colorHex || bodyHex;
       const compoundD = [ringToD(p.outer, sh.heightMm), ...p.holes.filter(h => h.length >= 3).map(h => ringToD(h, sh.heightMm))].join(' ');
       itemsSvg.push(
-        `<path data-part="${escapeXml(p.label)}" d="${compoundD}" fill="${bodyHex}" fill-rule="evenodd" stroke="#1f2937" stroke-width="0.15" />`
+        `<path data-part="${escapeXml(p.label)}" data-group="${escapeXml(p.partGroup || 'body')}" d="${compoundD}" fill="${pFill}" fill-rule="evenodd" stroke="#1f2937" stroke-width="0.15" />`
       );
-      if (distinctHoleColor) {
+      if (distinctHoleColor && p.partGroup !== 'file_frame') {
         for (const h of p.holes) {
           if (h.length < 3) continue;
           itemsSvg.push(

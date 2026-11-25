@@ -1,7 +1,7 @@
 import {normalizeDisplayUnit,formatMmAsUnit,formatDimensions,formatPresetLabel} from '../core/units.js';
 import { renderDetailedCostCenter } from './CostCenterView.js?v=qa8';
 import { ringLength, SHEET_PRESETS } from '../manufacturing/NestingEngine.js';
-import { renderNestingSvg } from './NestingView.js?v=units6';
+import { renderNestingSvg } from './NestingView.js?v=20261126-v17';
 import { renderNestingSourceTabs, renderNestingImportPane } from './NestingImportView.js?v=units6';
 import { MACHINE_PROFILES, MACHINE_PROFILE_CATEGORIES, getMachineProfile, validateNestedProduction } from '../export/CncGcodeExporter.js';
 import { formatMoney } from '../manufacturing/CostEngine.js';
@@ -38,26 +38,68 @@ export function renderNestingCenter(state, ctx) {
   const totalParts = sheets.reduce((a, sh) => a + sh.placements.length, 0);
   const avgUtil = sheets.length ? sheets.reduce((a, sh) => a + (sh.utilizationPct ?? sh.utilization ?? 0), 0) / sheets.length : 0;
   const totalCutLenMm = sheets.reduce((a, sh) => a + sh.placements.reduce((s, p) => s + (cachedRingLength(p.outer)+(p.holes||[]).reduce((a,h)=>a+cachedRingLength(h),0)), 0), 0);
+  const groupColors = n.previewColors?.groups || {};
+  const partGroupsMap = new Map();
+  for (const p of activeSheet?.placements || []) {
+    const gid = p.partGroup || 'body';
+    if (!partGroupsMap.has(gid)) {
+      partGroupsMap.set(gid, {
+        id: gid,
+        label: p.partGroupLabel || (gid === 'body' ? 'Gövde Parçaları' : gid),
+        color: /^#[0-9a-f]{6}$/i.test(groupColors[gid] || '') ? groupColors[gid] : (p.partColor || '#d4a24c'),
+        items: [],
+      });
+    }
+    partGroupsMap.get(gid).items.push(p);
+  }
+  const partGroups = [...partGroupsMap.values()];
+  const activeGroup = (ctx.activePartGroup && partGroupsMap.has(ctx.activePartGroup)) ? ctx.activePartGroup : null;
+  const renderPartRow = (p, colorDot = null) => `
+    <div class="layer-item nesting-part-row ${selectedIds.has(p.id) ? 'on' : ''}" data-cws-pid="${escapeHtml(p.id)}" aria-selected="${selectedIds.has(p.id)}">
+      <input type="checkbox" data-cws-check aria-label="${escapeHtml(p.label)} seç" ${selectedIds.has(p.id)?'checked':''}>
+      ${colorDot ? `<i class="nest-part-dot" style="background:${colorDot}"></i>` : ''}
+      <span class="layer-name">${p.locked ? '🔒 ' : ''}${escapeHtml(p.label)}</span>
+      <small class="nesting-part-size">${formatMmAsUnit(p.bounds?.width||0,unit,2)}×${formatMmAsUnit(p.bounds?.height||0,unit,2)} ${unit}</small>
+      <button type="button" class="nesting-part-delete" data-cws-delete aria-label="${escapeHtml(p.label)} sil" title="${p.locked?'Kilitli parça':'Parçayı sil'}" ${p.locked?'disabled':''}>×</button>
+    </div>
+  `;
 
   return `
     <div class="nesting-workspace" data-nesting-tab="${n.activeTabId || 'design'}" data-display-unit="${unit}">
     ${renderNestingSourceTabs(n)}
     <div class="center-ws-grid">
-      <!-- Left: Part List & Material Groups -->
+      <!-- Left: Part List & Color Groups -->
       <div class="cws-side">
         <h3 class="sec-title">İmalat Parçaları (${totalParts}) <small id="nestingSelectedCount">${selectedIds.size?selectedIds.size+' seçili':''}</small></h3>
         ${(n.importedTabs||[]).find(t=>t.id===n.activeTabId)?.warnings?.length?`<details class="nesting-import-converters"><summary>İçe aktarma notları</summary>${(n.importedTabs.find(t=>t.id===n.activeTabId).warnings||[]).map(x=>`<p>${escapeHtml(x)}</p>`).join('')}</details>`:''}
         ${!sheets.length ? '<p style="font-size:12px;color:var(--muted)">Parça listesi için "Otomatik Yerleştir"e tıklayın.</p>' : `
-          <div style="display:flex;flex-direction:column;gap:4px">
-            ${(activeSheet?.placements || []).map(p => `
-              <div class="layer-item nesting-part-row ${selectedIds.has(p.id) ? 'on' : ''}" data-cws-pid="${escapeHtml(p.id)}" aria-selected="${selectedIds.has(p.id)}">
-                <input type="checkbox" data-cws-check aria-label="${escapeHtml(p.label)} seç" ${selectedIds.has(p.id)?'checked':''}>
-                <span class="layer-name">${p.locked ? '🔒 ' : ''}${escapeHtml(p.label)}</span>
-                <small class="nesting-part-size">${formatMmAsUnit(p.bounds?.width||0,unit,2)}×${formatMmAsUnit(p.bounds?.height||0,unit,2)} ${unit}</small>
-                <button type="button" class="nesting-part-delete" data-cws-delete aria-label="${escapeHtml(p.label)} sil" title="${p.locked?'Kilitli parça':'Parçayı sil'}" ${p.locked?'disabled':''}>×</button>
-              </div>
-            `).join('')}
-          </div>
+          ${partGroups.length > 1 ? `
+            <div class="nest-group-filter">
+              <button type="button" class="nest-grp-chip ${!activeGroup ? 'on' : ''}" data-nest-group-all>Tümü (${activeSheet?.placements?.length || 0})</button>
+              ${partGroups.map(g => `
+                <button type="button" class="nest-grp-chip ${activeGroup === g.id ? 'on' : ''}" data-nest-group-focus="${escapeHtml(g.id)}" title="Yalnızca ${escapeHtml(g.label)} grubunu düzenle"><i style="background:${g.color}"></i>${escapeHtml(g.label)} (${g.items.length})</button>
+              `).join('')}
+            </div>
+            <div class="nest-group-list">
+              ${partGroups.map(g => `
+                <details class="nest-group-box ${activeGroup === g.id ? 'focused' : ''}" data-nest-group="${escapeHtml(g.id)}" open>
+                  <summary class="nest-group-head">
+                    <input type="color" class="nest-group-color-pick" data-nest-group-color="${escapeHtml(g.id)}" value="${g.color}" title="${escapeHtml(g.label)} grup rengini seç">
+                    <span class="nest-group-title">${escapeHtml(g.label)} <small>(${g.items.length})</small></span>
+                    <button type="button" class="nest-group-act" data-nest-group-select="${escapeHtml(g.id)}" title="Bu gruptaki tüm parçaları seç">Seç</button>
+                    <button type="button" class="nest-group-act ${activeGroup === g.id ? 'on' : ''}" data-nest-group-focus="${escapeHtml(g.id)}" title="Sadece bu rengi düzenle">${activeGroup === g.id ? '✓ Aktif' : 'Düzenle'}</button>
+                  </summary>
+                  <div class="nest-group-rows">
+                    ${g.items.map(p => renderPartRow(p, g.color)).join('')}
+                  </div>
+                </details>
+              `).join('')}
+            </div>
+          ` : `
+            <div style="display:flex;flex-direction:column;gap:4px">
+              ${(activeSheet?.placements || []).map(p => renderPartRow(p)).join('')}
+            </div>
+          `}
         `}
         ${(n.unplaced || []).length ? `
           <h3 class="sec-title" style="margin-top:12px;color:var(--danger)">Yerleşmeyenler (${n.unplaced.length})</h3>
@@ -86,7 +128,7 @@ export function renderNestingCenter(state, ctx) {
           </div>
         </div>
         <div id="cwsNestSvgBox" class="nesting-sheet-fit">
-          ${renderNestingSvg(displayedSheet, selectedIds, n.previewColors,unit)}
+          ${renderNestingSvg(displayedSheet, selectedIds, n.previewColors, unit, { activeGroup, groupColors })}
           <span class="nesting-sheet-dimensions">${formatDimensions(displayedSheet.widthMm,displayedSheet.heightMm,unit)}</span>
           ${!activeSheet ? '<span class="nesting-sheet-empty-note">Parçaları yerleştirmek için Otomatik Yerleştir seçin</span>' : ''}
         </div>

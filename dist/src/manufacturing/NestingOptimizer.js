@@ -57,7 +57,7 @@ export function optimizeNesting(items, config = {}, locked = [], onProgress = ()
   // Exact Minkowski NFP + Multi-Directional Compaction Pro Solver (primary candidate).
   if (performance.now() < end) {
     const remaining = end - performance.now();
-    const proBudget = Math.max(80, Math.min(remaining * 0.65, Math.max(300, budget * 0.65)));
+    const proBudget = Math.max(120, Math.min(remaining * 0.72, Math.max(450, budget * 0.72)));
     proAttempts++;
     attempts++;
     nfpAttempts++;
@@ -99,6 +99,14 @@ export function optimizeNesting(items, config = {}, locked = [], onProgress = ()
     }
     const anglePreferences = new Map();
     for (const p of best?.sheets.flatMap(s => s.placements) || []) anglePreferences.set(p.id, p.angleDeg);
+    if (!config.enforceGrainDirection && (config.rotationStepDeg == null || config.rotationStepDeg === 'auto' || Number(config.rotationStepDeg) >= 90)) {
+      const flipTargets = Math.min(2, order.length);
+      for (let f = 0; f < flipTargets; f++) {
+        const fid = order[Math.floor(rand() * order.length)];
+        const cur = anglePreferences.get(fid) ?? 0;
+        anglePreferences.set(fid, cur === 180 ? 0 : 180);
+      }
+    }
     run({
       quickImport: false,
       nfpSearch: nfpCandidates,

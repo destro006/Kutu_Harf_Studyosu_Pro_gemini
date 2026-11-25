@@ -15,39 +15,73 @@ import {
 
 const check = (deadline) => { if (performance.now() >= deadline) throw new Error('PRO_BUDGET'); };
 
-// Allocation-free segment clearance with squared distances.
+const edgeDataCache = new WeakMap();
+function getEdgeData(pts) {
+  let entry = edgeDataCache.get(pts);
+  if (entry) return entry;
+  const n = pts.length;
+  const raw = [];
+  let gMinX = Infinity, gMinY = Infinity, gMaxX = -Infinity, gMaxY = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const a = pts[i], b = pts[(i + 1) % n];
+    const minX = a.x < b.x ? a.x : b.x, maxX = a.x > b.x ? a.x : b.x;
+    const minY = a.y < b.y ? a.y : b.y, maxY = a.y > b.y ? a.y : b.y;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    raw.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, minX, maxX, minY, maxY, len2: dx * dx + dy * dy || 1e-9 });
+    if (minX < gMinX) gMinX = minX;
+    if (minY < gMinY) gMinY = minY;
+    if (maxX > gMaxX) gMaxX = maxX;
+    if (maxY > gMaxY) gMaxY = maxY;
+  }
+  raw.sort((u, v) => u.minX - v.minX);
+  const arr = new Float64Array(n * 9);
+  for (let i = 0; i < n; i++) {
+    const r = raw[i], o = i * 9;
+    arr[o] = r.x1; arr[o + 1] = r.y1; arr[o + 2] = r.x2; arr[o + 3] = r.y2;
+    arr[o + 4] = r.minX; arr[o + 5] = r.maxX; arr[o + 6] = r.minY; arr[o + 7] = r.maxY; arr[o + 8] = r.len2;
+  }
+  entry = { arr, n, gMinX, gMinY, gMaxX, gMaxY };
+  if (n > 24) edgeDataCache.set(pts, entry);
+  return entry;
+}
+
+// Allocation-free segment clearance with sorted edge bounds & early X-exit.
 function fastPolygonsClear(ptsA, dx, dy, ptsB, minSep, deadline) {
-  const sep2 = minSep * minSep, nA = ptsA.length, nB = ptsB.length;
+  const sep2 = minSep * minSep, nA = ptsA.length;
+  const edB = getEdgeData(ptsB), bArr = edB.arr, bCount = edB.n * 9;
+  const gMinX = edB.gMinX, gMaxX = edB.gMaxX, gMinY = edB.gMinY, gMaxY = edB.gMaxY;
   const clamp = (t) => Math.max(0, Math.min(1, t));
   for (let i = 0; i < nA; i++) {
     if ((i & 31) === 0) check(deadline);
     const a1x = ptsA[i].x + dx, a1y = ptsA[i].y + dy;
     const a2x = ptsA[(i + 1) % nA].x + dx, a2y = ptsA[(i + 1) % nA].y + dy;
+    const minX = (a1x < a2x ? a1x : a2x) - minSep, maxX = (a1x > a2x ? a1x : a2x) + minSep;
+    if (maxX < gMinX || minX > gMaxX) continue;
+    const minY = (a1y < a2y ? a1y : a2y) - minSep, maxY = (a1y > a2y ? a1y : a2y) + minSep;
+    if (maxY < gMinY || minY > gMaxY) continue;
     const adx = a2x - a1x, ady = a2y - a1y, aLen2 = adx * adx + ady * ady || 1e-9;
-    const minX = Math.min(a1x, a2x) - minSep, maxX = Math.max(a1x, a2x) + minSep;
-    const minY = Math.min(a1y, a2y) - minSep, maxY = Math.max(a1y, a2y) + minSep;
-    for (let j = 0; j < nB; j++) {
-      if ((j & 1023) === 0) check(deadline);
-      const b1 = ptsB[j], b2 = ptsB[(j + 1) % nB];
-      if (Math.max(b1.x, b2.x) < minX || Math.min(b1.x, b2.x) > maxX || Math.max(b1.y, b2.y) < minY || Math.min(b1.y, b2.y) > maxY) continue;
-      const bdx = b2.x - b1.x, bdy = b2.y - b1.y, denom = adx * bdy - ady * bdx;
-      if (Math.abs(denom) > 1e-9) {
-        const cx = b1.x - a1x, cy = b1.y - a1y;
+    for (let o = 0; o < bCount; o += 9) {
+      if (bArr[o + 4] > maxX) break;
+      if (bArr[o + 5] < minX || bArr[o + 7] < minY || bArr[o + 6] > maxY) continue;
+      const b1x = bArr[o], b1y = bArr[o + 1], b2x = bArr[o + 2], b2y = bArr[o + 3];
+      const bdx = b2x - b1x, bdy = b2y - b1y, denom = adx * bdy - ady * bdx;
+      if (denom > 1e-9 || denom < -1e-9) {
+        const cx = b1x - a1x, cy = b1y - a1y;
         const t = (cx * bdy - cy * bdx) / denom, u = (cx * ady - cy * adx) / denom;
         if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return false;
       }
-      const t1 = clamp(((b1.x - a1x) * adx + (b1.y - a1y) * ady) / aLen2);
-      const d1x = b1.x - (a1x + t1 * adx), d1y = b1.y - (a1y + t1 * ady);
+      const t1 = clamp(((b1x - a1x) * adx + (b1y - a1y) * ady) / aLen2);
+      const d1x = b1x - (a1x + t1 * adx), d1y = b1y - (a1y + t1 * ady);
       if (d1x * d1x + d1y * d1y < sep2 - 1e-8) return false;
-      const t2 = clamp(((b2.x - a1x) * adx + (b2.y - a1y) * ady) / aLen2);
-      const d2x = b2.x - (a1x + t2 * adx), d2y = b2.y - (a1y + t2 * ady);
+      const t2 = clamp(((b2x - a1x) * adx + (b2y - a1y) * ady) / aLen2);
+      const d2x = b2x - (a1x + t2 * adx), d2y = b2y - (a1y + t2 * ady);
       if (d2x * d2x + d2y * d2y < sep2 - 1e-8) return false;
-      const bl2 = bdx * bdx + bdy * bdy || 1e-9;
-      const s1 = clamp(((a1x - b1.x) * bdx + (a1y - b1.y) * bdy) / bl2);
-      const d3x = a1x - (b1.x + s1 * bdx), d3y = a1y - (b1.y + s1 * bdy);
+      const bl2 = bArr[o + 8];
+      const s1 = clamp(((a1x - b1x) * bdx + (a1y - b1y) * bdy) / bl2);
+      const d3x = a1x - (b1x + s1 * bdx), d3y = a1y - (b1y + s1 * bdy);
       if (d3x * d3x + d3y * d3y < sep2 - 1e-8) return false;
-      const s2 = clamp(((a2x - b1.x) * bdx + (a2y - b1.y) * bdy) / bl2);
-      const d4x = a2x - (b1.x + s2 * bdx), d4y = a2y - (b1.y + s2 * bdy);
+      const s2 = clamp(((a2x - b1x) * bdx + (a2y - b1y) * bdy) / bl2);
+      const d4x = a2x - (b1x + s2 * bdx), d4y = a2y - (b1y + s2 * bdy);
       if (d4x * d4x + d4y * d4y < sep2 - 1e-8) return false;
     }
   }
@@ -82,7 +116,7 @@ function fitsInsideHole(outer, dx, dy, hole, hb, w, h, sep, deadline) {
   return true;
 }
 
-const SLIDE_DIRS_COMPACT = [[-1, 0], [0, -1], [-0.707, -0.707], [-0.866, -0.5], [-0.5, -0.866], [-0.92, 0.38], [0.38, -0.92]];
+const SLIDE_DIRS_COMPACT = [[-1, 0], [0, -1], [-0.707, -0.707], [-0.866, -0.5], [-0.5, -0.866], [-0.924, -0.383], [-0.383, -0.924], [-0.92, 0.38], [0.38, -0.92]];
 const SLIDE_DIRS_VERTICAL = [[-1, 0], [-0.707, -0.707], [0, -1], [-0.866, 0.5], [-0.866, -0.5]];
 
 function buildPoseScorer(sheet, minX, minY, maxX, maxY, strategy) {
@@ -108,18 +142,51 @@ function buildPoseScorer(sheet, minX, minY, maxX, maxY, strategy) {
       const oy = Math.min(y2, b.maxY) - Math.max(y, b.minY);
       if (ox > 0 && oy > 0) overlapArea += ox * oy;
     }
-    const overlapBonus = overlapArea * 0.22;
+    const overlapBonus = overlapArea * 0.36;
 
     if (effectiveStrategy === 'vertical') {
       const strip = nw * usableH;
       return strip * 2.2 + nw * nh * 0.45 + (x - minX) * 2.8 + (y - minY) * 0.18 - overlapBonus;
     }
     if (effectiveStrategy === 'bottomLeft') {
-      return (x - minX) * 1.15 + (y - minY) * 1.35 + nw * nh * 0.08 - overlapBonus * 0.12;
+      return (x - minX) * 1.15 + (y - minY) * 1.35 + nw * nh * 0.08 - overlapBonus * 0.15;
     }
     const minStrip = Math.min(nw * usableH, nh * usableW);
     return nw * nh + minStrip * 0.03 + (x - minX) * 0.25 + (y - minY) * 0.22 - overlapBonus;
   };
+}
+
+function buildInterlockOrder(batch, bounds) {
+  // Place concave / diagonal letters (e.g. two 'A's, 'V', 'M', 'W', 'L', 'K', 'Z')
+  // adjacent in matching pairs so 0/180 interlocking meets directly.
+  const baseKey = (item) => String(item.label || '').replace(/\s*\([^)]*\)\s*/g, '').replace(/-copy\d+$/i, '').trim().toUpperCase();
+  const concavity = (item) => {
+    const b = bounds.get(item.id);
+    return (b.width * b.height) / Math.max(1, item.areaMm2);
+  };
+  const byShape = new Map();
+  for (const item of batch) {
+    const k = `${item.partGroup || 'body'}|${baseKey(item)}`;
+    if (!byShape.has(k)) byShape.set(k, []);
+    byShape.get(k).push(item);
+  }
+  const ranked = batch.slice().sort((a, b) => concavity(b) - concavity(a) || b.areaMm2 - a.areaMm2);
+  const used = new Set();
+  const order = [];
+  for (const item of ranked) {
+    if (used.has(item.id)) continue;
+    used.add(item.id);
+    order.push(item);
+    const k = `${item.partGroup || 'body'}|${baseKey(item)}`;
+    for (const mate of byShape.get(k) || []) {
+      if (!used.has(mate.id)) {
+        used.add(mate.id);
+        order.push(mate);
+        break;
+      }
+    }
+  }
+  return order;
 }
 
 function findBestNfpPlacement(sheet, variants, minX, minY, maxX, maxY, sep, allowHoleNesting, fits, config, deadline) {
@@ -138,7 +205,7 @@ function findBestNfpPlacement(sheet, variants, minX, minY, maxX, maxY, sep, allo
       y = Math.max(minY, Math.min(maxY - h, y));
       const key = forceKeep
         ? Math.round(x * 100) + ',' + Math.round(y * 100)
-        : Math.round(x / 1.5) + ',' + Math.round(y / 1.5);
+        : Math.round(x / 4) + ',' + Math.round(y / 4);
       const s = score(x, y, w, h);
       const prev = cands.get(key);
       if (!prev || s < prev.score) cands.set(key, { x, y, score: s });
@@ -151,22 +218,22 @@ function findBestNfpPlacement(sheet, variants, minX, minY, maxX, maxY, sep, allo
     }
 
     add(minX, minY, true);
-    const stepX = Math.max(45, Math.round((maxX - minX) / 10));
-    const stepY = Math.max(45, Math.round((maxY - minY) / 8));
+    const stepX = Math.max(70, Math.round((maxX - minX) / 8));
+    const stepY = Math.max(70, Math.round((maxY - minY) / 6));
     for (let x = minX; x < maxX; x += stepX) add(x, minY);
     for (let y = minY; y < maxY; y += stepY) add(minX, y);
 
     for (const p of sheet.placements) {
       check(deadline);
       const b = p.bounds;
+      add(b.maxX + sep + 0.05, b.minY, true);
+      add(b.minX, b.maxY + sep + 0.05, true);
       for (const x of [b.minX, b.maxX + sep + 0.001, b.minX - w - sep - 0.001, b.maxX - w]) xs.add(x);
       for (const y of [b.minY, b.maxY + sep + 0.001, b.minY - h - sep - 0.001, b.maxY - h]) ys.add(y);
-      const step = Math.max(1, Math.floor(p.outer.length / 10));
+      const step = Math.max(1, Math.floor(p.outer.length / 8));
       for (let k = 0; k < p.outer.length; k += step) {
         const pt = p.outer[k];
         add(pt.x + sep, pt.y + sep);
-        add(pt.x + sep, b.minY);
-        add(b.minX, pt.y + sep);
       }
       if (allowHoleNesting) {
         for (const hb of p.holeBounds || []) {
@@ -182,7 +249,7 @@ function findBestNfpPlacement(sheet, variants, minX, minY, maxX, maxY, sep, allo
 
     const candidates = [...cands.values()].sort((a, b) => a.score - b.score);
     let feasibleTried = 0;
-    const maxFeasiblePerVariant = sheet.placements.length > 0 ? 12 : 1;
+    const maxFeasiblePerVariant = sheet.placements.length > 0 ? 5 : 1;
 
     for (const { x, y } of candidates) {
       check(deadline);
@@ -190,9 +257,9 @@ function findBestNfpPlacement(sheet, variants, minX, minY, maxX, maxY, sep, allo
 
       let cx = x, cy = y;
       let curS = score(cx, cy, w, h);
-      for (const delta of [16, 4, 1, 0.25]) {
+      for (const delta of [40, 12, 3, 0.5]) {
         let moved = true, guard = 0;
-        while (moved && guard++ < 48) {
+        while (moved && guard++ < 18) {
           check(deadline);
           moved = false;
           for (let d = 0; d < dirs.length; d++) {
@@ -271,9 +338,9 @@ function compactSheetPlacements(sheet, minX, minY, maxX, maxY, minSep, allowHole
       };
 
       let cx = origB.minX, cy = origB.minY;
-      for (const delta of [8, 2, 0.5, 0.15]) {
+      for (const delta of [24, 6, 1.5, 0.3]) {
         let moved = true, guard = 0;
-        while (moved && guard++ < 32) {
+        while (moved && guard++ < 16) {
           check(deadline);
           moved = false;
           for (let d = 0; d < dirs.length; d++) {
@@ -438,19 +505,28 @@ export function runProNesting(items, config = {}, existingLockedSheets = []) {
       return (b.width * b.height) / Math.max(1, item.areaMm2);
     };
 
+    const orthoAngles = angles.filter(a => a % 90 === 0);
+    const orthoVariantMap = new Map();
+    if (orthoAngles.length && orthoAngles.length < angles.length) {
+      for (const item of batch) {
+        orthoVariantMap.set(item.id, (variantMap.get(item.id) || []).filter(v => orthoAngles.includes(v.ang)));
+      }
+    }
+
     const strategies = [
-      batch.slice().sort((a, b) => concavityScore(b) - concavityScore(a) || b.areaMm2 - a.areaMm2),
-      batch.slice().sort((a, b) => b.areaMm2 - a.areaMm2),
-      batch.slice().sort((a, b) => bounds.get(b.id).height - bounds.get(a.id).height),
-      batch.slice().sort((a, b) => bounds.get(b.id).width - bounds.get(a.id).width),
-      batch.slice().sort((a, b) => bounds.get(b.id).width * bounds.get(b.id).height - bounds.get(a.id).width * bounds.get(a.id).height),
+      { order: buildInterlockOrder(batch, bounds), vmap: orthoVariantMap.size ? orthoVariantMap : variantMap },
+      { order: batch.slice().sort((a, b) => concavityScore(b) - concavityScore(a) || b.areaMm2 - a.areaMm2), vmap: variantMap },
+      { order: batch.slice().sort((a, b) => b.areaMm2 - a.areaMm2), vmap: variantMap },
+      { order: batch.slice().sort((a, b) => bounds.get(b.id).height - bounds.get(a.id).height), vmap: orthoVariantMap.size ? orthoVariantMap : variantMap },
+      { order: batch.slice().sort((a, b) => bounds.get(b.id).width - bounds.get(a.id).width), vmap: orthoVariantMap.size ? orthoVariantMap : variantMap },
+      { order: batch.slice().sort((a, b) => bounds.get(b.id).width * bounds.get(b.id).height - bounds.get(a.id).width * bounds.get(a.id).height), vmap: orthoVariantMap.size ? orthoVariantMap : variantMap },
     ];
 
     let best = null, bestOrder = null;
-    for (const order of strategies) {
+    for (const st of strategies) {
       try {
-        const r = packBatchWithOrder(order, variantMap, params);
-        if (better(r, best)) { best = r; bestOrder = order; }
+        const r = packBatchWithOrder(st.order, st.vmap, params);
+        if (better(r, best)) { best = r; bestOrder = st.order; }
       } catch (e) { if (e.message !== 'PRO_BUDGET') throw e; break; }
     }
     if (!best) throw Error('PRO_BUDGET');

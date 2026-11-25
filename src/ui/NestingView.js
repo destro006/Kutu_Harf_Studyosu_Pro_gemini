@@ -6,7 +6,7 @@ import {normalizeDisplayUnit,formatMmAsUnit,formatDimensions} from '../core/unit
  */
 
 const pathCache=new WeakMap();
-export function renderNestingSvg(sheet, selectedPlacementId = null, colors = {}, displayUnit='mm') {
+export function renderNestingSvg(sheet, selectedPlacementId = null, colors = {}, displayUnit='mm', groupCtx = {}) {
   if (!sheet) return '';
   const unit=normalizeDisplayUnit(displayUnit),show=mm=>formatMmAsUnit(mm,unit);
   const w = sheet.widthMm;
@@ -18,6 +18,8 @@ export function renderNestingSvg(sheet, selectedPlacementId = null, colors = {},
   const validColor = (value, fallback) => /^#[0-9a-f]{6}$/i.test(value || '') ? value : fallback;
   const bodyColor = validColor(colors?.body, '#c89343');
   const holeColor = validColor(colors?.holes, '#c89343');
+  const groupColors = groupCtx?.groupColors || colors?.groups || {};
+  const activeGroup = groupCtx?.activeGroup || null;
   const toD=pts=>{const cached=pathCache.get(pts);if(cached?.h===h)return cached.d;const d='M '+pts.map(pt=>`${pt.x.toFixed(1)},${(h-pt.y).toFixed(1)}`).join(' L ')+' Z';if(Object.isFrozen(pts))pathCache.set(pts,{h,d});return d;};
   // Color-code empty interior contours separately. This is only a preview
   // overlay; holes remain actual holes in the exported manufacturing geometry.
@@ -28,18 +30,21 @@ export function renderNestingSvg(sheet, selectedPlacementId = null, colors = {},
     .map((p) => {
       const isSel = selected.has(p.id);
       const isCol = p.hasCollision;
-      const stroke = isCol ? '#ef4444' : isSel ? '#ffffff' : bodyColor;
-      const fill = isCol ? 'rgba(239, 68, 68, 0.45)' : bodyColor;
+      const grp = p.partGroup || 'body';
+      const pieceColor = (p.partColor || groupColors[grp]) ? validColor(groupColors[grp] || p.partColor, bodyColor) : bodyColor;
+      const dimmed = Boolean(activeGroup && grp !== activeGroup);
+      const stroke = isCol ? '#ef4444' : isSel ? '#ffffff' : pieceColor;
+      const fill = isCol ? 'rgba(239, 68, 68, 0.45)' : pieceColor;
       const d = [toD(p.outer), ...(p.holes || []).map(toD)].join(' ');
       const cx = ((p.bounds.minX + p.bounds.maxX) * 0.5).toFixed(1);
       const cy = (h - (p.bounds.minY + p.bounds.maxY) * 0.5).toFixed(1);
       const label = p.locked ? `🔒 ${p.label}` : p.label;
 
       return `
-        <g data-pid="${escapeXml(p.id)}" class="${isSel?'nest-picked ':''}${isCol?'nest-collision':''}" style="cursor:pointer">
+        <g data-pid="${escapeXml(p.id)}" data-part-group="${escapeXml(grp)}" data-part-color="${escapeXml(pieceColor)}" class="${isSel?'nest-picked ':''}${isCol?'nest-collision ':''}${dimmed?'nest-group-dimmed':''}" style="cursor:${dimmed?'default':'pointer'}"${dimmed?' opacity="0.18" pointer-events="none"':''}>
           <title>${escapeXml(label)}</title>
-          ${holePreview(p.holes||[])}
-          <path data-nest-body="true" d="${d}" fill="${fill}" fill-opacity="${isSel ? '0.83' : '0.55'}" stroke="${stroke}" stroke-width="${isSel || isCol ? 4 : 2}" fill-rule="evenodd" />
+          ${grp === 'file_frame' ? '' : holePreview(p.holes||[])}
+          <path data-nest-body="true" d="${d}" fill="${fill}" fill-opacity="${isSel ? '0.83' : '0.58'}" stroke="${stroke}" stroke-width="${isSel || isCol ? 4 : 2}" fill-rule="evenodd" />
           ${isSel&&p.bounds.width>70&&p.bounds.height>35?`<text x="${cx}" y="${cy}" fill="#f8fafc" font-size="${Math.min(20,p.bounds.width/7,p.bounds.height/3)}" text-anchor="middle" dominant-baseline="middle" pointer-events="none">${show(p.bounds.width)}×${show(p.bounds.height)} ${unit}</text>`:''}
         </g>`;
     })

@@ -24,6 +24,8 @@ import { detectVectorFormat } from '../src/manufacturing/VectorFormatDetect.js';
 import { importDxfText, importSvgText, importHpglText } from '../src/manufacturing/VectorFileImport.js';
 import { cleanCdrSvg, dwgDatabaseToDxf } from '../src/manufacturing/NativeCadImport.js';
 import { importWmfEmf } from '../src/manufacturing/WmfEmfImport.js';
+import { extractNestingItems, FILELI_NESTING_GROUPS } from '../src/manufacturing/NestingEngine.js';
+import { renderNestingSvg } from '../src/ui/NestingView.js';
 
 // 1. Machine profiles catalogue (>= 40 profiles, 5 original IDs intact, dialect G-Code & HPGL)
 assert(MACHINE_PROFILES.length >= 40, `Expected >=40 profiles, got ${MACHINE_PROFILES.length}`);
@@ -196,10 +198,10 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v8'));
-assert(rootHtml.includes('./src/main.js?v=20261125-v16'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261125-v16'));
+assert(rootHtml.includes('./src/main.js?v=20261126-v17'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v17'));
 assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
-assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261125-v15'));
+assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v17'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -475,3 +477,52 @@ assert(cncHtml.includes('id="cncBtnSendMachine"') && cncHtml.includes('id="cncBt
 assert(cwsHtml.includes('id="nestCncSendMachine"') && cwsHtml.includes('id="nestCncMachineConfig"'));
 assert(rootHtml.includes('id="cncMachineModal"'));
 console.log(`✓ 1-Click CNC machine bridge verified for all ${MACHINE_PROFILES.length} profiles (Browser USB/Folder + PowerShell COM/FTP/TCP/UDP)`);
+
+// 14. Fileli 3-color grouped nesting (File Çerçeve + Pleksi + Arka Dekota) & left-panel group selection/editing
+const sqOuter = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }];
+const sqInner = [{ x: 15, y: 15 }, { x: 15, y: 85 }, { x: 85, y: 85 }, { x: 85, y: 15 }];
+const fileliMetric = [{
+  objectId: 'o1',
+  label: 'A',
+  constructionType: 'fileli',
+  depthMm: 80,
+  polygonsMm: [{ outer: sqOuter, holes: [] }],
+  exportContours: {
+    file: [{ outer: sqOuter, holes: [sqInner] }],
+    acrylic: [{ outer: sqInner, holes: [] }],
+    backing: [{ outer: sqOuter, holes: [] }],
+  },
+}];
+const fState = createDefaultState();
+const fileliItems = extractNestingItems(fileliMetric, fState);
+assert.equal(fileliItems.length, 3);
+assert.deepEqual(fileliItems.map(i => i.partGroup), ['file_frame', 'fileli_acrylic', 'fileli_dekota']);
+assert.equal(new Set(fileliItems.map(i => i.materialGroup)).size, 1, 'All 3 fileli groups must appear together on the unified sheet');
+assert.equal(new Set(fileliItems.map(i => i.partColor)).size, 3, 'Each fileli group must carry a distinct color');
+assert.equal(fileliItems[0].holes.length, 1, 'File Çerçeve must emit hollow frame contours');
+
+const metalOnlyItems = extractNestingItems([{ ...fileliMetric[0], constructionType: 'metal' }], fState);
+assert.equal(metalOnlyItems.length, 1);
+assert.equal(metalOnlyItems[0].partGroup, 'body', 'Acrylic/Dekota split rule applies ONLY to fileli construction');
+const pleksiOnlyItems = extractNestingItems([{ ...fileliMetric[0], constructionType: 'pleksi' }], fState);
+assert.equal(pleksiOnlyItems.length, 1);
+
+const grpSheet = {
+  index: 1, name: 'Levha 1', materialGroup: fileliItems[0].materialGroup, widthMm: 1000, heightMm: 1000,
+  placements: fileliItems.map((it, idx) => ({
+    ...it, xMm: idx * 120, yMm: 10, angleDeg: 0,
+    outer: it.outer.map(p => ({ x: p.x + idx * 120, y: p.y + 10 })),
+    holes: it.holes.map(h => h.map(p => ({ x: p.x + idx * 120, y: p.y + 10 }))),
+    bounds: { minX: idx * 120, minY: 10, maxX: idx * 120 + 100, maxY: 110, width: 100, height: 100 },
+  })),
+};
+fState.nesting.sheets = [grpSheet];
+const grpUiHtml = renderNestingCenter(fState, { activeSheetIdx: 0, activePartGroup: 'fileli_acrylic' });
+for (const gid of Object.keys(FILELI_NESTING_GROUPS)) {
+  assert(grpUiHtml.includes(`data-nest-group="${gid}"`), `Expected left-panel group box for ${gid}`);
+}
+assert(grpUiHtml.includes('data-nest-group-select') && grpUiHtml.includes('data-nest-group-focus') && grpUiHtml.includes('data-nest-group-color'));
+const grpSvg = renderNestingSvg(grpSheet, null, fState.nesting.previewColors, 'mm', { activeGroup: 'fileli_acrylic' });
+assert(grpSvg.includes('nest-group-dimmed'), 'Non-active color groups must be visually isolated on SVG');
+assert(mainJs.includes('async function repackNestingSettings(label,updateNesting,quickImport=false)'));
+console.log('✓ Fileli 3-color grouped nesting, non-fileli exclusion, left-panel group controls & repack true-shape fix verified');

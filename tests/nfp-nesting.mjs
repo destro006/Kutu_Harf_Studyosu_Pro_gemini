@@ -1,4 +1,10 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseFont } from '../src/vendor/opentype.mjs';
+import { layoutTextMm } from '../src/geometry/FontManager.js';
+import { buildChannelComponent } from '../src/geometry/ChannelLetterGeometry.js';
 import {forbiddenTranslations,nfpCandidates} from '../src/manufacturing/NfpGeometry.js';
 import {runTrueShapeNesting,validateSheetLayout} from '../src/manufacturing/NestingEngine.js';
 import {runProNesting} from '../src/manufacturing/NestingEnginePro.js';
@@ -100,3 +106,39 @@ console.log('✓ Clipper NFP, fixed-sheet packing, hole policy, exact contour pr
    }
  }
  console.log(`✓ Exact Minkowski NFP crescent/U interlocking (env ${(envRatio * 100).toFixed(1)}%, interlocked=${curvedOpt.interlockedPairs}) & strict 0° grain lock verified`);
+
+ // Real serif font (Cinzel) 'MARKANIZ' true-shape A(0°)+A(180°) & diagonal interlocking check
+ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+ const loadWoff = (fn) => {
+   const b = fs.readFileSync(path.join(ROOT, 'public/fonts', fn));
+   return parseFont(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+ };
+ const cinzel = [loadWoff('cinzel-latin-700-normal-C-gK7hA8.woff'), loadWoff('cinzel-latin-ext-700-normal-CORa-yIv.woff')];
+ const markaniz = layoutTextMm(cinzel, 'MARKANIZ', 400, 8).glyphs.map((g, gi) => {
+   const built = buildChannelComponent(g.shapes, { constructionType: 'metal', depthMm: 80 });
+   return built.polygonsMm.map((poly, pi) => {
+     const b = polygonBounds(poly.outer);
+     const sh = p => ({ x: p.x - b.minX, y: p.y - b.minY });
+     const outer = poly.outer.map(sh);
+     const holes = poly.holes.map(h => h.map(sh));
+     return {
+       id: `m_${gi}_${pi}`,
+       label: `${g.char} (Gövde)`,
+       partType: 'Gövde',
+       materialGroup: 'metal · 80 mm',
+       outer,
+       holes,
+       areaMm2: polygonArea(outer) - holes.reduce((a, h) => a + polygonArea(h), 0),
+     };
+   });
+ }).flat();
+ const mCfg = { sheetWidthMm: 3000, sheetHeightMm: 1500, marginMm: 15, clearanceMm: 5, kerfMm: 0.2, rotationStepDeg: 'auto', placementStrategy: 'compact', optimizationBudgetMs: 2500 };
+ const mBase = runTrueShapeNesting(markaniz, { ...mCfg, quickImport: true });
+ const mOpt = optimizeNesting(markaniz, mCfg);
+ assert.equal(mOpt.unplaced.length, 0);
+ assert.equal(mOpt.sheetCount, 1);
+ assert(validateSheetLayout(mOpt.sheets[0], 5.2, true).valid);
+ const mRatio = envOf(mOpt) / Math.max(1, envOf(mBase));
+ assert(mOpt.interlockedPairs >= 1, `Expected real Cinzel MARKANIZ interlocking >= 1, got ${mOpt.interlockedPairs}`);
+ assert(mRatio <= 0.88, `Expected MARKANIZ true-shape envelope reduction vs rectangular baseline, got ${(mRatio * 100).toFixed(1)}%`);
+ console.log(`✓ Real Cinzel MARKANIZ true-shape interlocking verified (env ${(mRatio * 100).toFixed(1)}%, interlocked=${mOpt.interlockedPairs})`);

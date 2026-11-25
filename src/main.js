@@ -11,7 +11,7 @@ import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v15';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261125-v15';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v17';
 import {nextNestingSelection,deleteNestingParts,moveNestingParts} from './manufacturing/NestingSelection.js?v=nest7';
 import { generateNestedGcode, generateNestedHpgl,validateNestedProduction,MACHINE_PROFILES,getMachineProfile } from './export/CncGcodeExporter.js';
 import { HistoryManager } from './core/history.js';
@@ -88,7 +88,7 @@ import { calculateManufacturingMetrics } from './manufacturing/MetricsCalculator
 import { SHEET_PRESETS, extractNestingItems, runTrueShapeNesting, validateSheetLayout, editNestingPlacement, refreshNestingSheet } from './manufacturing/NestingEngine.js';
 import { importVectorText } from './manufacturing/VectorFileImport.js';
 import { importPdfFile } from './manufacturing/PdfVectorImport.js';
-import { runVectorImportJob } from './manufacturing/AsyncVectorImport.js?v=pro3-fast3';
+import { runVectorImportJob } from './manufacturing/AsyncVectorImport.js?v=20261126-v17';
 import {
   createNestingImportedTab, getActiveNestingImportedItems, openNestingImportTab,
   switchNestingTab, closeNestingImportedTab, syncActiveNestingTab, applyNestingPartOverrides,
@@ -227,6 +227,7 @@ let lastNesting = null;
 let lastPhotomontageScene=null,lastPhotomontageUrl=null,lastPhotomontageHaloUrl=null;
 let selectedNestingId = null;
 let selectedNestingIds=new Set(),nestingSelectionAnchor=null,nestingSelectionScope=null;
+let activeNestingGroup = null;
 function clearNestingSelection(){selectedNestingId=null;selectedNestingIds.clear();nestingSelectionAnchor=null;}
 function syncNestingSelectionScope(state){
  const key=JSON.stringify([docManager.activeDocId,state.activePageId,state.nesting.activeTabId||'design',activeSheetIdx]);
@@ -3041,7 +3042,7 @@ function updateCenterWorkspaces(state) {
       if(currentNestingImportController&&targetTabId==='import'&&currentTabId==='import')return;
       if(nestingGesture?.active)return;
       syncNestingSelectionScope(state);
-      const html=renderNestingCenter(state,{activeSheetIdx,selectedPlacementId:selectedNestingId,selectedPlacementIds:[...selectedNestingIds],advancedOpen:nestingAdvancedOpen});
+      const html=renderNestingCenter(state,{activeSheetIdx,selectedPlacementId:selectedNestingId,selectedPlacementIds:[...selectedNestingIds],advancedOpen:nestingAdvancedOpen,activePartGroup:activeNestingGroup});
       if(el._lastHtml===html)return;
       el._lastHtml=html;
       if (grid && currentTabId === targetTabId && el.querySelector('.nesting-workspace')?.dataset.displayUnit===normalizeDisplayUnit(state.pageLayout?.displayUnit) && grid.querySelector('.cws-side-r')) {
@@ -3090,7 +3091,7 @@ function updateCenterWorkspaces(state) {
 // All geometry-affecting settings repack in one undoable operation, keeping
 // the physical sheet, stored placements, DXF and preview synchronized.
 let nestingRepackController=null;
-async function repackNestingSettings(label,updateNesting,quickImport=true){
+async function repackNestingSettings(label,updateNesting,quickImport=false){
   nestingRepackController?.abort();
   const controller=new AbortController();nestingRepackController=controller;
   const previous=store.get(),tab=previous.nesting.activeTabId||'design',docId=docManager.activeDocId,pageId=previous.activePageId;
@@ -3100,7 +3101,28 @@ async function repackNestingSettings(label,updateNesting,quickImport=true){
   if(button)button.textContent='İşleniyor… (tekrar tıkla: iptal)';
   try{
     let result={sheets:[],unplaced:[],sheetCount:0,overallUtilizationPct:0,totalScrapM2:0,interlockedPairs:0,totalCutLengthM:0,minSep:nestingSeparation(next)};
-    if(items.length){const out=await runVectorImportJob({jobId:Date.now(),operation:'nest',imported:{items},nesting:{...Object.fromEntries(Object.entries(next).filter(([key])=>!['sheets','unplaced','importedTabs','designTabSnapshot'].includes(key))),quickImport},lockedSheets:next.sheets?.filter(sh=>sh.placements.some(p=>p.locked))||[]},{signal:controller.signal,onStatus:status=>{const b=document.getElementById('cwsRunNesting');if(b&&nestingRepackController===controller)b.textContent=status+' · İptal';}});result=out.nesting;}
+    const groupOnly = Boolean(activeNestingGroup && label === 'Grup Optimizasyonu');
+    const origLocked = new Map();
+    const lockedSheets = groupOnly
+      ? (next.sheets || []).map(sh => ({
+          ...sh,
+          placements: (sh.placements || []).map(p => {
+            origLocked.set(p.id, Boolean(p.locked));
+            return (p.partGroup || 'body') === activeNestingGroup ? p : { ...p, locked: true };
+          }),
+        })).filter(sh => sh.placements.some(p => p.locked))
+      : (next.sheets?.filter(sh=>sh.placements.some(p=>p.locked))||[]);
+    if(items.length){
+      const out=await runVectorImportJob({jobId:Date.now(),operation:'nest',imported:{items},nesting:{...Object.fromEntries(Object.entries(next).filter(([key])=>!['sheets','unplaced','importedTabs','designTabSnapshot'].includes(key))),quickImport: quickImport || items.length > 80},lockedSheets},{signal:controller.signal,onStatus:status=>{const b=document.getElementById('cwsRunNesting');if(b&&nestingRepackController===controller)b.textContent=status+' · İptal';}});
+      result=out.nesting;
+      if (groupOnly && result?.sheets) {
+        for (const sh of result.sheets) {
+          for (const p of sh.placements || []) {
+            if (origLocked.has(p.id)) p.locked = origLocked.get(p.id);
+          }
+        }
+      }
+    }
     if(controller.signal.aborted||docManager.activeDocId!==docId||store.get().activePageId!==pageId||(store.get().nesting.activeTabId||'design')!==tab)return;
     lastNesting=result;activeSheetIdx=0;clearNestingSelection();
     next.optimizationInfo=result.optimization||null;
@@ -3286,7 +3308,7 @@ function selectNestingPart(id,{toggle=false,range=false,addRange=false,preserve=
  const paint=(pid,on)=>{
   if(!root)return;
   const g=root.querySelector('[data-pid="'+CSS.escape(pid)+'"]');
-  if(g){g.classList.toggle('nest-picked',on);const path=g.querySelector('[data-nest-body]');if(path&&!g.classList.contains('nest-collision')){path.setAttribute('stroke',on?'#ffffff':(state.nesting.previewColors?.body||'#c89343'));path.setAttribute('stroke-width',on?'4':'2');path.setAttribute('fill-opacity',on?'0.83':'0.55');}if(!on)g.querySelector('text')?.remove();}
+  if(g){g.classList.toggle('nest-picked',on);const path=g.querySelector('[data-nest-body]');if(path&&!g.classList.contains('nest-collision')){const restColor=g.dataset.partColor||state.nesting.previewColors?.body||'#c89343';path.setAttribute('stroke',on?'#ffffff':restColor);path.setAttribute('stroke-width',on?'4':'2');path.setAttribute('fill-opacity',on?'0.83':'0.58');}if(!on)g.querySelector('text')?.remove();}
   const row=root.querySelector('[data-cws-pid="'+CSS.escape(pid)+'"]');
   if(row){row.classList.toggle('on',on);row.setAttribute('aria-selected',String(on));const cb=row.querySelector('[data-cws-check]');if(cb)cb.checked=on;}
  };
@@ -3320,6 +3342,7 @@ function bindNestingGestures(root){
     e.preventDefault();e.stopPropagation();
     const part=store.get().nesting.sheets?.[activeSheetIdx]?.placements.find(p=>p.id===group.dataset.pid);
     if(!part)return;
+    if(activeNestingGroup && (part.partGroup || 'body') !== activeNestingGroup) return;
     if(nestingTool==='select'&&(e.ctrlKey||e.metaKey||e.shiftKey)){selectNestingPart(part.id,{toggle:e.ctrlKey||e.metaKey,range:e.shiftKey,addRange:e.ctrlKey||e.metaKey});return;}
     const start=point(e),h=store.get().nesting.sheets[activeSheetIdx].heightMm;
     const center={x:(part.bounds.minX+part.bounds.maxX)/2,y:h-(part.bounds.minY+part.bounds.maxY)/2};
@@ -3367,9 +3390,56 @@ function bindNestingCenterEvents(root) {
   bindNestedCncPanel(root);
   root.querySelectorAll('[data-nest-tab]').forEach(b => b.onclick = () => {
     nestingRepackController?.abort();currentNestingImportController?.abort();
+    activeNestingGroup = null;
     mutateData('Nesting iş sekmesi', s => switchNestingTab(s.nesting,b.dataset.nestTab), false);
     activeSheetIdx=0;clearNestingSelection();
     updateCenterWorkspaces(store.get());
+  });
+  root.querySelectorAll('[data-nest-group-all]').forEach(b => b.onclick = () => {
+    activeNestingGroup = null;
+    updateCenterWorkspaces(store.get());
+  });
+  root.querySelectorAll('[data-nest-group-select]').forEach(b => b.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const gid = b.dataset.nestGroupSelect;
+    const pls = (store.get().nesting.sheets?.[activeSheetIdx]?.placements || []).filter(p => (p.partGroup || 'body') === gid);
+    selectedNestingIds = new Set(pls.map(p => p.id));
+    selectedNestingId = pls.at(-1)?.id ?? null;
+    nestingSelectionAnchor = selectedNestingId;
+    const wrap = document.getElementById('nestingCenterWrap');
+    if (wrap) wrap._lastHtml = null;
+    updateCenterWorkspaces(store.get());
+    updateNumericBar(store.get());
+  });
+  root.querySelectorAll('[data-nest-group-focus]').forEach(b => b.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const gid = b.dataset.nestGroupFocus;
+    activeNestingGroup = activeNestingGroup === gid ? null : gid;
+    if (activeNestingGroup) {
+      const pls = (store.get().nesting.sheets?.[activeSheetIdx]?.placements || []).filter(p => (p.partGroup || 'body') === activeNestingGroup);
+      selectedNestingIds = new Set(pls.map(p => p.id));
+      selectedNestingId = pls.at(-1)?.id ?? null;
+      nestingSelectionAnchor = selectedNestingId;
+    }
+    updateCenterWorkspaces(store.get());
+    updateNumericBar(store.get());
+  });
+  root.querySelectorAll('[data-nest-group-color]').forEach(el => {
+    el.addEventListener('click', e => e.stopPropagation());
+    el.addEventListener('change', e => {
+      e.stopPropagation();
+      const gid = el.dataset.nestGroupColor;
+      const val = e.target.value;
+      if (!gid || !/^#[a-f0-9]{6}$/i.test(val)) return;
+      mutateData('Nesting grup rengi', s => {
+        s.nesting.previewColors ||= {};
+        s.nesting.previewColors.groups ||= {};
+        s.nesting.previewColors.groups[gid] = val;
+      }, false);
+      updateCenterWorkspaces(store.get());
+    });
   });
   root.querySelectorAll('[data-nest-close]').forEach(b => b.onclick = (e) => {
     e.stopPropagation();
@@ -3442,7 +3512,10 @@ function bindNestingCenterEvents(root) {
   root.querySelector('#cwsDeletePart')?.addEventListener('click',()=>editSelectedNesting('delete'));
   root.querySelector('#cwsSendCorel')?.addEventListener('click', () => triggerSendToCorel(true));
   root.querySelector('#cwsRunNesting')?.addEventListener('click', () => runAutoNesting());
-  root.querySelector('#cwsReoptUnlocked')?.addEventListener('click', () => runAutoNesting());
+  root.querySelector('#cwsReoptUnlocked')?.addEventListener('click', () => {
+    if (activeNestingGroup) return repackNestingSettings('Grup Optimizasyonu', () => {}, false);
+    return runAutoNesting();
+  });
   // Settings are mounted once and persist across sheet/selection redraws.
   // Bind their listeners only once to prevent duplicate mutations.
   const nestingSettings = root.querySelector('.cws-side-r');

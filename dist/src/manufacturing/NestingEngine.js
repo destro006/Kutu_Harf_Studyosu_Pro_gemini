@@ -77,9 +77,17 @@ function simplifyClosedPolygon(pts, tol = 1.5) {
   return res.length >= 3 ? res : pts;
 }
 
+export const FILELI_NESTING_GROUPS = {
+  file_frame: { id: 'file_frame', label: 'File Çerçeve (Metal)', color: '#d4a24c', layer: 'FILE_CERCEVE' },
+  fileli_acrylic: { id: 'fileli_acrylic', label: 'Pleksi (Akrilik)', color: '#38bdf8', layer: 'PLEKSI_AKRILIK' },
+  fileli_dekota: { id: 'fileli_dekota', label: 'Arka Dekota', color: '#34d399', layer: 'ARKA_DEKOTA' },
+};
+
 /**
  * Extracts nestable manufacturing components from current scene metricsList,
  * preserving projectId, parentId, partId, material, thickness, finish, and exact contours.
+ * Fileli construction emits 3 color-coded groups (File Çerçeve, Pleksi, Arka Dekota)
+ * on one unified sheet batch; non-fileli constructions emit only outer body parts.
  */
 export function extractNestingItems(metricsList, state) {
   const copies = Math.max(1, Number(state.nesting?.copies || 1));
@@ -89,8 +97,9 @@ export function extractNestingItems(metricsList, state) {
   for (let c = 0; c < copies; c++) {
     for (const m of metricsList) {
       if (!m.polygonsMm?.length) continue;
+      const cType = m.constructionType || state.constructionType || 'metal';
 
-      const addRing = (outer, holes, partType, materialName, thicknessMm, operation) => {
+      const addRing = (outer, holes, partType, materialName, thicknessMm, operation, extra = {}) => {
         const rawOuter = ensureWinding(outer, true);
         const normOuter = rawOuter; // preserve original manufacturing contour
         if (normOuter.length < 3) return;
@@ -107,10 +116,14 @@ export function extractNestingItems(metricsList, state) {
           parentId: m.objectId,
           label: `${m.label} (${partType})`,
           partType,
+          partGroup: extra.partGroup || 'body',
+          partGroupLabel: extra.partGroupLabel || 'Gövde',
+          partColor: extra.partColor || null,
+          dxfLayer: extra.dxfLayer || null,
           operation,
           material: materialName,
           thicknessMm,
-          materialGroup: `${materialName} · ${thicknessMm} mm`,
+          materialGroup: extra.materialGroupOverride || `${materialName} · ${thicknessMm} mm`,
           outer: normOuter.map(shift),
           holes: normHoles,
           areaMm2,
@@ -118,19 +131,47 @@ export function extractNestingItems(metricsList, state) {
         });
       };
 
-      if (targetPart === 'all' || targetPart === 'outer') {
+      if (cType === 'fileli') {
+        const sharedBatch = 'Fileli · File + Pleksi + Dekota';
+        const fileRings = m.exportContours?.file?.length ? m.exportContours.file : m.polygonsMm;
+        const fileMat = state.fileli?.fileMaterial || 'aynaAltin';
+        if (targetPart === 'all' || targetPart === 'file') {
+          for (const poly of fileRings) {
+            addRing(poly.outer, poly.holes, 'File Çerçeve', fileMat, state.fileli?.fileThicknessMm || 2, 'CUT_OUTER', {
+              partGroup: FILELI_NESTING_GROUPS.file_frame.id,
+              partGroupLabel: FILELI_NESTING_GROUPS.file_frame.label,
+              partColor: FILELI_NESTING_GROUPS.file_frame.color,
+              dxfLayer: FILELI_NESTING_GROUPS.file_frame.layer,
+              materialGroupOverride: sharedBatch,
+            });
+          }
+        }
+        if ((targetPart === 'all' || targetPart === 'acrylic') && m.exportContours?.acrylic?.length) {
+          for (const poly of m.exportContours.acrylic) {
+            addRing(poly.outer, poly.holes, 'Pleksi', state.fileli?.acrylicMaterial || 'opalPleksi', state.fileli?.acrylicThicknessMm || 3, 'CUT_OUTER', {
+              partGroup: FILELI_NESTING_GROUPS.fileli_acrylic.id,
+              partGroupLabel: FILELI_NESTING_GROUPS.fileli_acrylic.label,
+              partColor: FILELI_NESTING_GROUPS.fileli_acrylic.color,
+              dxfLayer: FILELI_NESTING_GROUPS.fileli_acrylic.layer,
+              materialGroupOverride: sharedBatch,
+            });
+          }
+        }
+        const backingRings = m.exportContours?.backing?.length ? m.exportContours.backing : m.polygonsMm;
+        if (targetPart === 'all' || targetPart === 'outer' || targetPart === 'dekota') {
+          for (const poly of backingRings) {
+            addRing(poly.outer, poly.holes, 'Arka Dekota', 'dekota', state.fileli?.dekotaThicknessMm || 5, 'CUT_OUTER', {
+              partGroup: FILELI_NESTING_GROUPS.fileli_dekota.id,
+              partGroupLabel: FILELI_NESTING_GROUPS.fileli_dekota.label,
+              partColor: FILELI_NESTING_GROUPS.fileli_dekota.color,
+              dxfLayer: FILELI_NESTING_GROUPS.fileli_dekota.layer,
+              materialGroupOverride: sharedBatch,
+            });
+          }
+        }
+      } else {
         for (const poly of m.polygonsMm) {
           addRing(poly.outer, poly.holes, 'Gövde', state.materials?.faceId || 'metal', m.depthMm || 80, 'CUT_OUTER');
-        }
-      }
-      if ((targetPart === 'all' || targetPart === 'acrylic') && m.exportContours?.acrylic?.length) {
-        for (const poly of m.exportContours.acrylic) {
-          addRing(poly.outer, poly.holes, 'Pleksi', state.fileli?.acrylicMaterial || 'opalPleksi', state.fileli?.acrylicThicknessMm || 3, 'CUT_OUTER');
-        }
-      }
-      if ((targetPart === 'all' || targetPart === 'file') && m.exportContours?.file?.length) {
-        for (const poly of m.exportContours.file) {
-          addRing(poly.outer, poly.holes, 'File', state.fileli?.fileMaterial || 'aynaAltin', state.fileli?.fileThicknessMm || 2, 'CUT_OUTER');
         }
       }
     }
@@ -231,10 +272,7 @@ export function resolveNestingAngles(config = {}, itemCount = 10) {
     return [0];
   }
   if (config.rotationStepDeg === 'auto') {
-    if (itemCount <= 24) {
-      return [0, 180, 90, 270, 45, 135, 225, 315, 30, 60, 120, 150, 210, 240, 300, 330];
-    }
-    if (itemCount <= 60) {
+    if (itemCount <= 16) {
       return [0, 180, 90, 270, 45, 135, 225, 315];
     }
     return [0, 180, 90, 270];
@@ -501,6 +539,10 @@ function makePlacement(item, best) {
     projectId: item.projectId,
     label: item.label,
     partType: item.partType,
+    partGroup: item.partGroup || 'body',
+    partGroupLabel: item.partGroupLabel || 'Gövde',
+    partColor: item.partColor || null,
+    dxfLayer: item.dxfLayer || null,
     material: item.material,
     thicknessMm: item.thicknessMm,
     materialGroup: item.materialGroup,

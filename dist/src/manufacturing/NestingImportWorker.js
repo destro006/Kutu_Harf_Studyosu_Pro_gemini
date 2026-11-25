@@ -4,7 +4,7 @@ import {binaryDxfToText} from './BinaryDxfImport.js';
 import {importLegacyPostScript,extractAiOutlineFallback} from './LegacyPostScriptImport.js';
 import { importVectorText, groupRings } from './VectorFileImport.js';
 import { pdfOperatorRings } from './PdfVectorImport.js';
-import { optimizeNesting } from './NestingOptimizer.js?v=pro4-exact-nfp';
+import { optimizeNesting } from './NestingOptimizer.js?v=20261126-v17';
 import { runTrueShapeNesting, validateSheetLayout } from './NestingEngine.js';
 
 function processJob(job,onProgress=()=>{}){
