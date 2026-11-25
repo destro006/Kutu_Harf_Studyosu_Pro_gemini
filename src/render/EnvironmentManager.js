@@ -126,7 +126,7 @@ export class EnvironmentManager {
       disposables.push(geo, mat);
     }
 
-    const rt = this.pmrem.fromScene(envScene, 0.04);
+    const rt = this.pmrem.fromScene(envScene, 0);
     for (const d of disposables) d.dispose();
     this.cache.set(id, rt);
     return rt;
@@ -208,7 +208,7 @@ export class EnvironmentManager {
     envScene.add(topMesh);
 
     if (this.customTarget) this.customTarget.dispose();
-    this.customTarget = this.pmrem.fromScene(envScene, 0.025);
+    this.customTarget = this.pmrem.fromScene(envScene, 0);
     boxGeo.dispose(); boxMat.dispose();
     cardGeo.dispose(); cardMat.dispose();
     topGeo.dispose(); topMat.dispose();
