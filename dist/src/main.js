@@ -7,11 +7,11 @@ import { StateStore, createDefaultState, createObjectId, structuredCloneSafe } f
 import { DocumentManager } from './core/DocumentManager.js';
 import { Vector2DCanvas } from './cad/Vector2DCanvas.js?v=qa8';
 import { ContextMenu } from './ui/ContextMenu.js';
-import { renderPropertyBar } from './ui/PropertyBar.js?v=units6';
+import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v14';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=qa8';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261125-v14';
 import {nextNestingSelection,deleteNestingParts,moveNestingParts} from './manufacturing/NestingSelection.js?v=nest7';
 import { generateNestedGcode, generateNestedHpgl,validateNestedProduction,MACHINE_PROFILES,getMachineProfile } from './export/CncGcodeExporter.js';
 import { HistoryManager } from './core/history.js';
@@ -26,14 +26,14 @@ import {
 } from './core/projectSerializer.js';
 import { FontManager } from './geometry/FontManager.js?v=qa8';
 import { generateCutoutPreview, parseSvgLogo, traceRasterLogo } from './geometry/LogoTracer.js';
-import { SignEngine, QUALITY_PROFILES } from './render/SignEngine.js?v=qa8';
+import { SignEngine, QUALITY_PROFILES } from './render/SignEngine.js?v=20261125-v14';
 import { ACRYLIC_PALETTE, MATERIAL_PRESETS, PAINT_PALETTE } from './render/MaterialLibrary.js';
 import { RAL_COLORS, RAL_GROUPS } from './render/RalColors.js';
 import { ENVIRONMENT_PRESETS } from './render/EnvironmentManager.js';
 import { LIGHT_COLOR_PRESETS, LIGHTING_MODES } from './render/LightingSystem.js';
 import {detectVectorFormat} from './manufacturing/VectorFormatDetect.js';
 import { BACKGROUND_SCENES } from './photomontage/BackgroundLibrary.js';
-import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js';
+import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js?v=20261125-v14';
 import { renderNestingSvg } from './ui/NestingView.js';
 import { applySurfaceMaterialPreset, getDisplayedSurfaceMaterial } from './core/MaterialActions.js';
 import { getExportSelection } from './export/ExportScope.js';
@@ -175,6 +175,35 @@ let ensureSignEngine=()=>signEngine;
 const is3DWorkspace=state=>['model3d','materials'].includes(state.mainWorkspace||'model3d');
 let sceneDataKey=null;
 let photomontageOverlay = null;
+let traceStudioReady = false;
+let pendingTracerImage = null;
+function flushPendingTracerImage() {
+  if (!pendingTracerImage) return false;
+  const frame = document.getElementById('traceStudioFrame');
+  if (!frame?.contentWindow || !traceStudioReady) return false;
+  frame.contentWindow.postMessage({
+    type: 'SIGNAGE_STUDIO_LOAD_IMAGE',
+    dataUrl: pendingTracerImage.dataUrl,
+    fileName: pendingTracerImage.fileName,
+  }, '*');
+  pendingTracerImage = null;
+  return true;
+}
+async function sendPhotomontageToTracer() {
+  const s = store.get();
+  if (!s.photomontage?.photoUrl || !photomontageOverlay) return false;
+  const dataUrl = await photomontageOverlay.buildCompositeDataUrl(s, signEngine);
+  if (!dataUrl) {
+    studioToast('Perspektif görüntüsü oluşturulamadı.', true);
+    return false;
+  }
+  const fileName = `${(s.projectName || 'fotomontaj').replace(/\s+/g, '_')}_perspektif`;
+  pendingTracerImage = { dataUrl, fileName };
+  setMainWorkspace('tracer');
+  flushPendingTracerImage();
+  studioToast('✓ Perspektif onaylandı ve görüntü Image Tracer sekmesine gönderildi!');
+  return true;
+}
 let lastSceneResult = { sizeM: { w: 2, h: 0.4 }, metricsList: [], warnings: [] };
 let lastMetrics = calculateManufacturingMetrics([], store.get());
 let lastCosts = calculateProjectCosts(lastMetrics, store.get());
@@ -2911,8 +2940,21 @@ function setMainWorkspace(ws) {
   document.getElementById('vector2DWrap')?.classList.toggle('hidden', ws !== 'design2d');
   const tracerWrap = document.getElementById('tracerCenterWrap');
   tracerWrap?.classList.toggle('hidden', ws !== 'tracer');
-  if (ws === 'tracer' && tracerWrap && !tracerWrap.querySelector('#traceStudioFrame')) {
-    tracerWrap.innerHTML = '<iframe id="traceStudioFrame" class="tracer-iframe" src="./public/trace-studio/index.html?v=20261125-v7" title="Image Tracer Stüdyosu"></iframe>';
+  if (ws === 'tracer' && tracerWrap) {
+    if (!tracerWrap.querySelector('#traceStudioFrame')) {
+      traceStudioReady = false;
+      tracerWrap.innerHTML = '<iframe id="traceStudioFrame" class="tracer-iframe" src="./public/trace-studio/index.html?v=20261125-v8" title="Image Tracer Stüdyosu"></iframe>';
+      tracerWrap.querySelector('#traceStudioFrame')?.addEventListener('load', () => {
+        setTimeout(() => {
+          if (pendingTracerImage) {
+            traceStudioReady = true;
+            flushPendingTracerImage();
+          }
+        }, 120);
+      });
+    } else {
+      flushPendingTracerImage();
+    }
   }
   document.getElementById('nestingCenterWrap')?.classList.toggle('hidden', ws !== 'nesting');
   document.getElementById('cncCenterWrap')?.classList.toggle('hidden', ws !== 'cnc');
@@ -3000,7 +3042,7 @@ function updateCenterWorkspaces(state) {
         if (tabs && nextTabs) tabs.replaceWith(nextTabs);
         syncNestingSettingsControls(grid.querySelector('.cws-side-r'), state.nesting,state.pageLayout?.displayUnit);
         const oldCnc=grid.querySelector('#nestCncPanel'),newCnc=template.content.querySelector('#nestCncPanel');
-        for(const id of ['cwsSendCorel','cwsExpCorel','cwsExpSvg','cwsExpDxf','cwsExpCsv']){const old=grid.querySelector('#'+id),fresh=template.content.querySelector('#'+id);if(old&&fresh)old.disabled=fresh.disabled;}
+        for(const id of ['cwsExpCorel','cwsExpSvg','cwsExpDxf','cwsExpCsv']){const old=grid.querySelector('#'+id),fresh=template.content.querySelector('#'+id);if(old&&fresh)old.disabled=fresh.disabled;}
         if(oldCnc&&newCnc){
           for(const fresh of newCnc.querySelectorAll('input,select')){const el=oldCnc.querySelector('#'+fresh.id);if(!el||el===document.activeElement)continue;if(el.type==='checkbox')el.checked=fresh.checked;else el.value=fresh.value;}
           const oldStatus=oldCnc.querySelector('#nestCncStatus'),newStatus=newCnc.querySelector('#nestCncStatus');if(oldStatus&&newStatus)oldStatus.replaceWith(newStatus);
@@ -3382,6 +3424,7 @@ function bindNestingCenterEvents(root) {
     });
   });
   root.querySelector('#cwsDeletePart')?.addEventListener('click',()=>editSelectedNesting('delete'));
+  root.querySelector('#cwsSendCorel')?.addEventListener('click', () => triggerSendToCorel(true));
   root.querySelector('#cwsRunNesting')?.addEventListener('click', () => runAutoNesting());
   root.querySelector('#cwsReoptUnlocked')?.addEventListener('click', () => runAutoNesting());
   // Settings are mounted once and persist across sheet/selection redraws.
@@ -3429,7 +3472,6 @@ function bindNestingCenterEvents(root) {
   root.querySelector('#cwsNestResetColors')?.addEventListener('click', () => mutateData('Nesting renklerini sıfırla', s => {
     s.nesting.previewColors = { body: '#c89343', holes: '#c89343' };
   }, false));
-  root.querySelector('#cwsSendCorel')?.addEventListener('click', () => triggerSendToCorel(true));
   root.querySelector('#cwsExpCorel')?.addEventListener('click', () => triggerSendToCorel(true));
   root.querySelector('#cwsCorelSetup')?.addEventListener('click', () => openCorelBridgeModal());
   root.querySelector('#cwsExpSvg')?.addEventListener('click', () => {
@@ -3971,6 +4013,11 @@ function init() {
     if (e.origin && e.origin !== window.location.origin && e.origin !== 'null') return;
     const msg = e.data;
     if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'TRACE_STUDIO_READY') {
+      traceStudioReady = true;
+      flushPendingTracerImage();
+      return;
+    }
     if (msg.type === 'SIGNAGE_STUDIO_IMPORT_VECTOR' && msg.svgText) {
       const name = String(msg.fileName || 'trace_vektor').replace(/\.svg$/i, '') + '.svg';
       const file = new File([msg.svgText], name, { type: 'image/svg+xml' });
@@ -4142,11 +4189,14 @@ function init() {
     onCornersChange: (corners) => {
       store.update(s => { s.photomontage.cornersNorm = corners; });
     },
-    onConfirm: () => {
+    onConfirm: async () => {
       store.update(s => { s.photomontage.confirmed = true; });
       updateStageChrome(store.get());
       renderActiveWorkspace();
-      studioToast('✓ Perspektif onaylandı. Tekrar düzenlemek için "Perspektifi Düzenle"ye tıklayın.');
+      await sendPhotomontageToTracer();
+    },
+    onSendToTracer: async () => {
+      await sendPhotomontageToTracer();
     },
     onEdit: () => {
       store.update(s => { s.photomontage.confirmed = false; });

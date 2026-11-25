@@ -78,8 +78,8 @@ export function renderNestingCenter(state, ctx) {
             `).join('')}
             <button type="button" id="cwsAddSheet" class="sheet-tab">+ Yeni Levha</button>
           </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button type="button" id="cwsSendCorel" class="corel-btn" ${totalParts?'':'disabled'} title="Nesting parçalarını, plaka ebatını ve seçili renkleri tek tıkla CorelDRAW'a gönder">✦ CorelDRAW'a Gönder</button>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <button type="button" id="cwsSendCorel" class="corel-btn" title="Nesting parçalarını, plaka ebatını ve seçili renkleri tek tıkla CorelDRAW'a aktar">✦ Corel'e Aktar</button>
             <button type="button" id="cwsRunNesting" class="cta-btn" style="padding:5px 12px" title="İçe aktarmadan sonra hassas true-shape optimizasyonu; işlem sürerken tekrar tıklayarak iptal edin">Otomatik Yerleştir</button>
             <button type="button" id="cwsReoptUnlocked" class="sec-btn">Kilitsizleri Optimize Et</button>
             <button type="button" id="cwsDeletePart" class="sec-btn" ${removableCount?'':'disabled'} title="Seçilen parçaları yalnızca bu nesting işinden sil">${removableCount>1?'Seçilenleri Sil ('+removableCount+')':'Parçayı Sil'}</button>

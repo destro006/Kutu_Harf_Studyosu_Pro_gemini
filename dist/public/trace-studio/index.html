@@ -3255,6 +3255,46 @@
     reader.readAsDataURL(file);
   }
 
+  function loadImageFromDataUrl(dataUrl, fileName = 'fotomontaj_sunum') {
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+      showToast('Geçersiz görsel verisi alındı.');
+      return;
+    }
+    clearHistory();
+    state.fileName = String(fileName || 'fotomontaj_sunum').replace(/\.[^.]+$/, '');
+    const img = new Image();
+    img.onload = () => {
+      const maxIn = 1800;
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if (w > maxIn || h > maxIn) { const r = maxIn / Math.max(w, h); w = Math.round(w * r); h = Math.round(h * r); }
+      state.sourceCanvas.width = w;
+      state.sourceCanvas.height = h;
+      state.sourceCanvas.getContext('2d', { willReadFrequently: true }).drawImage(img, 0, 0, w, h);
+      state.bgRemoved = false;
+      state.bgKeyColor = null;
+      state.svgText = '';
+      state.dxfText = '';
+      state.palette = [];
+      state.disabledPaletteKeys.clear();
+      renderPaletteSwatches();
+      $('traceBadge').textContent = 'Bekliyor';
+      $('traceBadge').className = 'badge';
+      setViewMode('compare');
+      analyzeImageAuto(state.sourceCanvas);
+      runEnhancement(false);
+      showToast('✓ Fotomontaj görüntüsü Image Tracer’a yüklendi — düzenleyip çıktı alabilirsiniz.');
+    };
+    img.src = dataUrl;
+  }
+
+  window.addEventListener('message', e => {
+    const msg = e.data;
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'SIGNAGE_STUDIO_LOAD_IMAGE' && msg.dataUrl) {
+      loadImageFromDataUrl(msg.dataUrl, msg.fileName || 'fotomontaj_sunum');
+    }
+  });
+
   // Event Bindings
   $('fileInput').addEventListener('change', e => { if (e.target.files?.[0]) loadFile(e.target.files[0]); });
   $('btnSampleLogo').addEventListener('click', () => loadSampleImage('logo'));
@@ -3420,6 +3460,9 @@
   renderPresets();
   syncScaleButtons();
   loadSampleImage('logo');
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage({ type: 'TRACE_STUDIO_READY' }, '*');
+  }
 })();
 </script>
 </body>

@@ -41,22 +41,23 @@ export class PhotomontageOverlay {
 
     this.container.innerHTML = `
       <div class="pm-stage" style="position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#090a0d">
-        ${!confirmed ? `
-          <div class="pm-action-bar" id="pmActionBar">
-            <span>4 sarı köşeyi sürükleyip tabelayı cepheye oturtun</span>
-            <button type="button" id="pmConfirmBtn" class="cta-btn">✓ Perspektifi Onayla (Enter)</button>
-            <button type="button" id="pmResetCornersBtn" class="sec-btn">↺ Sıfırla</button>
-          </div>
-        ` : `
-          <div class="pm-confirmed-bar" id="pmConfirmedBar">
-            <button type="button" id="pmEditPerspBtn" class="sec-btn" title="4 köşe perspektif tutamaçlarını tekrar aç">⤢ Perspektifi Düzenle</button>
-            <button type="button" id="pmQuickExportBtn" class="cta-btn" title="Cephe sunum PNG indir">⬇ Sunum PNG</button>
-          </div>
-        `}
         <div class="pm-frame" style="position:relative;max-width:100%;max-height:100%;display:inline-block">
           <img id="pmBgImg" src="${pm.photoUrl}" alt="Mağaza Fotoğrafı" style="display:block;max-width:100%;max-height:100%;user-select:none;pointer-events:none">
           <img id="pmSignImg" src="${this.signPreviewUrl || ''}" alt="3D Tabela" style="position:absolute;top:0;left:0;transform-origin:0 0;pointer-events:none;filter:drop-shadow(0 6px 14px rgba(0,0,0,${pm.wallShadow ?? 0.45}))">
           ${!confirmed ? '<svg id="pmHandlesSvg" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none"></svg><div id="pmHandlesLayer" style="position:absolute;inset:0"></div>' : ''}
+          ${!confirmed ? `
+            <div class="pm-action-bar pm-action-bar--top-right" id="pmActionBar">
+              <button type="button" id="pmConfirmBtn" class="cta-btn" title="Perspektifi onayla ve Image Tracer'a gönder (Enter)">✓ Onayla</button>
+              <button type="button" id="pmResetCornersBtn" class="sec-btn" title="4 köşeyi varsayılan konuma döndür">↺ Sıfırla</button>
+            </div>
+            <div class="pm-hint-pill">4 sarı köşeyi sürükleyin · Enter veya sağ üstten Onayla</div>
+          ` : `
+            <div class="pm-confirmed-bar" id="pmConfirmedBar">
+              <button type="button" id="pmSendTracerBtn" class="cta-btn" title="Perspektifli görüntüyü Image Tracer'a gönder">✦ Image Tracer'a Gönder</button>
+              <button type="button" id="pmEditPerspBtn" class="sec-btn" title="4 köşe perspektif tutamaçlarını tekrar aç">⤢ Perspektifi Düzenle</button>
+              <button type="button" id="pmQuickExportBtn" class="sec-btn" title="Cephe sunum PNG indir">⬇ Sunum PNG</button>
+            </div>
+          `}
         </div>
       </div>
     `;
@@ -97,6 +98,7 @@ export class PhotomontageOverlay {
             hBtn.title = `Köşe ${idx + 1}`;
             hBtn.addEventListener('pointerdown', (e) => {
               e.stopPropagation();
+              document.activeElement?.blur?.();
               this.dragIdx = idx;
               hBtn.setPointerCapture?.(e.pointerId);
             });
@@ -117,6 +119,7 @@ export class PhotomontageOverlay {
 
     this.container.querySelector('#pmConfirmBtn')?.addEventListener('click', () => this.callbacks.onConfirm?.());
     this.container.querySelector('#pmResetCornersBtn')?.addEventListener('click', () => this.callbacks.onResetCorners?.());
+    this.container.querySelector('#pmSendTracerBtn')?.addEventListener('click', () => this.callbacks.onSendToTracer?.());
     this.container.querySelector('#pmEditPerspBtn')?.addEventListener('click', () => this.callbacks.onEdit?.());
     this.container.querySelector('#pmQuickExportBtn')?.addEventListener('click', () => this.callbacks.onExport?.());
 
@@ -138,27 +141,32 @@ export class PhotomontageOverlay {
       const onKey = (e) => {
         if (e.key !== 'Enter') return;
         const active = document.activeElement;
-        if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) return;
+        if (active && (
+          active.tagName === 'TEXTAREA' ||
+          active.tagName === 'SELECT' ||
+          (active.tagName === 'INPUT' && !['file', 'range', 'checkbox', 'radio', 'button', 'submit', 'color'].includes(active.type))
+        )) return;
         if (document.querySelector('.modal:not(.hidden), dialog[open]')) return;
         e.preventDefault();
+        e.stopImmediatePropagation?.();
         this.callbacks.onConfirm?.();
       };
       this.container.onpointermove = onMove;
       window.addEventListener('pointerup', onUp);
-      window.addEventListener('keydown', onKey);
+      window.addEventListener('keydown', onKey, true);
       this._cleanupFns.push(() => {
         this.container.onpointermove = null;
         window.removeEventListener('pointerup', onUp);
-        window.removeEventListener('keydown', onKey);
+        window.removeEventListener('keydown', onKey, true);
       });
     } else {
       this.container.onpointermove = null;
     }
   }
 
-  async exportComposite(state, signEngine) {
+  async buildCompositeDataUrl(state, signEngine) {
     const pm = state.photomontage;
-    if (!pm?.photoUrl) return;
+    if (!pm?.photoUrl) return null;
     const sz = signEngine.lastSizeM || { w: 2.0, h: 0.45 };
     const capW = 1800;
     const capH = Math.max(520, Math.min(1250, Math.round(capW * ((sz.h + 0.30) / Math.max(0.5, sz.w + 0.36)))));
@@ -175,11 +183,16 @@ export class PhotomontageOverlay {
     signCanvas.height = im.naturalHeight;
     signCanvas.getContext('2d').drawImage(im, 0, 0);
 
-    const outUrl = await renderPhotomontageComposite(pm.photoUrl, signCanvas, pm.cornersNorm, {
+    return renderPhotomontageComposite(pm.photoUrl, signCanvas, pm.cornersNorm, {
       wallShadow: pm.wallShadow ?? 0.45,
       ambientMatch: pm.ambientMatch ?? 0.15,
       ambientTint: state.lighting?.colorHex || '#ffffff',
     });
+  }
+
+  async exportComposite(state, signEngine) {
+    const outUrl = await this.buildCompositeDataUrl(state, signEngine);
+    if (!outUrl) return;
     downloadDataUrl(`${(state.projectName || 'fotomontaj').replace(/\s+/g, '_')}_sunum.png`, outUrl);
   }
 }
