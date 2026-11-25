@@ -1,7 +1,7 @@
 import {normalizeDisplayUnit,formatMmAsUnit,formatDimensions,formatPresetLabel} from '../core/units.js';
 import { renderDetailedCostCenter } from './CostCenterView.js?v=qa8';
 import { ringLength, SHEET_PRESETS } from '../manufacturing/NestingEngine.js';
-import { renderNestingSvg } from './NestingView.js?v=20261126-v28';
+import { renderNestingSvg } from './NestingView.js?v=20261126-v29';
 import { renderNestingSourceTabs, renderNestingImportPane } from './NestingImportView.js?v=units6';
 import { MACHINE_PROFILES, MACHINE_PROFILE_CATEGORIES, getMachineProfile, validateNestedProduction } from '../export/CncGcodeExporter.js';
 import { formatMoney } from '../manufacturing/CostEngine.js';
@@ -72,7 +72,7 @@ export function renderNestingCenter(state, ctx) {
   const primaryPart = (activeSheet?.placements || []).find(p => p.id === (ctx.selectedPlacementId || [...selectedIds].at(-1))) || (activeSheet?.placements || []).find(p => selectedIds.has(p.id));
   const curRotDeg = primaryPart ? Number((primaryPart.angleDeg || 0).toFixed(1)) : 0;
   const renderPartRow = (p, colorDot = null) => `
-    <div class="layer-item nesting-part-row ${selectedIds.has(p.id) ? 'on' : ''}" data-cws-pid="${escapeHtml(p.id)}" aria-selected="${selectedIds.has(p.id)}">
+    <div class="layer-item nesting-part-row ${selectedIds.has(p.id) ? 'on' : ''}" draggable="true" data-cws-pid="${escapeHtml(p.id)}" aria-selected="${selectedIds.has(p.id)}">
       <input type="checkbox" data-cws-check aria-label="${escapeHtml(p.label)} seç" ${selectedIds.has(p.id)?'checked':''}>
       ${colorDot ? `<i class="nest-part-dot" style="background:${colorDot}"></i>` : ''}
       <span class="layer-name" title="${escapeHtml(p.label)}">${p.locked ? '🔒 ' : ''}${escapeHtml(p.label)}</span>
@@ -135,6 +135,19 @@ export function renderNestingCenter(state, ctx) {
         ` : ''}
         ${(n.importedTabs||[]).find(t=>t.id===n.activeTabId)?.warnings?.length?`<details class="nesting-import-converters"><summary>İçe aktarma notları</summary>${(n.importedTabs.find(t=>t.id===n.activeTabId).warnings||[]).map(x=>`<p>${escapeHtml(x)}</p>`).join('')}</details>`:''}
         ${!sheets.length ? '<p style="font-size:12px;color:var(--muted)">Parça listesi için "Otomatik Yerleştir"e tıklayın.</p>' : `
+          ${selectedIds.size > 0 ? `
+            <div class="cws-sheet-transfer-bar" id="cwsSheetTransferBar" title="Seçili parçaları seçtiğiniz levhaya taşıyın veya kopyalayın (veya parça satırını levha sekmesine sürükleyin)">
+              <label class="cws-transfer-lbl" for="cwsTransferTargetSheet">Seçili (${selectedIds.size}) → Hedef Levha:</label>
+              <select id="cwsTransferTargetSheet" aria-label="Hedef levha seç">
+                ${sheets.map((sh, idx) => idx === activeIdx ? '' : `<option value="${idx}">${escapeHtml(sh.name || `Levha ${idx + 1}`)} • ${escapeHtml(sh.materialLabel || sh.materialGroup || 'Genel')}</option>`).join('')}
+                <option value="new">+ Yeni Levha Oluştur</option>
+              </select>
+              <div class="cws-transfer-btns">
+                <button type="button" id="cwsMoveToSheetBtn" class="sec-btn" ${removableCount ? '' : 'disabled'} title="Seçili parçaları hedef levhaya taşı">→ Taşı</button>
+                <button type="button" id="cwsCopyToSheetBtn" class="sec-btn" title="Seçili parçaları hedef levhaya kopyala">⧉ Kopyala</button>
+              </div>
+            </div>
+          ` : ''}
           ${partGroups.length > 1 ? `
             <div class="nest-group-filter">
               <button type="button" class="nest-grp-chip ${!activeGroup ? 'on' : ''}" data-nest-group-all>Tümü (${activeSheet?.placements?.length || 0})</button>

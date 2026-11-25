@@ -247,3 +247,90 @@ export function pasteNestingParts(n, sheetIndex, clipItems, { offsetX = 25, offs
   }
   return addedIds;
 }
+
+/** Moves or copies selected nesting parts from one sheet tab to another target sheet. */
+export function transferNestingParts(n, fromSheetIndex, toSheetIndex, ids, { mode = 'move', minSep = 5 } = {}) {
+  const fromSheet = n?.sheets?.[fromSheetIndex];
+  const toSheet = n?.sheets?.[toSheetIndex];
+  const idSet = new Set(Array.isArray(ids) ? ids : [ids]);
+  if (!fromSheet || !toSheet || fromSheetIndex === toSheetIndex || !idSet.size) {
+    return { ids: [], movedCount: 0, mode };
+  }
+
+  const isMove = mode === 'move';
+  const picked = (fromSheet.placements || []).filter(p => idSet.has(p.id) && (!isMove || !p.locked));
+  if (!picked.length) return { ids: [], movedCount: 0, mode };
+
+  const gMinX = Math.min(...picked.map(p => (p.bounds || polygonBounds(p.outer)).minX));
+  const gMinY = Math.min(...picked.map(p => (p.bounds || polygonBounds(p.outer)).minY));
+  const gMaxX = Math.max(...picked.map(p => (p.bounds || polygonBounds(p.outer)).maxX));
+  const gMaxY = Math.max(...picked.map(p => (p.bounds || polygonBounds(p.outer)).maxY));
+  const gW = gMaxX - gMinX;
+  const gH = gMaxY - gMinY;
+
+  const mL = toSheet.marginLeftMm ?? toSheet.marginMm ?? 15;
+  const mR = toSheet.marginRightMm ?? toSheet.marginMm ?? 15;
+  const mT = toSheet.marginTopMm ?? toSheet.marginMm ?? 15;
+  const mB = toSheet.marginBottomMm ?? toSheet.marginMm ?? 15;
+  const maxX = Math.max(mL, toSheet.widthMm - mR);
+  const maxY = Math.max(mB, toSheet.heightMm - mT);
+
+  let dx = 0;
+  let dy = 0;
+  const existingPls = toSheet.placements || [];
+  if (existingPls.length) {
+    const overlapsExisting = (ox, oy) => existingPls.some(ep => {
+      const b = ep.bounds || polygonBounds(ep.outer);
+      return !(gMaxX + ox + minSep <= b.minX || gMinX + ox >= b.maxX + minSep || gMaxY + oy + minSep <= b.minY || gMinY + oy >= b.maxY + minSep);
+    });
+    if (overlapsExisting(0, 0)) {
+      const rightEdge = Math.max(...existingPls.map(ep => (ep.bounds || polygonBounds(ep.outer)).maxX)) + minSep;
+      const topEdge = Math.max(...existingPls.map(ep => (ep.bounds || polygonBounds(ep.outer)).maxY)) + minSep;
+      if (rightEdge + gW <= maxX) dx = rightEdge - gMinX;
+      else if (topEdge + gH <= maxY) dy = topEdge - gMinY;
+      else dx = rightEdge - gMinX;
+    }
+  }
+  dx = Math.max(mL - gMinX, Math.min(maxX - gMaxX, dx));
+  dy = Math.max(mB - gMinY, Math.min(maxY - gMaxY, dy));
+
+  const targetIds = new Set(existingPls.map(p => p.id));
+  const stamp = Date.now().toString(36);
+  const transferredIds = [];
+  const movedSourceIds = new Set();
+
+  picked.forEach((src, i) => {
+    const outer = src.outer.map(pt => ({ x: pt.x + dx, y: pt.y + dy }));
+    const holes = (src.holes || []).map(h => h.map(pt => ({ x: pt.x + dx, y: pt.y + dy })));
+    const newBounds = polygonBounds(outer);
+    const baseId = String(src.id || 'part').replace(/_copy_[a-z0-9_]+$/i, '');
+    let nextId = (isMove && !targetIds.has(src.id))
+      ? src.id
+      : `${baseId}_copy_${stamp}_${i}`;
+    let seq = 1;
+    while (targetIds.has(nextId)) nextId = `${baseId}_copy_${stamp}_${i}_${seq++}`;
+    targetIds.add(nextId);
+    toSheet.placements.push({
+      ...src,
+      id: nextId,
+      xMm: newBounds.minX,
+      yMm: newBounds.minY,
+      outer,
+      holes,
+      bounds: newBounds,
+      locked: isMove ? Boolean(src.locked) : false,
+    });
+    transferredIds.push(nextId);
+    if (isMove) movedSourceIds.add(src.id);
+  });
+
+  if (isMove && movedSourceIds.size) {
+    fromSheet.placements = fromSheet.placements.filter(p => !movedSourceIds.has(p.id));
+    refreshNestingSheet(fromSheet, minSep);
+  }
+  if (transferredIds.length) {
+    n.optimizationInfo = null;
+    refreshNestingSheet(toSheet, minSep);
+  }
+  return { ids: transferredIds, movedCount: movedSourceIds.size, mode };
+}

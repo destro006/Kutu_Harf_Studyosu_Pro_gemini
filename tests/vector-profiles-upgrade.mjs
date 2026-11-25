@@ -49,6 +49,7 @@ import {
   alignNestingParts,
   cloneNestingPlacements,
   pasteNestingParts,
+  transferNestingParts,
 } from '../src/manufacturing/NestingSelection.js';
 import { attachShortcuts } from '../src/cad/Shortcuts.js';
 
@@ -223,10 +224,10 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v8'));
-assert(rootHtml.includes('./src/main.js?v=20261126-v28'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v28'));
+assert(rootHtml.includes('./src/main.js?v=20261126-v29'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v29'));
 assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
-assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v28'));
+assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v29'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -892,6 +893,37 @@ assert((onlyOneOpenHtml.match(/<details class="nest-group-box[^"]*"[^>]*\bopen\b
 const collapsedSidebarHtml = renderNestingCenter(grpSheetStateSafe(fState), { activeSheetIdx: 0, leftPanelCollapsed: true });
 assert(collapsedSidebarHtml.includes('cws-left-collapsed') && collapsedSidebarHtml.includes('id="cwsToggleLeftPanel"'));
 assert(studioCss.includes('.nesting-part-row{flex-wrap:nowrap;align-items:center}'));
-console.log('✓ Nesting CorelDRAW CAD features (Ctrl+A, 2-click rotate gizmo/bar, alignment & cut/copy/paste/duplicate) + collapsible sidebar verified');
+
+// Cross-sheet part transfer: Copy & Move between sheet tabs + Transfer bar UI
+const xferState = createDefaultState();
+const makeSqPart = (id, label, x, y, locked = false) => ({
+  id, label, partGroup: 'body', material: 'metal', thicknessMm: 2, materialGroup: 'Metal · 2 mm',
+  areaMm2: 2500, xMm: x, yMm: y, angleDeg: 0, locked,
+  outer: [{ x, y }, { x: x + 50, y }, { x: x + 50, y: y + 50 }, { x, y: y + 50 }],
+  holes: [],
+  bounds: { minX: x, minY: y, maxX: x + 50, maxY: y + 50, width: 50, height: 50 },
+});
+xferState.nesting.sheets = [
+  { index: 1, name: 'Levha 1', materialGroup: 'G1', widthMm: 1000, heightMm: 1000, marginMm: 15, usedAreaMm2: 5000, utilizationPct: 0.5, placements: [makeSqPart('pA', 'Harf A', 20, 20, false), makeSqPart('pLock', 'Kilitli B', 90, 20, true)] },
+  { index: 2, name: 'Levha 2', materialGroup: 'G2', widthMm: 1000, heightMm: 1000, marginMm: 15, usedAreaMm2: 2500, utilizationPct: 0.25, placements: [makeSqPart('pExist', 'Mevcut', 20, 20, false)] },
+];
+const copyRes = transferNestingParts(xferState.nesting, 0, 1, ['pLock'], { mode: 'copy', minSep: 5 });
+assert.equal(copyRes.ids.length, 1, 'Copy must work even from a locked placement (unlocking the clone)');
+assert.equal(xferState.nesting.sheets[0].placements.length, 2, 'Source sheet must retain copied part');
+assert.equal(xferState.nesting.sheets[1].placements.length, 2, 'Target sheet must receive cloned part');
+assert.equal(xferState.nesting.sheets[1].placements[1].locked, false);
+assert(xferState.nesting.sheets[1].placements[1].bounds.minX >= 74.9, 'Copied part must avoid overlapping existing part on target sheet');
+
+const moveRes = transferNestingParts(xferState.nesting, 0, 1, ['pA', 'pLock'], { mode: 'move', minSep: 5 });
+assert.deepEqual(moveRes.ids, ['pA'], 'Move must transfer unlocked pA and protect locked pLock');
+assert.deepEqual(xferState.nesting.sheets[0].placements.map(p => p.id), ['pLock']);
+assert.equal(xferState.nesting.sheets[1].placements.length, 3);
+
+const xferHtml = renderNestingCenter(xferState, { activeSheetIdx: 0, selectedPlacementIds: ['pLock'] });
+assert(xferHtml.includes('id="cwsSheetTransferBar"') && xferHtml.includes('id="cwsTransferTargetSheet"')
+  && xferHtml.includes('id="cwsMoveToSheetBtn"') && xferHtml.includes('id="cwsCopyToSheetBtn"')
+  && xferHtml.includes('draggable="true"') && xferHtml.includes('<option value="1">Levha 2'));
+assert(mainJs.includes('function transferNestingParts') === false && mainJs.includes('transferNestingParts'));
+console.log('✓ Nesting CorelDRAW CAD features (Ctrl+A, 2-click rotate gizmo/bar, alignment & cut/copy/paste/duplicate) + collapsible sidebar + cross-sheet transfer verified');
 
 function grpSheetStateSafe(st) { return st; }
