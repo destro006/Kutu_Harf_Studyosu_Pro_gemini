@@ -201,10 +201,10 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v8'));
-assert(rootHtml.includes('./src/main.js?v=20261126-v19'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v19'));
+assert(rootHtml.includes('./src/main.js?v=20261126-v20'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v20'));
 assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
-assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v19'));
+assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v20'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -434,6 +434,9 @@ assert(mainJs.indexOf("root.querySelector('#cwsSendCorel')") < mainJs.indexOf('n
 cwsState.nesting.sheets = corelSheets;
 const cwsHtml = renderNestingCenter(cwsState, { activeSheetIdx: 0 });
 assert(cwsHtml.includes('id="cwsSendCorel"') && cwsHtml.includes('id="cwsExpCorel"') && cwsHtml.includes('id="cwsCorelSetup"'));
+assert(cwsHtml.includes('class="cws-nesting-topbar"') && cwsHtml.includes('class="cws-nesting-actions"'));
+const studioCss = fs.readFileSync(new URL('../src/styles/studio.css', import.meta.url), 'utf8');
+assert(studioCss.includes('.cws-nesting-actions .cta-btn{width:auto'), 'Otomatik Yerleştir button must not expand to 100% width inside topbar');
 assert(rootHtml.includes('id="corelBridgeModal"'));
 console.log('✓ CorelDRAW 1-click live COM bridge, colored SVG, VBA macro, and UI controls verified');
 

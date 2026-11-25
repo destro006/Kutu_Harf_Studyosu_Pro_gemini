@@ -111,7 +111,7 @@ export function renderNestingCenter(state, ctx) {
 
       <!-- Center: Sheet Tabs + True-Shape SVG Canvas -->
       <div class="cws-main">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <div class="cws-nesting-topbar">
           <div class="sheet-tabs">
             ${sheets.map((sh, idx) => `
               <button type="button" class="sheet-tab ${idx === activeIdx ? 'on' : ''}" data-cws-sheet="${idx}">
@@ -120,11 +120,12 @@ export function renderNestingCenter(state, ctx) {
             `).join('')}
             <button type="button" id="cwsAddSheet" class="sheet-tab">+ Yeni Levha</button>
           </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <div class="cws-nesting-actions">
             <button type="button" id="cwsSendCorel" class="corel-btn" title="Nesting parçalarını, plaka ebatını ve seçili renkleri tek tıkla CorelDRAW'a aktar">✦ Corel'e Aktar</button>
-            <button type="button" id="cwsRunNesting" class="cta-btn" style="padding:5px 12px" title="İçe aktarmadan sonra hassas true-shape optimizasyonu; işlem sürerken tekrar tıklayarak iptal edin">Otomatik Yerleştir</button>
+            <button type="button" id="cwsRunNesting" class="cta-btn" title="İçe aktarmadan sonra hassas true-shape optimizasyonu; işlem sürerken tekrar tıklayarak iptal edin">Otomatik Yerleştir</button>
+            <span class="cws-action-sep" aria-hidden="true"></span>
             <button type="button" id="cwsReoptUnlocked" class="sec-btn">Kilitsizleri Optimize Et</button>
-            <button type="button" id="cwsDeletePart" class="sec-btn" ${removableCount?'':'disabled'} title="Seçilen parçaları yalnızca bu nesting işinden sil">${removableCount>1?'Seçilenleri Sil ('+removableCount+')':'Parçayı Sil'}</button>
+            <button type="button" id="cwsDeletePart" class="sec-btn cws-del-btn" ${removableCount?'':'disabled'} title="Seçilen parçaları yalnızca bu nesting işinden sil">${removableCount>1?'Seçilenleri Sil ('+removableCount+')':'Parçayı Sil'}</button>
           </div>
         </div>
         <div id="cwsNestSvgBox" class="nesting-sheet-fit">
