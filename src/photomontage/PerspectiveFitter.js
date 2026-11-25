@@ -73,7 +73,7 @@ export function homographyToCssMatrix3d(H) {
  */
 export async function renderPhotomontageComposite(photoUrl, signCanvas, cornersNorm, options = {}) {
   const {
-    wallShadow = 0.45,
+    haloCanvas = null,
     ambientTint = '#ffffff',
     ambientMatch = 0.15,
     width = 1920,
@@ -119,19 +119,9 @@ export async function renderPhotomontageComposite(photoUrl, signCanvas, cornersN
 
   const sCtx = signCanvas.getContext('2d', { willReadFrequently: true });
   const sData = sCtx.getImageData(0, 0, sw, sh).data;
-
-  // Optional soft wall drop shadow under the sign quad
-  if (wallShadow > 0.01) {
-    ctx.save();
-    ctx.globalAlpha = wallShadow * 0.45;
-    ctx.filter = 'blur(12px)';
-    ctx.fillStyle = '#000000';
-    ctx.beginPath();
-    dst.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x + 6, p.y + 10) : ctx.lineTo(p.x + 6, p.y + 10)));
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
+  const hData = haloCanvas && haloCanvas.width === sw && haloCanvas.height === sh
+    ? haloCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, sw, sh).data
+    : null;
 
   const outImg = ctx.getImageData(0, 0, outW, outH);
   const oData = outImg.data;
@@ -156,6 +146,22 @@ export async function renderPhotomontageComposite(photoUrl, signCanvas, cornersN
       const w01 = (1 - fx) * fy;
       const w11 = fx * fy;
 
+      const oIdx = (y * outW + x) * 4;
+
+      if (hData) {
+        const hr = hData[i00] * w00 + hData[i10] * w10 + hData[i01] * w01 + hData[i11] * w11;
+        const hg = hData[i00 + 1] * w00 + hData[i10 + 1] * w10 + hData[i01 + 1] * w01 + hData[i11 + 1] * w11;
+        const hb = hData[i00 + 2] * w00 + hData[i10 + 2] * w10 + hData[i01 + 2] * w01 + hData[i11 + 2] * w11;
+        if (hr > 1.5 || hg > 1.5 || hb > 1.5) {
+          const gr = Math.min(255, hr * 1.18);
+          const gg = Math.min(255, hg * 1.18);
+          const gb = Math.min(255, hb * 1.18);
+          oData[oIdx] = Math.min(255, Math.round(255 - ((255 - oData[oIdx]) * (255 - gr)) / 255 + gr * 0.24));
+          oData[oIdx + 1] = Math.min(255, Math.round(255 - ((255 - oData[oIdx + 1]) * (255 - gg)) / 255 + gg * 0.24));
+          oData[oIdx + 2] = Math.min(255, Math.round(255 - ((255 - oData[oIdx + 2]) * (255 - gb)) / 255 + gb * 0.24));
+        }
+      }
+
       const alpha = (sData[i00 + 3] * w00 + sData[i10 + 3] * w10 + sData[i01 + 3] * w01 + sData[i11 + 3] * w11) / 255;
       if (alpha < 0.01) continue;
 
@@ -163,7 +169,6 @@ export async function renderPhotomontageComposite(photoUrl, signCanvas, cornersN
       const sg = sData[i00 + 1] * w00 + sData[i10 + 1] * w10 + sData[i01 + 1] * w01 + sData[i11 + 1] * w11;
       const sb = sData[i00 + 2] * w00 + sData[i10 + 2] * w10 + sData[i01 + 2] * w01 + sData[i11 + 2] * w11;
 
-      const oIdx = (y * outW + x) * 4;
       const invA = 1 - alpha;
       oData[oIdx] = Math.round(sr * alpha + oData[oIdx] * invA);
       oData[oIdx + 1] = Math.round(sg * alpha + oData[oIdx + 1] * invA);

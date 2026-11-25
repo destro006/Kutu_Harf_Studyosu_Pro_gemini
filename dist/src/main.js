@@ -7,11 +7,11 @@ import { StateStore, createDefaultState, createObjectId, structuredCloneSafe } f
 import { DocumentManager } from './core/DocumentManager.js';
 import { Vector2DCanvas } from './cad/Vector2DCanvas.js?v=qa8';
 import { ContextMenu } from './ui/ContextMenu.js';
-import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v14';
+import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v15';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261125-v14';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261125-v15';
 import {nextNestingSelection,deleteNestingParts,moveNestingParts} from './manufacturing/NestingSelection.js?v=nest7';
 import { generateNestedGcode, generateNestedHpgl,validateNestedProduction,MACHINE_PROFILES,getMachineProfile } from './export/CncGcodeExporter.js';
 import { HistoryManager } from './core/history.js';
@@ -26,14 +26,14 @@ import {
 } from './core/projectSerializer.js';
 import { FontManager } from './geometry/FontManager.js?v=qa8';
 import { generateCutoutPreview, parseSvgLogo, traceRasterLogo } from './geometry/LogoTracer.js';
-import { SignEngine, QUALITY_PROFILES } from './render/SignEngine.js?v=20261125-v14';
+import { SignEngine, QUALITY_PROFILES } from './render/SignEngine.js?v=20261125-v15';
 import { ACRYLIC_PALETTE, MATERIAL_PRESETS, PAINT_PALETTE } from './render/MaterialLibrary.js';
 import { RAL_COLORS, RAL_GROUPS } from './render/RalColors.js';
 import { ENVIRONMENT_PRESETS } from './render/EnvironmentManager.js';
 import { LIGHT_COLOR_PRESETS, LIGHTING_MODES } from './render/LightingSystem.js';
 import {detectVectorFormat} from './manufacturing/VectorFormatDetect.js';
 import { BACKGROUND_SCENES } from './photomontage/BackgroundLibrary.js';
-import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js?v=20261125-v14';
+import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js?v=20261125-v15';
 import { renderNestingSvg } from './ui/NestingView.js';
 import { applySurfaceMaterialPreset, getDisplayedSurfaceMaterial } from './core/MaterialActions.js';
 import { getExportSelection } from './export/ExportScope.js';
@@ -208,7 +208,7 @@ let lastSceneResult = { sizeM: { w: 2, h: 0.4 }, metricsList: [], warnings: [] }
 let lastMetrics = calculateManufacturingMetrics([], store.get());
 let lastCosts = calculateProjectCosts(lastMetrics, store.get());
 let lastNesting = null;
-let lastPhotomontageScene=null,lastPhotomontageUrl=null;
+let lastPhotomontageScene=null,lastPhotomontageUrl=null,lastPhotomontageHaloUrl=null;
 let selectedNestingId = null;
 let selectedNestingIds=new Set(),nestingSelectionAnchor=null,nestingSelectionScope=null;
 function clearNestingSelection(){selectedNestingId=null;selectedNestingIds.clear();nestingSelectionAnchor=null;}
@@ -505,12 +505,14 @@ function updateStageChrome(state) {
   if (is3DWorkspace(state) && state.photomontage?.photoUrl && state.photomontage.visible !== false && signEngine && !signEngine.isDisposed) {
     const pmKey = pmRenderKey(state);
     if (!dragBeforeState && (lastPhotomontageScene !== pmKey || !lastPhotomontageUrl)) {
-      lastPhotomontageUrl = capturePhotomontageSign(state);
+      const cap = capturePhotomontageSign(state);
+      lastPhotomontageUrl = cap.signUrl;
+      lastPhotomontageHaloUrl = cap.haloUrl;
       lastPhotomontageScene = pmKey;
     }
-    if (lastPhotomontageUrl) photomontageOverlay?.render(state, lastPhotomontageUrl);
+    if (lastPhotomontageUrl) photomontageOverlay?.render(state, lastPhotomontageUrl, lastPhotomontageHaloUrl);
   } else {
-    photomontageOverlay?.render({ photomontage: { photoUrl: null } }, null);
+    photomontageOverlay?.render({ photomontage: { photoUrl: null } }, null, null);
   }
 }
 
@@ -524,7 +526,16 @@ function capturePhotomontageSign(state) {
   const sz = lastSceneResult?.sizeM || signEngine?.lastSizeM || { w: 2.0, h: 0.45 };
   const capW = 1400;
   const capH = Math.max(380, Math.min(1000, Math.round(capW * ((sz.h + 0.30) / Math.max(0.5, sz.w + 0.36)))));
-  return signEngine.capturePng(capW, capH, { transparent: true, fitToSign: true });
+  const hasActiveHalo = Boolean(signEngine?.signGroup?.children?.some(c => c.userData?.isHalo && c.visible && c.material?.opacity > 0));
+  const signUrl = signEngine.capturePng(capW, capH, {
+    transparent: true,
+    fitToSign: true,
+    haloMode: hasActiveHalo ? 'exclude' : 'include',
+  });
+  const haloUrl = hasActiveHalo
+    ? signEngine.capturePng(capW, capH, { transparent: true, fitToSign: true, haloMode: 'only' })
+    : null;
+  return { signUrl, haloUrl };
 }
 
 function applyConstructionType(s, ctype) {
@@ -576,7 +587,7 @@ function editLighting(key,value){
   store.updateScoped(selected.length?['objects']:['lighting'],s=>setLightingValue(s,key,value));
   docManager.markDirty();updateUndoRedoButtons();
   const next=store.get();
-  if(is3DWorkspace(next)&&signEngine?.updateLightAppearance(next)){updateNumericBar(next);renderActiveWorkspace();writeAutosave(next);}
+  if(is3DWorkspace(next)&&signEngine?.updateLightAppearance(next)){updateNumericBar(next);renderActiveWorkspace();writeAutosave(next);if(next.photomontage?.photoUrl&&next.photomontage.visible!==false)updateStageChrome(next);}
   else scheduleRebuild(true);
 }
 function runAlignment(command){
@@ -4215,6 +4226,12 @@ function init() {
       updateStageChrome(store.get());
     },
     onExport: () => photomontageOverlay.exportComposite(store.get(), signEngine),
+    onClose: () => {
+      store.update(s => { s.photomontage.visible = false; });
+      updateStageChrome(store.get());
+      renderActiveWorkspace();
+      studioToast('3D sahneye dönüldü. Fotoğrafı tekrar açmak için Katmanlar panelindeki göz simgesine tıklayabilirsiniz.');
+    },
   });
 
   // Workspace tabs (click to switch, drag to tear-off floating window or dock under another tab)

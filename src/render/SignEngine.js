@@ -1136,9 +1136,10 @@ export class SignEngine {
     const children = this.signGroup.children.map(child => ({child, visible:child.visible}));
     const savedHalos = [];
     try {
+      const haloMode = opts.haloMode || 'include';
       if (opts.transparent || selectedIds) {
         this.scene.background = null;
-        this.renderer.setClearColor(0x000000, 0);
+        this.renderer.setClearColor(0x000000, haloMode === 'only' ? 1 : 0);
         for (const group of groups) group.visible = false;
       }
       if(opts.transparent&&!selectedIds)for(const {child} of children)if(!child.userData?.layerId&&!child.userData?.isHalo)child.visible=false;
@@ -1174,7 +1175,23 @@ export class SignEngine {
           this.camera.lookAt(center);
         }
       }
-      if (opts.transparent) {
+      if (haloMode === 'only') {
+        for (const { child } of children) {
+          if (!child.userData?.isHalo) child.visible = false;
+          else if (child.visible && child.material && child.material.opacity > 0) {
+            const mat = child.material;
+            savedHalos.push({ mat, blending: mat.blending, opacity: mat.opacity, color: mat.color.clone() });
+            mat.blending = THREE.AdditiveBlending;
+            const peak = Math.max(1, mat.color.r, mat.color.g, mat.color.b);
+            mat.color.multiplyScalar(1.25 / peak);
+            mat.opacity = Math.min(1.0, Math.max(mat.opacity * 1.65, 0.84));
+          }
+        }
+      } else if (haloMode === 'exclude') {
+        for (const { child } of children) {
+          if (child.userData?.isHalo) child.visible = false;
+        }
+      } else if (opts.transparent) {
         for (const { child } of children) {
           if (child.userData?.isHalo && child.visible && child.material && child.material.opacity > 0) {
             const mat = child.material;

@@ -196,9 +196,9 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v8'));
-assert(rootHtml.includes('./src/main.js?v=20261125-v14'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261125-v14'));
-assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261125-v14'));
+assert(rootHtml.includes('./src/main.js?v=20261125-v15'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261125-v15'));
+assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261125-v15'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -419,14 +419,20 @@ assert(cwsHtml.includes('id="cwsSendCorel"') && cwsHtml.includes('id="cwsExpCore
 assert(rootHtml.includes('id="corelBridgeModal"'));
 console.log('✓ CorelDRAW 1-click live COM bridge, colored SVG, VBA macro, and UI controls verified');
 
-// 12. Photomontage fixes: full-sign framing, halo capture preservation, cross-tab & Katmanlar visibility, top-right confirm -> Image Tracer
+// 12. Photomontage fixes: full-sign framing, 2-pass halo compositing, cross-tab & Katmanlar visibility, top-right confirm + exit -> Image Tracer
 const signEngineSrc = fs.readFileSync(new URL('../src/render/SignEngine.js', import.meta.url), 'utf8');
 assert(signEngineSrc.includes('mesh.userData.isHalo=true') && signEngineSrc.includes('opts.fitToSign'));
 assert(signEngineSrc.includes('!child.userData?.layerId&&!child.userData?.isHalo'));
 assert(signEngineSrc.includes('mat.blending = THREE.NormalBlending'));
+assert(signEngineSrc.includes("haloMode === 'only'") && signEngineSrc.includes("haloMode === 'exclude'"));
+
+const perspFitterSrc = fs.readFileSync(new URL('../src/photomontage/PerspectiveFitter.js', import.meta.url), 'utf8');
+assert(perspFitterSrc.includes('haloCanvas = null') && perspFitterSrc.includes('if (hData)'));
 
 const pmOverlaySrc = fs.readFileSync(new URL('../src/ui/PhotomontageOverlay.js', import.meta.url), 'utf8');
 assert(pmOverlaySrc.includes('id="pmConfirmBtn"') && pmOverlaySrc.includes("e.key !== 'Enter'"));
+assert(pmOverlaySrc.includes('id="pmHaloImg"') && pmOverlaySrc.includes('mix-blend-mode:screen'));
+assert(pmOverlaySrc.includes('id="pmCloseBtn"') && pmOverlaySrc.includes('onClose'));
 assert(pmOverlaySrc.includes('id="pmSendTracerBtn"') && pmOverlaySrc.includes('buildCompositeDataUrl'));
 assert(pmOverlaySrc.includes("window.addEventListener('keydown', onKey, true)"));
 assert(pmOverlaySrc.indexOf('class="pm-frame"') < pmOverlaySrc.indexOf('id="pmConfirmBtn"'), '#pmConfirmBtn must sit inside .pm-frame top-right');
@@ -434,9 +440,10 @@ assert(pmOverlaySrc.includes('id="pmEditPerspBtn"') && pmOverlaySrc.includes("si
 
 assert(traceStudioHtml.includes('SIGNAGE_STUDIO_LOAD_IMAGE') && traceStudioHtml.includes('loadImageFromDataUrl') && traceStudioHtml.includes('TRACE_STUDIO_READY'));
 assert(mainJs.includes('sendPhotomontageToTracer') && mainJs.includes('SIGNAGE_STUDIO_LOAD_IMAGE') && mainJs.includes('TRACE_STUDIO_READY'));
+assert(mainJs.includes('lastPhotomontageHaloUrl') && mainJs.includes('s.photomontage.visible = false'));
 assert(mainJs.includes('fitToSign: true') && mainJs.includes('data-pm-layer="true"'));
 assert(!mainJs.includes("state.activeWorkspace==='background'&&state.photomontage.photoUrl"));
-console.log('✓ Photomontage full framing, halo preservation, top-right Confirm + Enter & Image Tracer handoff verified');
+console.log('✓ Photomontage 2-pass halo composite, top-right Confirm + Exit (Esc) & Image Tracer handoff verified');
 
 // 13. 1-Click CNC / Laser / Plasma / Waterjet / Plotter Direct Upload Bridge across all 42 profiles
 for (const profile of MACHINE_PROFILES) {

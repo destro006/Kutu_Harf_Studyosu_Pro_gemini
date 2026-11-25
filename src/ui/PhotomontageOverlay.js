@@ -1,10 +1,10 @@
-import { computeHomography, homographyToCssMatrix3d, renderPhotomontageComposite } from '../photomontage/PerspectiveFitter.js';
+import { computeHomography, homographyToCssMatrix3d, renderPhotomontageComposite } from '../photomontage/PerspectiveFitter.js?v=20261125-v15';
 import { downloadDataUrl } from '../export/ExportService.js';
 
 /**
  * Interactive 4-Corner Perspective Photomontage Overlay
  * Maps the full, transparent, halo-lit 3D sign render onto 4 draggable corner handles
- * over an uploaded facade/storefront photo, with Enter confirmation & edit toggle.
+ * over an uploaded facade/storefront photo, with top-right confirm, Enter, Esc & tracer bridge.
  */
 export class PhotomontageOverlay {
   constructor(container, callbacks = {}) {
@@ -15,6 +15,7 @@ export class PhotomontageOverlay {
       this.callbacks = callbacks || {};
     }
     this.signPreviewUrl = null;
+    this.haloPreviewUrl = null;
     this.dragIdx = -1;
     this._cleanupFns = [];
   }
@@ -26,7 +27,7 @@ export class PhotomontageOverlay {
     }
   }
 
-  render(state, signDataUrl) {
+  render(state, signDataUrl, haloDataUrl = undefined) {
     this._cleanup();
     const pm = state.photomontage;
     if (!pm?.photoUrl || pm.visible === false) {
@@ -36,26 +37,30 @@ export class PhotomontageOverlay {
     }
 
     this.container.classList.remove('hidden');
-    if (signDataUrl) this.signPreviewUrl = signDataUrl;
+    if (signDataUrl !== undefined && signDataUrl !== null) this.signPreviewUrl = signDataUrl;
+    if (haloDataUrl !== undefined) this.haloPreviewUrl = haloDataUrl;
     const confirmed = Boolean(pm.confirmed);
 
     this.container.innerHTML = `
       <div class="pm-stage" style="position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#090a0d">
         <div class="pm-frame" style="position:relative;max-width:100%;max-height:100%;display:inline-block">
           <img id="pmBgImg" src="${pm.photoUrl}" alt="Mağaza Fotoğrafı" style="display:block;max-width:100%;max-height:100%;user-select:none;pointer-events:none">
-          <img id="pmSignImg" src="${this.signPreviewUrl || ''}" alt="3D Tabela" style="position:absolute;top:0;left:0;transform-origin:0 0;pointer-events:none;filter:drop-shadow(0 6px 14px rgba(0,0,0,${pm.wallShadow ?? 0.45}))">
+          <img id="pmHaloImg" src="${this.haloPreviewUrl || ''}" alt="" style="position:absolute;top:0;left:0;transform-origin:0 0;pointer-events:none;mix-blend-mode:screen;filter:brightness(1.25);display:${this.haloPreviewUrl ? 'block' : 'none'}">
+          <img id="pmSignImg" src="${this.signPreviewUrl || ''}" alt="3D Tabela" style="position:absolute;top:0;left:0;transform-origin:0 0;pointer-events:none;${this.haloPreviewUrl ? '' : `filter:drop-shadow(0 6px 14px rgba(0,0,0,${pm.wallShadow ?? 0.45}))`}">
           ${!confirmed ? '<svg id="pmHandlesSvg" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none"></svg><div id="pmHandlesLayer" style="position:absolute;inset:0"></div>' : ''}
           ${!confirmed ? `
             <div class="pm-action-bar pm-action-bar--top-right" id="pmActionBar">
               <button type="button" id="pmConfirmBtn" class="cta-btn" title="Perspektifi onayla ve Image Tracer'a gönder (Enter)">✓ Onayla</button>
               <button type="button" id="pmResetCornersBtn" class="sec-btn" title="4 köşeyi varsayılan konuma döndür">↺ Sıfırla</button>
+              <button type="button" id="pmCloseBtn" class="sec-btn pm-close-btn" title="Fotomontaj ekranından çık ve 3D sahneye dön (Esc)">✕ Çıkış</button>
             </div>
-            <div class="pm-hint-pill">4 sarı köşeyi sürükleyin · Enter veya sağ üstten Onayla</div>
+            <div class="pm-hint-pill">4 sarı köşeyi sürükleyin · Enter veya sağ üstten Onayla · Esc çıkış</div>
           ` : `
             <div class="pm-confirmed-bar" id="pmConfirmedBar">
               <button type="button" id="pmSendTracerBtn" class="cta-btn" title="Perspektifli görüntüyü Image Tracer'a gönder">✦ Image Tracer'a Gönder</button>
               <button type="button" id="pmEditPerspBtn" class="sec-btn" title="4 köşe perspektif tutamaçlarını tekrar aç">⤢ Perspektifi Düzenle</button>
               <button type="button" id="pmQuickExportBtn" class="sec-btn" title="Cephe sunum PNG indir">⬇ Sunum PNG</button>
+              <button type="button" id="pmCloseBtn" class="sec-btn pm-close-btn" title="Fotomontaj ekranından çık ve 3D sahneye dön (Esc)">✕ Çıkış</button>
             </div>
           `}
         </div>
@@ -63,6 +68,7 @@ export class PhotomontageOverlay {
     `;
 
     const bgImg = this.container.querySelector('#pmBgImg');
+    const haloImg = this.container.querySelector('#pmHaloImg');
     const signImg = this.container.querySelector('#pmSignImg');
     const updateTransform = () => {
       const w = bgImg.clientWidth;
@@ -82,7 +88,13 @@ export class PhotomontageOverlay {
       ];
       const dst = pm.cornersNorm.map(c => ({ x: c.x * w, y: c.y * h }));
       const H = computeHomography(src, dst);
-      signImg.style.transform = homographyToCssMatrix3d(H);
+      const cssMatrix = homographyToCssMatrix3d(H);
+      signImg.style.transform = cssMatrix;
+      if (haloImg) {
+        haloImg.style.width = sw + 'px';
+        haloImg.style.height = sh + 'px';
+        haloImg.style.transform = cssMatrix;
+      }
 
       if (!confirmed) {
         const svg = this.container.querySelector('#pmHandlesSvg');
@@ -112,6 +124,8 @@ export class PhotomontageOverlay {
     bgImg.addEventListener('load', updateTransform);
     if (signImg.complete) updateTransform();
     signImg.addEventListener('load', updateTransform);
+    if (haloImg?.complete) updateTransform();
+    haloImg?.addEventListener('load', updateTransform);
 
     const onResize = () => updateTransform();
     window.addEventListener('resize', onResize);
@@ -122,6 +136,17 @@ export class PhotomontageOverlay {
     this.container.querySelector('#pmSendTracerBtn')?.addEventListener('click', () => this.callbacks.onSendToTracer?.());
     this.container.querySelector('#pmEditPerspBtn')?.addEventListener('click', () => this.callbacks.onEdit?.());
     this.container.querySelector('#pmQuickExportBtn')?.addEventListener('click', () => this.callbacks.onExport?.());
+    this.container.querySelector('#pmCloseBtn')?.addEventListener('click', () => this.callbacks.onClose?.());
+
+    const onEsc = (e) => {
+      if (e.key !== 'Escape') return;
+      if (document.querySelector('.modal:not(.hidden), dialog[open]')) return;
+      e.preventDefault();
+      e.stopImmediatePropagation?.();
+      this.callbacks.onClose?.();
+    };
+    window.addEventListener('keydown', onEsc, true);
+    this._cleanupFns.push(() => window.removeEventListener('keydown', onEsc, true));
 
     if (!confirmed) {
       const onMove = (e) => {
@@ -164,26 +189,41 @@ export class PhotomontageOverlay {
     }
   }
 
+  async _rasterizeDataUrl(dataUrl) {
+    const im = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = dataUrl;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = im.naturalWidth;
+    canvas.height = im.naturalHeight;
+    canvas.getContext('2d').drawImage(im, 0, 0);
+    return canvas;
+  }
+
   async buildCompositeDataUrl(state, signEngine) {
     const pm = state.photomontage;
     if (!pm?.photoUrl) return null;
     const sz = signEngine.lastSizeM || { w: 2.0, h: 0.45 };
     const capW = 1800;
     const capH = Math.max(520, Math.min(1250, Math.round(capW * ((sz.h + 0.30) / Math.max(0.5, sz.w + 0.36)))));
-    const signUrl = signEngine.capturePng(capW, capH, { transparent: true, fitToSign: true });
-
-    const signCanvas = document.createElement('canvas');
-    const im = await new Promise((res, rej) => {
-      const i = new Image();
-      i.onload = () => res(i);
-      i.onerror = rej;
-      i.src = signUrl;
+    const hasActiveHalo = Boolean(signEngine?.signGroup?.children?.some(c => c.userData?.isHalo && c.visible && c.material?.opacity > 0));
+    const signUrl = signEngine.capturePng(capW, capH, {
+      transparent: true,
+      fitToSign: true,
+      haloMode: hasActiveHalo ? 'exclude' : 'include',
     });
-    signCanvas.width = im.naturalWidth;
-    signCanvas.height = im.naturalHeight;
-    signCanvas.getContext('2d').drawImage(im, 0, 0);
+    const haloUrl = hasActiveHalo
+      ? signEngine.capturePng(capW, capH, { transparent: true, fitToSign: true, haloMode: 'only' })
+      : null;
+
+    const signCanvas = await this._rasterizeDataUrl(signUrl);
+    const haloCanvas = haloUrl ? await this._rasterizeDataUrl(haloUrl) : null;
 
     return renderPhotomontageComposite(pm.photoUrl, signCanvas, pm.cornersNorm, {
+      haloCanvas,
       wallShadow: pm.wallShadow ?? 0.45,
       ambientMatch: pm.ambientMatch ?? 0.15,
       ambientTint: state.lighting?.colorHex || '#ffffff',
