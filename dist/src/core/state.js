@@ -49,7 +49,7 @@ export function createDefaultState() {
       roughness: null,
       brushDirection: 0,
       brushScale: 6,
-      brushIntensity: 0.82,
+      brushIntensity: 1.0,
       textureStrength: 0.4,
       bevelMm: 2.2,
       acrylicOpacity: 0.94,

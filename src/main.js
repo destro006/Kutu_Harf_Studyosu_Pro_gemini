@@ -1534,11 +1534,38 @@ function renderMaterialsWs(state) {
       <div class="field-row"><label>Pürüzlülük (Roughness)</label><input id="ovrRoughness" type="number" min="0.01" max="1" step="0.02" value="${state.materialOverrides.roughness ?? facePreset.roughness}"></div>
       <div class="field-row"><label>Yansıma Yoğunluğu</label><input id="ovrRefl" type="number" min="0" max="3" step="0.1" value="${state.render.reflectionIntensity}"></div>
       <div class="field-row"><label>Pozlama (Exposure)</label><input id="ovrExposure" type="number" min="0.3" max="2.5" step="0.05" value="${state.render.exposure}"></div>
-      ${facePreset.brushed ? `
-      <div class="field-row"><label>Fırçalama Yönü (°)</label><input id="ovrBrushDir" type="number" min="0" max="180" step="15" value="${state.materialOverrides.brushDirection}"></div>
-      <div class="field-row"><label>Fırçalama Ölçeği</label><input id="ovrBrushScale" type="number" min="1" max="20" step="1" value="${state.materialOverrides.brushScale}"></div>
-      <div class="field-row"><label>Fırçalama Yoğunluğu</label><input id="ovrBrushInt" type="number" min="0" max="1.5" step="0.05" value="${state.materialOverrides.brushIntensity}"></div>
-      ` : ''}
+      ${(facePreset.brushed || MATERIAL_PRESETS[fileId]?.brushed || MATERIAL_PRESETS[sideId]?.brushed) ? (() => {
+        const bInt = state.materialOverrides.brushIntensity ?? 1.0;
+        const bScale = state.materialOverrides.brushScale ?? 6;
+        const bDir = state.materialOverrides.brushDirection ?? 0;
+        return `
+      <div class="brush-detail-box" style="margin:8px 0;padding:8px;border-radius:7px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08)">
+        <div style="font-size:11.5px;font-weight:600;margin-bottom:6px;color:var(--accent)">Fırça Detay Ayarları</div>
+        <div class="field-row" style="flex-direction:column;align-items:stretch;gap:4px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+            <label for="ovrBrushIntRange" style="margin:0">Fırça Belirginliği <b id="ovrBrushIntVal">${Math.round(bInt * 100)}%</b></label>
+            <input id="ovrBrushInt" type="number" min="0" max="2" step="0.05" value="${bInt}" style="width:68px">
+          </div>
+          <input id="ovrBrushIntRange" type="range" min="0" max="2" step="0.05" value="${bInt}" style="width:100%;accent-color:var(--accent)">
+        </div>
+        <div class="field-row" style="flex-direction:column;align-items:stretch;gap:4px;margin-top:6px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+            <label for="ovrBrushScaleRange" style="margin:0">Fırça Çizgi Sıklığı</label>
+            <input id="ovrBrushScale" type="number" min="1" max="24" step="1" value="${bScale}" style="width:68px">
+          </div>
+          <input id="ovrBrushScaleRange" type="range" min="1" max="24" step="1" value="${bScale}" style="width:100%;accent-color:var(--accent)">
+        </div>
+        <div class="field-row" style="margin-top:6px">
+          <label>Fırçalama Yönü (°)</label>
+          <input id="ovrBrushDir" type="number" min="0" max="180" step="15" value="${bDir}" style="width:68px">
+        </div>
+        <div class="chips" style="margin-top:4px;gap:4px">
+          <button type="button" class="chip ${bDir === 0 ? 'on' : ''}" data-brush-dir="0">0° Yatay</button>
+          <button type="button" class="chip ${bDir === 45 ? 'on' : ''}" data-brush-dir="45">45° Çapraz</button>
+          <button type="button" class="chip ${bDir === 90 ? 'on' : ''}" data-brush-dir="90">90° Dikey</button>
+        </div>
+      </div>`;
+      })() : ''}
       <div class="field-row"><label>Patlatılmış Katman Görünümü (3D Kesit)</label><input id="chkExploded" type="checkbox" ${state.render.explodedView ? 'checked' : ''}></div>
       <div class="field-row"><label>Pah Genişliği (${unit})</label><input id="ovrBevel" type="number" min="${show(0)}" max="${show(6)}" step="${show(0.2)}" value="${show(state.materialOverrides.bevelMm)}"></div>
       ${(facePreset.kind === 'acrylic' || (obj?.constructionType || state.constructionType) === 'fileli' || (obj?.constructionType || state.constructionType) === 'pleksi') ? `<div class="field-row"><label>Pleksi Opaklık</label><input id="ovrAcOpacity" type="number" min="0.2" max="1" step="0.02" value="${state.materialOverrides.acrylicOpacity}"></div>` : ''}
@@ -2067,8 +2094,42 @@ function bindWorkspaceEvents(ws, root) {
     bindOvr('ovrRefl', (s, v) => { s.render.reflectionIntensity = v; });
     bindRenderOvr('ovrExposure', (s, v) => { s.render.exposure = v; });
     bindOvr('ovrBrushDir', (s, v) => { s.materialOverrides.brushDirection = v; });
-    bindOvr('ovrBrushScale', (s, v) => { s.materialOverrides.brushScale = v; });
-    bindOvr('ovrBrushInt', (s, v) => { s.materialOverrides.brushIntensity = v; });
+    bindOvr('ovrBrushScale', (s, v) => {
+      const clamped = Math.max(1, Math.min(24, Number(v) || 6));
+      s.materialOverrides.brushScale = clamped;
+      const r = root.querySelector('#ovrBrushScaleRange'); if (r) r.value = String(clamped);
+    });
+    bindOvr('ovrBrushInt', (s, v) => {
+      const clamped = Math.max(0, Math.min(2, Number.isFinite(v) ? v : 1));
+      s.materialOverrides.brushIntensity = clamped;
+      const r = root.querySelector('#ovrBrushIntRange'); if (r) r.value = String(clamped);
+      const lbl = root.querySelector('#ovrBrushIntVal'); if (lbl) lbl.textContent = `${Math.round(clamped * 100)}%`;
+    });
+    root.querySelector('#ovrBrushIntRange')?.addEventListener('input', e => {
+      const val = Math.max(0, Math.min(2, Number(e.target.value) || 0));
+      const numEl = root.querySelector('#ovrBrushInt'); if (numEl) numEl.value = String(val);
+      const lbl = root.querySelector('#ovrBrushIntVal'); if (lbl) lbl.textContent = `${Math.round(val * 100)}%`;
+      store.update(s => { s.materialOverrides.brushIntensity = val; });
+      scheduleRebuild(true);
+    });
+    root.querySelector('#ovrBrushIntRange')?.addEventListener('change', e => {
+      const val = Math.max(0, Math.min(2, Number(e.target.value) || 0));
+      mutate('Fırça belirginliği', s => { s.materialOverrides.brushIntensity = val; }, false);
+    });
+    root.querySelector('#ovrBrushScaleRange')?.addEventListener('input', e => {
+      const val = Math.max(1, Math.min(24, Number(e.target.value) || 6));
+      const numEl = root.querySelector('#ovrBrushScale'); if (numEl) numEl.value = String(val);
+      store.update(s => { s.materialOverrides.brushScale = val; });
+      scheduleRebuild(true);
+    });
+    root.querySelector('#ovrBrushScaleRange')?.addEventListener('change', e => {
+      const val = Math.max(1, Math.min(24, Number(e.target.value) || 6));
+      mutate('Fırça çizgi sıklığı', s => { s.materialOverrides.brushScale = val; }, false);
+    });
+    root.querySelectorAll('[data-brush-dir]').forEach(b => b.onclick = () => {
+      const deg = Number(b.dataset.brushDir) || 0;
+      mutate('Fırçalama yönü', s => { s.materialOverrides.brushDirection = deg; }, true);
+    });
     root.querySelector('#chkExploded')?.addEventListener('change', e => mutate('Patlatılmış görünüm', s => { s.render.explodedView = e.target.checked; }, false));
     bindOvr('ovrBevel', (s, v) => { s.materialOverrides.bevelMm = v; });
     bindOvr('ovrAcOpacity', (s, v) => { s.materialOverrides.acrylicOpacity = v; });

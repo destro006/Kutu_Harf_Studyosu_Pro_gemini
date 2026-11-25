@@ -46,12 +46,12 @@ export const MATERIAL_PRESETS = {
     kind: 'metal',
     color: '#dcaa52',
     metalness: 1.0,
-    roughness: 0.30,
-    envMapIntensity: 1.15,
+    roughness: 0.28,
+    envMapIntensity: 1.25,
     clearcoat: 0.0,
     clearcoatRoughness: 0.1,
     brushed: true,
-    anisotropy: 0.85,
+    anisotropy: 0.88,
     swatch: 'repeating-linear-gradient(0deg,#cfa457 0 2px,#b98f45 2px 3px,#dcb465 3px 5px)',
     multiplier: 1.25,
   },
@@ -286,16 +286,27 @@ function valueNoise(x, y, seed) {
 }
 
 const brushCache = new Map();
-const BRUSH_CACHE_LIMIT = 16;
+const BRUSH_CACHE_LIMIT = 12;
+
+function periodicNoiseX(x, y, cycles, seed) {
+  const angle = (x / 512) * Math.PI * 2 * cycles;
+  const cx = Math.cos(angle) * cycles * 0.45 + 100;
+  const sx = Math.sin(angle) * cycles * 0.45 + 100;
+  return valueNoise(cx * 0.5 + y * 0.01, y * 0.65, seed) * 0.5 +
+         valueNoise(sx * 0.5 + x * 0.03, y * 0.35, seed + 19) * 0.5;
+}
 
 /**
- * Generates silky horizontal brushed metal roughness texture matching Claude's shader response.
+ * Generates seamless 512x512 horizontal brushed-metal PBR maps (color, roughness, bump).
+ * Periodic along X so tile edges never show seams on wide signage faces.
  * @param {number} scale
  * @param {number} intensity
  * @param {number} directionDeg
  */
-export function getBrushedTexture(scale = 5, intensity = 0.65, directionDeg = 0) {
-  const key = `${scale.toFixed(1)}_${intensity.toFixed(2)}_${Math.round(directionDeg)}`;
+export function getBrushedTextureSet(scale = 6, intensity = 1.0, directionDeg = 0) {
+  const clampedScale = Math.max(1, Math.min(24, Number(scale) || 6));
+  const clampedInt = Math.max(0, Math.min(2.0, Number(intensity) ?? 1.0));
+  const key = `${clampedScale.toFixed(1)}_${clampedInt.toFixed(2)}_${Math.round(directionDeg)}`;
   if (brushCache.has(key)) {
     const cached = brushCache.get(key);
     brushCache.delete(key);
@@ -304,45 +315,108 @@ export function getBrushedTexture(scale = 5, intensity = 0.65, directionDeg = 0)
   }
 
   const size = 512;
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  const img = ctx.createImageData(size, size);
+  const makeCanvas = () => {
+    if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+      const c = document.createElement('canvas');
+      c.width = size;
+      c.height = size;
+      return c;
+    }
+    return {
+      width: size,
+      height: size,
+      getContext: () => ({
+        createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+        putImageData: () => {},
+      }),
+    };
+  };
 
-  const strength = Math.max(0, Math.min(1.5, intensity));
+  const cCanvas = makeCanvas();
+  const rCanvas = makeCanvas();
+  const bCanvas = makeCanvas();
+  const cCtx = cCanvas.getContext('2d', { willReadFrequently: true });
+  const rCtx = rCanvas.getContext('2d', { willReadFrequently: true });
+  const bCtx = bCanvas.getContext('2d', { willReadFrequently: true });
+  const cImg = cCtx.createImageData(size, size);
+  const rImg = rCtx.createImageData(size, size);
+  const bImg = bCtx.createImageData(size, size);
+
+  const rowFine = new Float32Array(size);
+  const rowBand = new Float32Array(size);
   for (let y = 0; y < size; y++) {
-    const rowHash = hash2d(0, y, 77);
+    rowFine[y] = hash2d(0, y, 77);
+    const band = Math.sin((y / size) * Math.PI * 2 * 6) * 0.5 + 0.5;
+    rowBand[y] = band * 0.55 + hash2d(1, Math.floor(y / 3), 91) * 0.45;
+  }
+
+  for (let y = 0; y < size; y++) {
+    const rf = rowFine[y];
+    const rb = rowBand[y];
+    const rowPrev = rowFine[(y - 1 + size) % size];
+    const microEdge = rf - rowPrev;
     for (let x = 0; x < size; x++) {
-      const f = valueNoise(x / 60, y, 79) * 0.5 + valueNoise(x / 9, y, 83) * 0.25;
-      const base = 0.62 + strength * (rowHash * 0.22 + f * 0.3);
-      const val = Math.max(20, Math.min(255, Math.round(base * 255)));
+      const streak = periodicNoiseX(x, y, 6, 79) * 0.65 + periodicNoiseX(x, y, 16, 83) * 0.35;
+      // Centered grain in [-0.5, +0.5]
+      const grain = (rf * 0.48 + rb * 0.24 + streak * 0.28) - 0.5 + microEdge * 0.14;
+
+      // Color multiplier: keeps true metal hue while visibly etching parallel hairlines
+      const cNorm = Math.max(0.45, Math.min(1.0, 0.90 + grain * 0.34 * clampedInt));
+      const cVal = Math.round(cNorm * 255);
+
+      // Roughness map: strong micro-roughness variation across brush grooves
+      const rNorm = Math.max(0.32, Math.min(1.0, 0.72 + grain * 0.55 * clampedInt));
+      const rVal = Math.round(rNorm * 255);
+
+      // Bump map: crisp micro-groove height field
+      const bNorm = Math.max(0.0, Math.min(1.0, 0.5 + grain * 0.95 * Math.min(1.6, clampedInt)));
+      const bVal = Math.round(bNorm * 255);
+
       const idx = (y * size + x) * 4;
-      img.data[idx] = val;
-      img.data[idx + 1] = val;
-      img.data[idx + 2] = val;
-      img.data[idx + 3] = 255;
+      cImg.data[idx] = cVal; cImg.data[idx + 1] = cVal; cImg.data[idx + 2] = cVal; cImg.data[idx + 3] = 255;
+      rImg.data[idx] = rVal; rImg.data[idx + 1] = rVal; rImg.data[idx + 2] = rVal; rImg.data[idx + 3] = 255;
+      bImg.data[idx] = bVal; bImg.data[idx + 1] = bVal; bImg.data[idx + 2] = bVal; bImg.data[idx + 3] = 255;
     }
   }
-  ctx.putImageData(img, 0, 0);
+  cCtx.putImageData(cImg, 0, 0);
+  rCtx.putImageData(rImg, 0, 0);
+  bCtx.putImageData(bImg, 0, 0);
 
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(scale, scale);
-  tex.center.set(0.5, 0.5);
-  tex.rotation = (directionDeg * Math.PI) / 180;
-  tex.anisotropy = 16;
-  tex.needsUpdate = true;
+  const setupTex = (canvas, isColor) => {
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    // ExtrudeGeometry UVs are in meters (~0.4m letter height), so boost Y repeat
+    // to produce realistic densely spaced metallic hairlines at viewing distance.
+    tex.repeat.set(clampedScale * 1.1, clampedScale * 2.4);
+    tex.center.set(0.5, 0.5);
+    tex.rotation = (directionDeg * Math.PI) / 180;
+    tex.anisotropy = 16;
+    if (isColor) tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    return tex;
+  };
 
-  brushCache.set(key, tex);
+  const set = {
+    colorMap: setupTex(cCanvas, true),
+    roughnessMap: setupTex(rCanvas, false),
+    bumpMap: setupTex(bCanvas, false),
+  };
+
+  brushCache.set(key, set);
   while (brushCache.size > BRUSH_CACHE_LIMIT) {
     const oldKey = brushCache.keys().next().value;
-    const oldTex = brushCache.get(oldKey);
+    const oldSet = brushCache.get(oldKey);
     brushCache.delete(oldKey);
-    oldTex?.dispose?.();
+    oldSet?.colorMap?.dispose?.();
+    oldSet?.roughnessMap?.dispose?.();
+    oldSet?.bumpMap?.dispose?.();
   }
-  return tex;
+  return set;
+}
+
+export function getBrushedTexture(scale = 6, intensity = 1.0, directionDeg = 0) {
+  return getBrushedTextureSet(scale, intensity, directionDeg).roughnessMap;
 }
 
 export function mixHex(hexA, hexB, t) {
@@ -369,20 +443,22 @@ export function createSignMaterial(presetId, overrides = {}, lightContext = {}) 
   const roughness = overrides.roughness ?? preset.roughness;
   const envMapIntensity = overrides.envMapIntensity ?? preset.envMapIntensity;
   const brushed = overrides.brushed ?? preset.brushed;
-  const brushScale = overrides.brushScale ?? 5;
-  const brushIntensity = overrides.brushIntensity ?? 0.82;
+  const brushScale = overrides.brushScale ?? 6;
+  const brushIntensity = Math.max(0, Math.min(2.0, overrides.brushIntensity ?? 1.0));
   const brushDirection = overrides.brushDirection ?? 0;
 
   if (preset.kind === 'metal' || isOpaqueMetal) {
-    const brushMap = brushed ? getBrushedTexture(brushScale, brushIntensity, brushDirection) : null;
+    const useGrain = brushed && brushIntensity > 0.01;
+    const maps = useGrain ? getBrushedTextureSet(brushScale, brushIntensity, brushDirection) : null;
     const mat = new THREE.MeshPhysicalMaterial({
       color: new THREE.Color(colorHex),
+      map: maps?.colorMap || null,
       metalness: Math.max(0, Math.min(1, metalness)),
       roughness: Math.max(0.015, Math.min(1, roughness)),
-      roughnessMap: brushMap,
-      bumpMap: null,
-      bumpScale: 0,
-      anisotropy: brushed ? Math.min(1, 0.72 + 0.18 * brushIntensity) : (preset.anisotropy || 0),
+      roughnessMap: maps?.roughnessMap || null,
+      bumpMap: maps?.bumpMap || null,
+      bumpScale: useGrain ? 0.0024 * Math.min(2.0, brushIntensity) : 0,
+      anisotropy: brushed ? Math.min(1, 0.72 + 0.14 * brushIntensity) : (preset.anisotropy || 0),
       anisotropyRotation: (brushDirection * Math.PI) / 180,
       clearcoat: roughness < 0.1 ? (preset.clearcoat ?? 0.6) : (preset.clearcoat ?? 0),
       clearcoatRoughness: preset.clearcoatRoughness ?? 0.04,
