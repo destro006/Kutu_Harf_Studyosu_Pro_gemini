@@ -33,7 +33,14 @@ import { renderNestingSvg } from '../src/ui/NestingView.js';
 import { parseFont } from '../src/vendor/opentype.mjs';
 import { layoutTextMm } from '../src/geometry/FontManager.js';
 import { buildChannelComponent } from '../src/geometry/ChannelLetterGeometry.js';
-import { healPolygonWithHoles, pointInPolygon, polygonBounds, hasSelfIntersection } from '../src/geometry/PolygonOffset.js';
+import {
+  auditAndRepairContourNodes,
+  healPolygonWithHoles,
+  offsetRing,
+  pointInPolygon,
+  polygonBounds,
+  hasSelfIntersection,
+} from '../src/geometry/PolygonOffset.js';
 import THREE from '../src/vendor/three.js';
 import { calculateProjectCosts, COST_ROLE_LABELS } from '../src/manufacturing/CostEngine.js';
 import { PostProcessor } from '../src/render/PostProcessor.js';
@@ -216,10 +223,10 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v8'));
-assert(rootHtml.includes('./src/main.js?v=20261126-v26'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v26'));
+assert(rootHtml.includes('./src/main.js?v=20261126-v27'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v27'));
 assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
-assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v26'));
+assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v27'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -685,6 +692,61 @@ for (const fw of [5, 8]) {
   }
   for (const g of [...zBuilt.outerGeos, ...zBuilt.fileGeos, ...zBuilt.acrylicGeos]) g.dispose();
 }
+
+// Node audit & spike immunity across Cinzel Z, MARKANIZ, and Playfair Display D/Q
+const checkMinInteriorAngleDeg = (pts) => {
+  let minDeg = 180;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[(i - 1 + pts.length) % pts.length], b = pts[i], c = pts[(i + 1) % pts.length];
+    const l1 = Math.hypot(b.x - a.x, b.y - a.y), l2 = Math.hypot(c.x - b.x, c.y - b.y);
+    if (l1 < 1e-6 || l2 < 1e-6) continue;
+    const dot = Math.max(-1, Math.min(1, ((b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y)) / (l1 * l2)));
+    const deg = Math.acos(Math.max(-1, Math.min(1, -dot))) * 180 / Math.PI;
+    if (deg < minDeg) minDeg = deg;
+  }
+  return minDeg;
+};
+const zGlyphAudit = markanizLay.glyphs.find(g => g.char === 'Z');
+const zBaseBuilt = buildChannelComponent(zGlyphAudit.shapes, { constructionType: 'fileli', depthMm: 80, fileWidthMm: 5 });
+const zOuterRing = zBaseBuilt.polygonsMm[0].outer;
+for (const fw of [4, 5, 6, 8]) {
+  const off = offsetRing(zOuterRing, -fw);
+  assert(off.ok && !hasSelfIntersection(off.points), `offsetRing(Z, -${fw}) must be ok with zero self-intersection`);
+  for (const pt of off.points) {
+    assert(pointInPolygon(pt, zOuterRing), `offsetRing(Z, -${fw}) vertex (${pt.x.toFixed(2)},${pt.y.toFixed(2)}) escaped outer boundary`);
+  }
+}
+const playfairFonts = [
+  loadFontFile('../public/fonts/playfair-display-latin-800-normal-D0Xz4t1K.woff'),
+  loadFontFile('../public/fonts/playfair-display-latin-ext-800-normal-DD7uHqs8.woff'),
+];
+const auditGlyphSets = [
+  ...markanizLay.glyphs.map(g => ({ tag: `Cinzel:${g.char}`, glyph: g })),
+  ...layoutTextMm(playfairFonts, 'DQZ', 400).glyphs.map(g => ({ tag: `Playfair:${g.char}`, glyph: g })),
+];
+for (const { tag, glyph } of auditGlyphSets) {
+  for (const fw of [4, 5, 8]) {
+    if (tag.startsWith('Playfair:') && fw !== 5) continue;
+    const built = buildChannelComponent(glyph.shapes, { constructionType: 'fileli', depthMm: 80, fileWidthMm: fw, metalThicknessMm: 1 });
+    for (const r of [...built.exportContours.file, ...built.exportContours.acrylicCut, ...built.exportContours.backingCut]) {
+      assert(!hasSelfIntersection(r.outer), `${tag} fw=${fw} outer self-intersection detected`);
+      assert(checkMinInteriorAngleDeg(r.outer) >= 16, `${tag} fw=${fw} outer needle spike detected`);
+      for (const h of r.holes || []) {
+        assert(!hasSelfIntersection(h), `${tag} fw=${fw} hole self-intersection detected`);
+        assert(checkMinInteriorAngleDeg(h) >= 16, `${tag} fw=${fw} hole needle spike (<16 deg) detected`);
+      }
+    }
+    for (const g of [...built.outerGeos, ...built.fileGeos, ...built.acrylicGeos]) g.dispose();
+  }
+}
+// Synthetic hairpin node repair + clean square preservation
+const spikePoly = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 140, y: 101 }, { x: 99, y: 100 }, { x: 0, y: 100 }];
+const repairedSpike = auditAndRepairContourNodes(spikePoly, { ccw: true });
+assert(checkMinInteriorAngleDeg(repairedSpike) >= 16 && polygonBounds(repairedSpike).maxX <= 100.5, 'Synthetic hairpin spike must be cleanly auto-healed');
+const cleanSq = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }];
+assert.equal(auditAndRepairContourNodes(cleanSq, { ccw: true }).length, 4, 'Clean orthogonal 100x100 square must stay untouched');
+assert(generateCorelColoredSvg(corelSheets).includes('stroke-linejoin="round"'));
+assert(getCorelBridgePs1Script().includes('Outline.LineJoin = 1'));
 
 // Synthetic open-gap / duplicate-node / self-intersecting bowtie polygon auto-healing
 const dirtyOpenPoly = [

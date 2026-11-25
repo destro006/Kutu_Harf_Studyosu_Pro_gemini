@@ -121,6 +121,143 @@ export function healPolygonWithHoles(outerCCW, holesCW = [], cleanTolMm = 0.03) 
   }
 }
 
+function isPointInsideOrOnRing(pt, ring, eps = 0.02) {
+  if (pointInPolygon(pt, ring)) return true;
+  for (let i = 0; i < ring.length; i++) {
+    if (distPointToSegment(pt, ring[i], ring[(i + 1) % ring.length]) <= eps) return true;
+  }
+  return false;
+}
+
+/**
+ * Audits a closed contour ring and automatically heals needle foldbacks (<5 deg)
+ * and ultra-acute serif tip spikes (<minAngleDeg) into clean micro-bevel bridges.
+ */
+export function auditAndRepairContourNodes(ring, opts = {}) {
+  const {
+    ccw = true,
+    minAngleDeg = 18,
+    maxBevelMm = 1.6,
+    targetFlatWidthMm = 0.45,
+  } = opts;
+  const pre = ensureWinding(deduplicateRing(ring || [], 0.015), ccw);
+  if (pre.length < 4) return pre;
+  const origArea = polygonArea(pre);
+  if (origArea < 0.05) return pre;
+
+  let pts = pre.map(p => ({ x: p.x, y: p.y }));
+
+  // Pass 1: Eliminate near-180 deg foldbacks / hairpin reversals
+  for (let pass = 0; pass < 4 && pts.length >= 4; pass++) {
+    let changed = false;
+    const nextPts = [];
+    const n = pts.length;
+    for (let i = 0; i < n; i++) {
+      const prev = pts[(i - 1 + n) % n];
+      const curr = pts[i];
+      const next = pts[(i + 1) % n];
+      const e1x = curr.x - prev.x, e1y = curr.y - prev.y;
+      const e2x = next.x - curr.x, e2y = next.y - curr.y;
+      const l1 = Math.hypot(e1x, e1y);
+      const l2 = Math.hypot(e2x, e2y);
+      if (l1 < 0.01 || l2 < 0.01) { changed = true; continue; }
+      const dot = (e1x * e2x + e1y * e2y) / (l1 * l2);
+      if (dot <= -0.9962) {
+        changed = true;
+        continue;
+      }
+      nextPts.push(curr);
+    }
+    if (!changed || nextPts.length < 3) break;
+    pts = deduplicateRing(nextPts, 0.015);
+  }
+
+  // Pass 2: Micro-bevel remaining ultra-acute needle tips (< minAngleDeg)
+  const safeMinDeg = Math.max(5, Math.min(45, Number(minAngleDeg) || 18));
+  const minDot = Math.cos(Math.PI - (safeMinDeg * Math.PI) / 180);
+  if (pts.length >= 4) {
+    const out = [];
+    const n = pts.length;
+    for (let i = 0; i < n; i++) {
+      const prev = pts[(i - 1 + n) % n];
+      const curr = pts[i];
+      const next = pts[(i + 1) % n];
+      const e1x = curr.x - prev.x, e1y = curr.y - prev.y;
+      const e2x = next.x - curr.x, e2y = next.y - curr.y;
+      const l1 = Math.hypot(e1x, e1y);
+      const l2 = Math.hypot(e2x, e2y);
+      if (l1 < 0.01 || l2 < 0.01) continue;
+      const u1x = e1x / l1, u1y = e1y / l1;
+      const u2x = e2x / l2, u2y = e2y / l2;
+      const dot = Math.max(-1, Math.min(1, u1x * u2x + u1y * u2y));
+      if (dot < minDot) {
+        const interiorRad = Math.acos(Math.max(-1, Math.min(1, -dot)));
+        const sinHalf = Math.max(0.04, Math.sin(interiorRad * 0.5));
+        const d = Math.min(maxBevelMm, l1 * 0.4, l2 * 0.4, (targetFlatWidthMm * 0.5) / sinHalf);
+        if (d > 0.04) {
+          const p1 = { x: curr.x - u1x * d, y: curr.y - u1y * d };
+          const p2 = { x: curr.x + u2x * d, y: curr.y + u2y * d };
+          if (Math.hypot(p2.x - p1.x, p2.y - p1.y) >= 0.04) {
+            out.push(p1, p2);
+          } else {
+            out.push({ x: (p1.x + p2.x) * 0.5, y: (p1.y + p2.y) * 0.5 });
+          }
+          continue;
+        }
+      }
+      out.push(curr);
+    }
+    pts = deduplicateRing(out, 0.015);
+  }
+
+  const repaired = ensureWinding(pts, ccw);
+  if (repaired.length >= 3 && !hasSelfIntersection(repaired) && polygonArea(repaired) >= origArea * 0.90) {
+    return repaired;
+  }
+  return pre;
+}
+
+function clampPolysInsideOuter(polys, outer, cleanTolMm = 0.03) {
+  if (!polys?.length || !outer?.length) return polys || [];
+  let needsClamp = false;
+  for (const poly of polys) {
+    if (!poly?.outer || hasSelfIntersection(poly.outer)) { needsClamp = true; break; }
+    for (const pt of poly.outer) {
+      if (!isPointInsideOrOnRing(pt, outer, 0.02)) { needsClamp = true; break; }
+    }
+    if (needsClamp) break;
+    for (const h of poly.holes || []) {
+      if (hasSelfIntersection(h)) { needsClamp = true; break; }
+      for (const pt of h) {
+        if (!isPointInsideOrOnRing(pt, outer, 0.02)) { needsClamp = true; break; }
+      }
+      if (needsClamp) break;
+    }
+    if (needsClamp) break;
+  }
+  if (!needsClamp) return polys;
+
+  try {
+    const cl = new Clipper.Clipper();
+    for (const poly of polys) {
+      if (!poly?.outer || poly.outer.length < 3) continue;
+      cl.AddPath(toClipperPath(poly.outer, true), Clipper.PolyType.ptSubject, true);
+      for (const h of poly.holes || []) {
+        if (h?.length >= 3) cl.AddPath(toClipperPath(h, false), Clipper.PolyType.ptSubject, true);
+      }
+    }
+    cl.AddPath(toClipperPath(outer, true), Clipper.PolyType.ptClip, true);
+    const tree = new Clipper.PolyTree();
+    if (cl.Execute(Clipper.ClipType.ctIntersection, tree, Clipper.PolyFillType.pftEvenOdd, Clipper.PolyFillType.pftEvenOdd)) {
+      const clamped = extractPolyTreeRings(tree, cleanTolMm, 0.05);
+      if (clamped.length) return clamped;
+    }
+  } catch {
+    // ignore and return original
+  }
+  return polys;
+}
+
 /**
  * Signed area of a 2D polygon ring (positive = CCW, negative = CW).
  * @param {Array<{x:number,y:number}>} pts
@@ -296,97 +433,79 @@ export function minDistanceBetweenPolygons(polyA, polyB) {
  * delta > 0 => outward offset (expands outer contour, or expands a CCW hole into stroke)
  * Uses miter-limited vertex bisectors + local loop trimming + self-intersection validation.
  */
-export function offsetRing(ring, delta, miterLimit = 2.6) {
-  const pts = ensureWinding(ring, true);
+/**
+ * Offset a closed CCW polygon ring via ClipperOffset with miter clamping & node auto-repair.
+ * delta < 0 => inward offset (guaranteed strictly inside input ring, never overshoots)
+ * delta > 0 => outward offset
+ */
+export function offsetRing(ring, delta, miterLimit = 1.8) {
+  const healed = healContourRing(ring, true, 0.025);
+  const pts = healed.length >= 3 ? healed : ensureWinding(ring, true);
   const n = pts.length;
   if (n < 3) return { ok: false, points: [], reason: 'Geçersiz kontur (3 noktadan az).' };
-  if (Math.abs(delta) < 1e-5) return { ok: true, points: pts, reason: null };
-
-  const out = [];
-  for (let i = 0; i < n; i++) {
-    const prev = pts[(i - 1 + n) % n];
-    const curr = pts[i];
-    const next = pts[(i + 1) % n];
-
-    const e1x = curr.x - prev.x, e1y = curr.y - prev.y;
-    const l1 = Math.hypot(e1x, e1y) || 1;
-    const u1x = e1x / l1, u1y = e1y / l1;
-
-    const e2x = next.x - curr.x, e2y = next.y - curr.y;
-    const l2 = Math.hypot(e2x, e2y) || 1;
-    const u2x = e2x / l2, u2y = e2y / l2;
-
-    // Outward normals for CCW ring: (uy, -ux)
-    const n1x = u1y, n1y = -u1x;
-    const n2x = u2y, n2y = -u2x;
-
-    let bx = n1x + n2x;
-    let by = n1y + n2y;
-    const bl = Math.hypot(bx, by);
-
-    if (bl < 1e-5) {
-      out.push({ x: curr.x + n1x * delta, y: curr.y + n1y * delta });
-      continue;
-    }
-    bx /= bl;
-    by /= bl;
-
-    const cosHalf = bx * n1x + by * n1y;
-    const miterLen = Math.abs(cosHalf) > 0.1 ? 1 / cosHalf : miterLimit;
-
-    if (miterLen > miterLimit) {
-      // Bevel at sharp corners to prevent long spikes
-      const p1 = { x: curr.x + n1x * delta, y: curr.y + n1y * delta };
-      const p2 = { x: curr.x + n2x * delta, y: curr.y + n2y * delta };
-      out.push(p1, p2);
-    } else {
-      out.push({ x: curr.x + bx * delta * miterLen, y: curr.y + by * delta * miterLen });
-    }
+  if (Math.abs(delta) < 1e-5) {
+    return { ok: true, points: auditAndRepairContourNodes(pts, { ccw: true }), reason: null };
   }
 
-  let cleaned = deduplicateRing(out, 1e-3);
-  if (cleaned.length < 3) {
-    return { ok: false, points: [], reason: 'İçe ofset konturu tamamen kapandı.' };
-  }
+  try {
+    const safeMiter = Math.min(2.0, Math.max(1.2, Number(miterLimit) || 1.8));
+    const cleanTol = Math.min(0.05, Math.max(0.015, Math.abs(delta) * 0.1));
+    const co = new Clipper.ClipperOffset(safeMiter, 0.2 * CLIPPER_SCALE);
+    co.AddPath(toClipperPath(pts, true), Clipper.JoinType.jtMiter, Clipper.EndType.etClosedPolygon);
+    const tree = new Clipper.PolyTree();
+    co.Execute(tree, delta * CLIPPER_SCALE);
+    let polys = extractPolyTreeRings(tree, cleanTol, 0.05);
 
-  // Remove small inverted/self-intersecting loops by resolving single crossings
-  cleaned = resolveSimpleBowties(cleaned);
+    if (!polys.length) {
+      return {
+        ok: false,
+        points: [],
+        reason: delta < 0
+          ? 'File genişliği bu harfin veya logonun dar kolları için çok büyük (iç alan kayboldu).'
+          : 'Ofset konturu oluşturulamadı.',
+      };
+    }
 
-  const origArea = polygonArea(pts);
-  const newArea = signedArea(cleaned);
+    if (delta < 0) {
+      polys = clampPolysInsideOuter(polys, pts, cleanTol);
+      if (!polys.length) {
+        return {
+          ok: false,
+          points: [],
+          reason: 'İçe ofset işlemi dış sınırın dışına taştı (dar kol çakışması).',
+        };
+      }
+    }
 
-  if (delta < 0) {
-    if (newArea <= origArea * 0.015) {
+    polys.sort((a, b) => polygonArea(b.outer) - polygonArea(a.outer));
+    const best = auditAndRepairContourNodes(polys[0].outer, { ccw: true });
+    const origArea = polygonArea(pts);
+    const newArea = polygonArea(best);
+
+    if (delta < 0 && newArea <= origArea * 0.015) {
       return {
         ok: false,
         points: [],
         reason: 'File genişliği bu harfin veya logonun dar kolları için çok büyük (iç alan kayboldu).',
       };
     }
-    // Check that offset points remain inside original polygon
-    let outsideCount = 0;
-    const step = Math.max(1, Math.floor(cleaned.length / 16));
-    for (let i = 0; i < cleaned.length; i += step) {
-      if (!pointInPolygon(cleaned[i], pts)) outsideCount++;
-    }
-    if (outsideCount > Math.ceil(cleaned.length / step / 3)) {
+
+    if (hasSelfIntersection(best)) {
       return {
         ok: false,
-        points: [],
-        reason: 'İçe ofset işlemi dış sınırın dışına taştı (dar kol çakışması).',
+        points: best,
+        reason: 'İçe ofset sırasında kendiliğinden kesişim oluştu. Daha küçük file genişliği deneyin.',
       };
     }
-  }
 
-  if (hasSelfIntersection(cleaned)) {
+    return { ok: true, points: best, reason: null };
+  } catch (err) {
     return {
       ok: false,
-      points: cleaned,
-      reason: 'İçe ofset sırasında kendiliğinden kesişim oluştu. Daha küçük file genişliği deneyin.',
+      points: [],
+      reason: err?.message || 'Ofset hesaplama hatası.',
     };
   }
-
-  return { ok: true, points: cleaned, reason: null };
 }
 
 function resolveSimpleBowties(pts) {
@@ -478,7 +597,7 @@ export function computeFileliContours(outerCCW, holesCW, fileWidthMm) {
   try {
     // 1. Robust ClipperOffset PolyTree inward offset simultaneously handles outer boundary,
     //    inner holes (CW orientation), sharp serif corners (Z, M, N, R), and multiple islands.
-    const co = new Clipper.ClipperOffset(2.2, 0.2 * CLIPPER_SCALE);
+    const co = new Clipper.ClipperOffset(1.8, 0.2 * CLIPPER_SCALE);
     co.AddPath(toClipperPath(outer, true), Clipper.JoinType.jtMiter, Clipper.EndType.etClosedPolygon);
     for (const h of holes) {
       co.AddPath(toClipperPath(h, false), Clipper.JoinType.jtMiter, Clipper.EndType.etClosedPolygon);
@@ -486,7 +605,11 @@ export function computeFileliContours(outerCCW, holesCW, fileWidthMm) {
 
     const acTree = new Clipper.PolyTree();
     co.Execute(acTree, -fileWidthMm * CLIPPER_SCALE);
-    const acrylicPolys = extractPolyTreeRings(acTree, cleanTol, 0.5);
+    let acrylicPolys = extractPolyTreeRings(acTree, cleanTol, 0.5);
+    acrylicPolys = clampPolysInsideOuter(acrylicPolys, outer, cleanTol).map(ap => ({
+      outer: auditAndRepairContourNodes(ap.outer, { ccw: true }),
+      holes: (ap.holes || []).map(h => auditAndRepairContourNodes(h, { ccw: false })),
+    }));
 
     const netAreaOf = (p) => Math.max(0, polygonArea(p.outer) - p.holes.reduce((s, h) => s + polygonArea(h), 0));
     acrylicPolys.sort((a, b) => netAreaOf(b) - netAreaOf(a));
@@ -531,7 +654,15 @@ export function computeFileliContours(outerCCW, holesCW, fileWidthMm) {
       };
     }
 
-    const fileRings = extractPolyTreeRings(frameTree, cleanTol, 0.25);
+    const isRealHole = (h) => {
+      const a = polygonArea(h);
+      const p = polygonPerimeter(h);
+      return a >= 0.5 && (2 * a) / Math.max(1e-3, p) >= 0.25;
+    };
+    const fileRings = clampPolysInsideOuter(extractPolyTreeRings(frameTree, cleanTol, 0.25), outer, cleanTol).map(fr => ({
+      outer: fr.outer,
+      holes: (fr.holes || []).filter(isRealHole).map(h => auditAndRepairContourNodes(h, { ccw: false })),
+    }));
     if (!fileRings.length) {
       return {
         ok: false,
@@ -615,7 +746,7 @@ export function expandAcrylicContoursWithOverlap(acrylicContours, overlapMm = 3,
   }
   const cleanTol = Math.min(0.05, Math.max(0.015, safeOverlap * 0.08));
   try {
-    const co = new Clipper.ClipperOffset(2.2, 0.2 * CLIPPER_SCALE);
+    const co = new Clipper.ClipperOffset(1.8, 0.2 * CLIPPER_SCALE);
     for (const poly of acrylicContours) {
       if (!poly?.outer || poly.outer.length < 3) continue;
       co.AddPath(toClipperPath(poly.outer, true), Clipper.JoinType.jtMiter, Clipper.EndType.etClosedPolygon);

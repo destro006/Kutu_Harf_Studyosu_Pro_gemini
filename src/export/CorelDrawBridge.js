@@ -118,13 +118,13 @@ export function generateCorelColoredSvg(sheets, previewColors = {}, projectName 
       const pStroke = p.colorHex || bodyHex;
       const grp = p.partGroup || 'body';
       itemsSvg.push(
-        `<path data-part="${escapeXml(p.label)}" data-group="${escapeXml(grp)}" d="${ringToD(p.outer, sh.heightMm)}" fill="none" stroke="${pStroke}" stroke-width="0.25" />`
+        `<path data-part="${escapeXml(p.label)}" data-group="${escapeXml(grp)}" d="${ringToD(p.outer, sh.heightMm)}" fill="none" stroke="${pStroke}" stroke-width="0.25" stroke-linejoin="round" stroke-linecap="round" />`
       );
       const holeStroke = grp === 'file_frame' ? pStroke : holesHex;
       for (const h of p.holes) {
         if (h.length < 3) continue;
         itemsSvg.push(
-          `<path data-hole-for="${escapeXml(p.label)}" d="${ringToD(h, sh.heightMm)}" fill="none" stroke="${holeStroke}" stroke-width="0.25" />`
+          `<path data-hole-for="${escapeXml(p.label)}" d="${ringToD(h, sh.heightMm)}" fill="none" stroke="${holeStroke}" stroke-width="0.25" stroke-linejoin="round" stroke-linecap="round" />`
         );
       }
     }
@@ -234,7 +234,8 @@ export function generateCorelVbaMacro(payload) {
         `  sh.Name = "${pName}"`,
         '  sh.Fill.ApplyNoFill',
         '  sh.Outline.Width = 0.2',
-        `  sh.Outline.Color.RGBAssign ${pr}, ${pg}, ${pb}`
+        `  sh.Outline.Color.RGBAssign ${pr}, ${pg}, ${pb}`,
+        '  On Error Resume Next: sh.Outline.LineJoin = 1: On Error GoTo Cleanup'
       );
 
       if (distinctHoleColor && grp !== 'file_frame' && part.holes.length) {
@@ -253,7 +254,8 @@ export function generateCorelVbaMacro(payload) {
             `  sh.Name = "${pName} - Ic Bosluk"`,
             '  sh.Fill.ApplyNoFill',
             '  sh.Outline.Width = 0.2',
-            `  sh.Outline.Color.RGBAssign ${hr}, ${hg}, ${hb}`
+            `  sh.Outline.Color.RGBAssign ${hr}, ${hg}, ${hb}`,
+            '  On Error Resume Next: sh.Outline.LineJoin = 1: On Error GoTo Cleanup'
           );
         }
       }
@@ -535,6 +537,7 @@ function Import-NestingToCorel($payload) {
         $shape.Fill.ApplyNoFill()
         $shape.Outline.Width = 0.2
         $shape.Outline.Color.RGBAssign([int]$pRgb[0], [int]$pRgb[1], [int]$pRgb[2])
+        try { $shape.Outline.LineJoin = 1 } catch {}
         $partsCount++
 
         if ($separateHoleLayer -and $holes) {
@@ -551,6 +554,7 @@ function Import-NestingToCorel($payload) {
             $hShape.Fill.ApplyNoFill()
             $hShape.Outline.Width = 0.2
             $hShape.Outline.Color.RGBAssign([int]$holesRgb[0], [int]$holesRgb[1], [int]$holesRgb[2])
+            try { $hShape.Outline.LineJoin = 1 } catch {}
           }
         }
       }
