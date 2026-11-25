@@ -1233,6 +1233,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .dock-helper { color:var(--muted); font-size:12px; line-height:1.55; margin:0 0 10px; }
 .stage-open-background { border:1px solid rgba(233,185,119,.4); border-radius:100px; padding:6px 12px; background:rgba(25,31,40,.92); color:#f4d3a6; cursor:pointer; font-size:12px; }
 .stage-open-background:hover { background:rgba(233,185,119,.2); }
+.stage-upload-photo { display:inline-flex; align-items:center; white-space:nowrap; }
 .background-preset-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
 .background-preset { min-width:0; display:flex; flex-direction:column; align-items:stretch; gap:5px; text-align:left; color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:7px; cursor:pointer; font-size:11px; }
 .background-preset.on { border-color:var(--accent); box-shadow:inset 0 0 0 1px rgba(233,185,119,.32); }

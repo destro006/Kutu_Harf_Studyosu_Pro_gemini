@@ -196,8 +196,9 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v8'));
-assert(rootHtml.includes('./src/main.js?v=20261125-v15'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261125-v15'));
+assert(rootHtml.includes('./src/main.js?v=20261125-v16'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261125-v16'));
+assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
 assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261125-v15'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 

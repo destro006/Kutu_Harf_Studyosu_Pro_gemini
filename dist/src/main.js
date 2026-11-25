@@ -189,6 +189,22 @@ function flushPendingTracerImage() {
   pendingTracerImage = null;
   return true;
 }
+function handlePhotomontagePhotoFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    lastPhotomontageScene = null;
+    lastPhotomontageUrl = null;
+    lastPhotomontageHaloUrl = null;
+    mutate('Müşteri fotoğrafı', s => {
+      s.photomontage.photoUrl = reader.result;
+      s.photomontage.photoName = file.name;
+      s.photomontage.visible = true;
+      s.photomontage.confirmed = false;
+    });
+  };
+  reader.readAsDataURL(file);
+}
 async function sendPhotomontageToTracer() {
   const s = store.get();
   if (!s.photomontage?.photoUrl || !photomontageOverlay) return false;
@@ -2384,19 +2400,8 @@ function bindWorkspaceEvents(ws, root) {
     });
     root.querySelector('#pmPhotoUpload')?.addEventListener('change', e => {
       const f = e.target.files?.[0];
-      if (!f) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        lastPhotomontageScene = null;
-        lastPhotomontageUrl = null;
-        mutate('Müşteri fotoğrafı', s => {
-          s.photomontage.photoUrl = reader.result;
-          s.photomontage.photoName = f.name;
-          s.photomontage.visible = true;
-          s.photomontage.confirmed = false;
-        });
-      };
-      reader.readAsDataURL(f);
+      if (f) handlePhotomontagePhotoFile(f);
+      e.target.value = '';
     });
     root.querySelector('#btnTogglePmConfirm')?.addEventListener('click', () => {
       const next = !store.get().photomontage?.confirmed;
@@ -4089,6 +4094,11 @@ function init() {
     store.update(s => { s.activeWorkspace = 'background'; s.ui.stackMode = 'tabs'; });
     renderActiveWorkspace();
     document.getElementById('inspectorCol')?.classList.add('mobile-open');
+  });
+  document.getElementById('stagePmPhotoUpload')?.addEventListener('change', e => {
+    const f = e.target.files?.[0];
+    if (f) handlePhotomontagePhotoFile(f);
+    e.target.value = '';
   });
   document.getElementById('btnToggleRail')?.addEventListener('click', () => {
     document.querySelector('.studio-body')?.classList.toggle('rail-expanded');
