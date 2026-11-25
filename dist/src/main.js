@@ -487,7 +487,7 @@ function updateStageChrome(state) {
 
 function pmRenderKey(state) {
   const l = state.lighting || {};
-  const objs = (state.objects || []).map(o => `${o.id}:${o.visible}:${o.text}:${o.fontId}:${o.faceMaterial}:${o.faceColor}:${o.lightingMode}:${o.backColor}:${o.backIntensity}:${o.frontColor}:${o.frontIntensity}:${o.xMm}:${o.yMm}:${o.scaleX}:${o.scaleY}`).join('|');
+  const objs = (state.objects || []).map(o => `${o.id}:${o.visible}:${o.constructionType || state.constructionType}:${o.text}:${o.fontId}:${o.faceMaterial}:${o.faceColor}:${o.acrylicMaterial}:${o.acrylicColor}:${o.lightingMode}:${o.lightSettings?.frontColor ?? ''}:${o.lightSettings?.frontIntensity ?? ''}:${o.lightSettings?.backColor ?? ''}:${o.lightSettings?.backIntensity ?? ''}:${o.xMm}:${o.yMm}:${o.scaleX}:${o.scaleY}`).join('|');
   return [state.scene?.night, l.enabled, l.mode, l.colorHex, l.frontColor, l.frontIntensity, l.backColor, l.backIntensity, l.haloSpread, l.wallDistanceMm, objs].join('~');
 }
 
@@ -496,6 +496,46 @@ function capturePhotomontageSign(state) {
   const capW = 1400;
   const capH = Math.max(380, Math.min(1000, Math.round(capW * ((sz.h + 0.30) / Math.max(0.5, sz.w + 0.36)))));
   return signEngine.capturePng(capW, capH, { transparent: true, fitToSign: true });
+}
+
+function applyConstructionType(s, ctype) {
+  s.constructionType = ctype;
+  // The inspector shows the first object when nothing is selected.
+  const ids = new Set((s.selectedIds || []).length ? s.selectedIds : [s.objects[0]?.id].filter(Boolean));
+  for (const o of s.objects) {
+    if (ids.has(o.id) && !o.locked) o.constructionType = ctype;
+  }
+  if (ctype === 'metal' || ctype === 'isiksiz') {
+    s.lighting.enabled = false;
+    s.lighting.mode = 'none';
+    for (const o of s.objects) if (ids.has(o.id) && !o.locked) o.lightingMode = 'none';
+  } else if (ctype === 'fileli' || ctype === 'pleksi') {
+    const wasOff = s.lighting.enabled === false;
+    s.lighting.enabled = true;
+    if (wasOff || !s.lighting.mode || s.lighting.mode === 'none') s.lighting.mode = 'front';
+    for (const o of s.objects) {
+      if (ids.has(o.id) && !o.locked && (wasOff || !o.lightingMode || o.lightingMode === 'none')) {
+        o.lightingMode = 'front';
+      }
+    }
+  } else if (ctype === 'halo') {
+    const wasOff = s.lighting.enabled === false;
+    s.lighting.enabled = true;
+    if (wasOff || !s.lighting.mode || s.lighting.mode === 'none') s.lighting.mode = 'halo';
+    for (const o of s.objects) {
+      if (ids.has(o.id) && !o.locked && (wasOff || !o.lightingMode || o.lightingMode === 'none')) {
+        o.lightingMode = 'halo';
+      }
+    }
+  }
+}
+
+function previewLightingColor(key, value) {
+  const state = store.get(), selected = selectedLightingObjects(state);
+  if (selected.length && selected.every(o => o.locked)) return;
+  store.updateScoped(selected.length ? ['objects'] : ['lighting'], s => setLightingValue(s, key, value));
+  const next = store.get();
+  if (is3DWorkspace(next)) signEngine?.updateLightAppearance(next);
 }
 
 function editLighting(key,value){
@@ -547,6 +587,7 @@ function updateNumericBar(state) {
     selectedPlacementId: selectedNestingId,
     fonts: fontManager.getAllFontMetas(),
     onLightingEdit:editLighting,
+    onSetConstruction: (c) => mutate('Yapı tipi değiştirildi', s => applyConstructionType(s, c)),
     getObjectSize: objectPhysicalSize,
     onEditSelected: (fn) => mutate('Özellik düzenlendi', s => {
       const o = getSelectedOrFirst(s);
@@ -1631,7 +1672,7 @@ function renderLightingWs(state) {
   const selection=selectedLightingObjects(state),obj=selection[0],light=resolveObjectLighting(obj,state);
   const mode=light.mode,enabled=light.enabled;
   const hasFront=mode==='front'||mode==='both',hasHalo=mode==='halo'||mode==='both';
-  const colorControls=(key,label)=>`<div class="field-row"><label>${label}</label><input type="color" data-light-color="${key}" value="${light[key]}" aria-label="${label}"></div><div class="swatches">${LIGHT_COLOR_PRESETS.map(c=>`<button type="button" class="sw ${light[key]===c.hex?'on':''}" style="--c:${c.hex}" data-light-key="${key}" data-lhex="${c.hex}" title="${c.label}"></button>`).join('')}</div>`;
+  const colorControls=(key,label)=>`<div class="field-row"><label>${label}</label><input type="color" data-light-color="${key}" value="${light[key]}" aria-label="${label}"></div><div class="swatches">${LIGHT_COLOR_PRESETS.map(c=>`<button type="button" class="sw ${String(light[key]||'').toLowerCase()===c.hex.toLowerCase()?'on':''}" style="--c:${c.hex}" data-light-key="${key}" data-lhex="${c.hex}" title="${c.label}"></button>`).join('')}</div>`;
 
   return `
     <div class="lighting-column">
@@ -1921,19 +1962,7 @@ function bindWorkspaceEvents(ws, root) {
   }));
   if (ws === 'design' || ws === 'properties') {
     root.querySelectorAll('[data-ctype]').forEach(b => b.onclick = () => {
-      mutate('Yapı tipi değiştirildi', s => {
-        s.constructionType = b.dataset.ctype;
-        // The inspector shows the first object when nothing is selected.
-        // Apply the change to that same object, not only to project defaults.
-        const ids = new Set((s.selectedIds || []).length ? s.selectedIds : [s.objects[0]?.id].filter(Boolean));
-        for (const o of s.objects) {
-          if (ids.has(o.id) && !o.locked) o.constructionType = b.dataset.ctype;
-        }
-        if (b.dataset.ctype === 'metal' || b.dataset.ctype === 'isiksiz') {
-          s.lighting.enabled = false; s.lighting.mode = 'none';
-          for (const o of s.objects) if (ids.has(o.id) && !o.locked) o.lightingMode = 'none';
-        }
-      });
+      mutate('Yapı tipi değiştirildi', s => applyConstructionType(s, b.dataset.ctype));
     });
 
     const textIn = root.querySelector('#wsTextIn');
@@ -2225,7 +2254,10 @@ function bindWorkspaceEvents(ws, root) {
     root.querySelectorAll('[data-lmode]').forEach(b=>b.onclick=()=>editLighting('mode',b.dataset.lmode));
     root.querySelector('#chkLightEnabled')?.addEventListener('change',e=>mutate('Işık durumu',s=>{s.lighting.enabled=e.target.checked;}));
     root.querySelectorAll('[data-lhex]').forEach(b=>b.onclick=()=>editLighting(b.dataset.lightKey,b.dataset.lhex));
-    root.querySelectorAll('[data-light-color]').forEach(el=>el.addEventListener('change',e=>editLighting(el.dataset.lightColor,e.target.value)));
+    root.querySelectorAll('[data-light-color]').forEach(el => {
+      el.addEventListener('input', e => previewLightingColor(el.dataset.lightColor, e.target.value));
+      el.addEventListener('change', e => editLighting(el.dataset.lightColor, e.target.value));
+    });
     const bindL=(id,key,mirrorId=null)=>{
       const el=root.querySelector('#'+id);if(!el)return;
       el.addEventListener('input',e=>{const mirror=mirrorId&&root.querySelector('#'+mirrorId);if(mirror)mirror.value=e.target.value;});
@@ -4566,7 +4598,7 @@ function init() {
     dupPage: () => document.getElementById('btnDupPage')?.click(),
     delPage: () => document.getElementById('btnDelPage')?.click(),
     tool: (t) => activateTool(t),
-    setConstruction: (c) => mutate('Yapı tipi', s => { s.constructionType = c; const o = getSelectedOrFirst(s); if (o) o.constructionType = c; }),
+    setConstruction: (c) => mutate('Yapı tipi', s => applyConstructionType(s, c)),
     setLightingMode: (m) => mutate('Aydınlatma', s => { s.lighting.mode = m; const o = getSelectedOrFirst(s); if (o) o.lightingMode = m; }),
     toggleNight: () => mutate('Ortam', s => { s.scene.night = !s.scene.night; }),
     runNesting: () => { setMainWorkspace('nesting'); runAutoNesting(); },

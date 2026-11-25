@@ -481,28 +481,42 @@ export function createSignMaterial(presetId, overrides = {}, lightContext = {}) 
   // Acrylic (Opal or Colored Translucent)
   const opacity = overrides.acrylicOpacity ?? preset.opacity ?? 0.92;
   const transmission = overrides.acrylicTransmission ?? preset.transmission ?? 0.18;
-  const isOpal = presetId === 'opalPleksi';
+  const isOpal = presetId === 'opalPleksi' || presetId === 'beyazPleksi';
 
   const mat = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(colorHex),
     metalness: 0,
     roughness: Math.max(0.04, Math.min(0.8, roughness)),
-    clearcoat: 1.0,
+    clearcoat: lit ? 0.65 : 1.0,
     clearcoatRoughness: 0.06,
     sheen: 0.2,
-    transparent: opacity < 0.99 || transmission > 0.05,
-    opacity: lit ? Math.max(0.95, opacity) : opacity,
+    transparent: lit ? false : (opacity < 0.99 || transmission > 0.05),
+    opacity: lit ? 1.0 : opacity,
     transmission: lit ? 0 : transmission * 0.45,
     ior: 1.49,
-    envMapIntensity,
+    envMapIntensity: lit ? envMapIntensity * 0.55 : envMapIntensity,
   });
 
   if (lit) {
-    const baseEmissive = isOpal ? (night ? 3.2 : 1.35) : (night ? 1.25 : 0.5);
     mat.userData.updateLed = (hex, intensity) => {
-      mat.color.set(intensity <= 0 ? colorHex : isOpal ? mixHex('#ffffff', hex, 0.35) : colorHex);
-      mat.emissive.set(isOpal ? hex : mixHex(colorHex, hex, 0.12));
-      mat.emissiveIntensity = baseEmissive * Math.max(0, intensity);
+      const safeInt = Math.max(0, Number(intensity) || 0);
+      if (safeInt <= 0) {
+        mat.color.set(colorHex);
+        mat.emissive.set('#000000');
+        mat.emissiveIntensity = 0;
+        return;
+      }
+      const eff = safeInt <= 1 ? safeInt : 1 + Math.log1p(safeInt - 1) * 0.55;
+      if (isOpal) {
+        const tint = Math.min(0.96, 0.85 + 0.11 * Math.min(1, safeInt));
+        mat.color.set(mixHex(colorHex, hex, tint));
+        mat.emissive.set(hex);
+        mat.emissiveIntensity = (night ? 1.15 : 0.85) * eff;
+      } else {
+        mat.color.set(mixHex(colorHex, hex, 0.45));
+        mat.emissive.set(mixHex(colorHex, hex, 0.70));
+        mat.emissiveIntensity = (night ? 1.0 : 0.72) * eff;
+      }
     };
     mat.userData.updateLed(glowHex, lightIntensity);
   }

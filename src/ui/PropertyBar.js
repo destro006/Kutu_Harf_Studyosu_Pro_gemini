@@ -297,7 +297,10 @@ function bindObjectBarEvents(bar, sel, ctx, unit) {
   bar.querySelector('#btnPropLock')?.addEventListener('click', () => ctx.onEditSelected?.(o => { o.proportionalLock = !(o.proportionalLock !== false); }));
   bar.querySelector('#btnCenterOnPage')?.addEventListener('click', () => ctx.onEditSelected?.(o => { o.xMm = 0; o.yMm = 0; }));
   bar.querySelector('#pbFont')?.addEventListener('change', e => ctx.onEditSelected?.(o => { o.fontId = e.target.value; }));
-  bar.querySelector('#pbCtype')?.addEventListener('change', e => ctx.onEditSelected?.(o => { o.constructionType = e.target.value; }));
+  bar.querySelector('#pbCtype')?.addEventListener('change', e => {
+    if (ctx.onSetConstruction) ctx.onSetConstruction(e.target.value);
+    else ctx.onEditSelected?.(o => { o.constructionType = e.target.value; });
+  });
   bar.querySelector('#pbLmode')?.addEventListener('change', e => {if(ctx.onLightingEdit)ctx.onLightingEdit('mode',e.target.value);else ctx.onEditSelected?.(o=>{o.lightingMode=e.target.value;});});
   bar.querySelectorAll('[data-pb-act]').forEach(b => b.onclick = () => ctx.onCadAction?.(b.dataset.pbAct));
   bar.querySelectorAll('[data-pb-tool]').forEach(b => b.onclick = () => ctx.onTool?.(b.dataset.pbTool));

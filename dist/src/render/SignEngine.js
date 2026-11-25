@@ -687,22 +687,18 @@ export class SignEngine {
           { lit: false, night, isOpaqueMetal: true }
         );
         acrylicMat = createSignMaterial(
-          obj.acrylicMaterial || 'opalPleksi',
-          { ...acrylicOverrides, color: obj.acrylicColor || state.fileli?.acrylicColor || '#f3f3ee' },
+          metalBinding.acrylicId || obj.acrylicMaterial || 'opalPleksi',
+          { ...acrylicOverrides, color: metalBinding.acrylicColor || obj.acrylicColor || state.fileli?.acrylicColor || '#f3f3ee' },
           { lit: hasFront, night, glowHex, lightIntensity: frontInt }
         );
         if (typeof acrylicMat.userData?.updateLed === 'function') frontMats.push(acrylicMat);
       } else if (cType === 'pleksi') {
-        sideMat = createSignMaterial(
-          metalBinding.sideId,
-          { ...matOverrides, color: metalBinding.sideColor },
-          { lit: false, night, isOpaqueMetal: true }
-        );
         acrylicMat = createSignMaterial(
-          obj.acrylicMaterial || (obj.faceMaterial === 'renkliPleksi' ? 'renkliPleksi' : 'opalPleksi'),
-          { ...acrylicOverrides, color: obj.faceColor || obj.acrylicColor || state.fileli?.acrylicColor || '#f3f3ee' },
+          metalBinding.acrylicId || 'opalPleksi',
+          { ...acrylicOverrides, color: metalBinding.acrylicColor || '#f3f3ee' },
           { lit: hasFront, night, glowHex, lightIntensity: frontInt }
         );
+        sideMat = acrylicMat;
         if (typeof acrylicMat.userData?.updateLed === 'function') frontMats.push(acrylicMat);
       } else {
         faceMat = createSignMaterial(

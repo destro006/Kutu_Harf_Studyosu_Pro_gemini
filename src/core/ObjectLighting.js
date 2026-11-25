@@ -9,7 +9,9 @@ export function setLightingValue(s,key,value){
  let v;if(key==='mode'){if(!['front','halo','both','none'].includes(value))return false;v=value;}
  else if(['frontColor','backColor'].includes(key)){v=hex(value,null);if(!v)return false;}
  else if(['frontIntensity','backIntensity','wallDistanceMm','haloSpread','falloff'].includes(key)){v=num(value,null,...(key==='wallDistanceMm'?[5,150]:['haloSpread','falloff'].includes(key)?[.3,2.5]:[0,3]));if(v===null)return false;}else return false;
+ let changed=false;
+ if(key==='mode'&&v!=='none'&&s.lighting?.enabled===false){s.lighting={...s.lighting,enabled:true};changed=true;}
  const selected=selectedLightingObjects(s);
- if(selected.length){let changed=false;for(const o of selected){if(o.locked||resolveObjectLighting(o,s)[key]===v)continue;if(key==='mode')o.lightingMode=v;else o.lightSettings={...o.lightSettings,[key]:v};changed=true;}return changed;}
- if(s.lighting[key]===v)return false;s.lighting[key]=v;return true;
+ if(selected.length){for(const o of selected){if(o.locked||resolveObjectLighting(o,s)[key]===v)continue;if(key==='mode')o.lightingMode=v;else o.lightSettings={...o.lightSettings,[key]:v};changed=true;}return changed;}
+ if(s.lighting[key]===v)return changed;s.lighting[key]=v;return true;
 }
