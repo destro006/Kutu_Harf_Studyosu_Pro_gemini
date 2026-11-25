@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { MACHINE_PROFILES, MACHINE_PROFILE_CATEGORIES, getMachineProfile, generateNestedGcode, generateNestedHpgl } from '../src/export/CncGcodeExporter.js';
 import { postScriptToPdf } from '../src/manufacturing/PostScriptWasmImport.js';
 import { extractAiOutlineFallback } from '../src/manufacturing/LegacyPostScriptImport.js';
@@ -164,3 +165,16 @@ assert.equal(emfRes.items.length, 1);
 assert(Math.abs(emfRes.widthMm - 100) < 0.1);
 assert(Math.abs(emfRes.heightMm - 50) < 0.1);
 console.log('✓ Pure-JS WMF and EMF binary vector imports verified');
+
+// 9. Trace Studio Pro integrated as Image Tracer tab immediately left of Nesting
+const rootHtml = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const tracerBtn = rootHtml.indexOf('data-main-ws="tracer"');
+const nestingBtn = rootHtml.indexOf('data-main-ws="nesting"');
+assert(tracerBtn > 0 && nestingBtn > tracerBtn, 'Image Tracer tab must precede Nesting tab');
+const between = rootHtml.slice(tracerBtn + 'data-main-ws="tracer"'.length, nestingBtn);
+assert(!between.includes('data-main-ws='), 'Image Tracer tab must sit immediately left of Nesting');
+const traceStudioHtml = fs.readFileSync(new URL('../public/trace-studio/index.html', import.meta.url), 'utf8');
+assert(traceStudioHtml.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && traceStudioHtml.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
+const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
+console.log('✓ Image Tracer tab, bridge, and position left of Nesting verified');

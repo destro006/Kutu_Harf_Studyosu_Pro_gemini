@@ -2789,6 +2789,7 @@ function setMainWorkspace(ws) {
   const previous=store.get().mainWorkspace;
   if(previous!==ws){nestingGesture?.cancel?.();nestingGesture=null;signEngine?.cancelActiveDrag?.();cancelShapePlacement?.();ribbonSuppressed=store.get().activeWorkspace;store.updateScoped([],s=>{s.activeWorkspace=sideWorkspace;});window.dispatchEvent(new Event('studio-close-menus'));}
   document.getElementById('studioBody')?.classList.toggle('nesting-isolated',ws==='nesting');
+  document.getElementById('studioBody')?.classList.toggle('tracer-isolated',ws==='tracer');
   store.updateScoped([],s => { s.mainWorkspace = ws; });
   document.querySelectorAll('#mainWorkspaceTabs button').forEach(b => b.classList.toggle('on', b.dataset.mainWs === ws));
 
@@ -2797,6 +2798,11 @@ function setMainWorkspace(ws) {
   document.getElementById('stageViewsBar')?.classList.toggle('hidden', !is3D);
   document.getElementById('stageBottomTools')?.classList.toggle('hidden', !is3D);
   document.getElementById('vector2DWrap')?.classList.toggle('hidden', ws !== 'design2d');
+  const tracerWrap = document.getElementById('tracerCenterWrap');
+  tracerWrap?.classList.toggle('hidden', ws !== 'tracer');
+  if (ws === 'tracer' && tracerWrap && !tracerWrap.querySelector('#traceStudioFrame')) {
+    tracerWrap.innerHTML = '<iframe id="traceStudioFrame" class="tracer-iframe" src="./public/trace-studio/index.html" title="Image Tracer Stüdyosu"></iframe>';
+  }
   document.getElementById('nestingCenterWrap')?.classList.toggle('hidden', ws !== 'nesting');
   document.getElementById('cncCenterWrap')?.classList.toggle('hidden', ws !== 'cnc');
   document.getElementById('costCenterWrap')?.classList.toggle('hidden', ws !== 'cost');
@@ -3818,6 +3824,26 @@ function init() {
   store.updateScoped([],s=>{s.activeWorkspace='layers';});
   bindRibbon();
   document.getElementById('globalLogoImport')?.addEventListener('change',e=>{const file=e.target.files?.[0];e.target.value='';if(file){if(/\.(svg|png|jpe?g|webp)$/i.test(file.name))handleLogoUpload(file);else{openNestingVectorImport(false);importNestingVectorFiles([file],document.getElementById('nestingCenterWrap'));}}});
+  window.addEventListener('message', async (e) => {
+    if (e.origin && e.origin !== window.location.origin && e.origin !== 'null') return;
+    const msg = e.data;
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'SIGNAGE_STUDIO_IMPORT_VECTOR' && msg.svgText) {
+      const name = String(msg.fileName || 'trace_vektor').replace(/\.svg$/i, '') + '.svg';
+      const file = new File([msg.svgText], name, { type: 'image/svg+xml' });
+      setMainWorkspace('model3d');
+      await handleLogoUpload(file);
+      studioToast('Image Tracer vektörü 3D sahneye aktarıldı.');
+    } else if (msg.type === 'SIGNAGE_STUDIO_IMPORT_NESTING' && (msg.svgText || msg.dxfText)) {
+      const useSvg = Boolean(msg.svgText);
+      const rawName = String(msg.fileName || 'trace_vektor').replace(/\.(svg|dxf)$/i, '');
+      const file = new File([useSvg ? msg.svgText : msg.dxfText], rawName + (useSvg ? '.svg' : '.dxf'), {
+        type: useSvg ? 'image/svg+xml' : 'application/dxf',
+      });
+      openNestingVectorImport(false);
+      await importNestingVectorFiles([file], document.getElementById('nestingCenterWrap'));
+    }
+  });
   const menuToggle=document.getElementById('mobileMenuToggle'),railToggle=document.getElementById('mobileRailToggle');
   menuToggle?.addEventListener('click',()=>{const on=document.getElementById('mainMenuBar').classList.toggle('mobile-menu-open');menuToggle.setAttribute('aria-expanded',String(on));});
   railToggle?.addEventListener('click',()=>{const on=document.getElementById('studioBody').classList.toggle('mobile-rail-open');railToggle.setAttribute('aria-expanded',String(on));});

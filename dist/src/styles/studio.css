@@ -1488,6 +1488,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 
 .studio-body.nesting-isolated{grid-template-columns:82px minmax(0,1fr) 0!important}.studio-body.nesting-isolated.rail-expanded{grid-template-columns:168px minmax(0,1fr) 0!important}.studio-body.nesting-isolated>.inspector-col{display:none!important}@media(max-width:960px){.studio-body.nesting-isolated{grid-template-columns:56px minmax(0,1fr)!important}.studio-body.nesting-isolated.rail-expanded{grid-template-columns:56px minmax(0,1fr)!important}}
 
+/* Embedded Image Tracer Studio full-bleed workspace */
+.studio-body.tracer-isolated{grid-template-columns:minmax(0,1fr)!important}
+.studio-body.tracer-isolated>.cad-rail,.studio-body.tracer-isolated>.inspector-col,.studio-body.tracer-isolated>.docker-resizer{display:none!important}
+.studio-body.tracer-isolated .prop-bar,.studio-body.tracer-isolated .studio-ribbon,.studio-body.tracer-isolated .page-tabs-bar,.studio-body.tracer-isolated .stage-dims,.studio-body.tracer-isolated .cad-overlay{display:none!important}
+#tracerCenterWrap{padding:0;overflow:hidden;background:#0b0f17}
+.tracer-iframe{width:100%;height:100%;border:0;display:block;background:#0b0f17}
+
 /* Non-modal, accessible progress for the currently selected material only. */
 .wall-loading{position:absolute;left:50%;top:18%;transform:translateX(-50%);width:min(360px,85%);padding:12px 15px;z-index:35;background:rgba(17,22,30,.94);border:1px solid #80633e;border-radius:12px;box-shadow:0 8px 28px #0006;color:#f5e8d0;pointer-events:none}
 .wall-loading-top{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12px;margin-bottom:9px}.wall-loading-top strong{font-variant-numeric:tabular-nums;color:#e8b875;flex-shrink:0}.wall-loading progress{display:block;width:100%;height:7px;accent-color:#d4a664;border:0;border-radius:8px;overflow:hidden}.wall-loading progress::-webkit-progress-bar{background:#303844;border-radius:8px}.wall-loading progress::-webkit-progress-value{background:#d4a664;border-radius:8px}.wall-loading.wall-load-error{pointer-events:auto;border-color:#e68170}.wall-loading .sec-btn{margin-top:10px}.wall-loading.hidden,.wall-loading .hidden{display:none!important}

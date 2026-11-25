@@ -1,0 +1,3218 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kutu Harf Stüdyosu — Resim İyileştirme &amp; Vektör Trace Stüdyosu</title>
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --bg-bar: #0f1520;
+      --panel: #121926;
+      --card: #161f2f;
+      --card-hover: #1c273b;
+      --input: #0c111b;
+      --border: rgba(255, 255, 255, 0.085);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --accent: #d4a24c;
+      --accent-hi: #e5b865;
+      --accent-soft: rgba(212, 162, 76, 0.15);
+      --ok: #34d399;
+      --info: #60a5fa;
+      --danger: #f87171;
+      --text: #e6ebf2;
+      --muted: #8b98ad;
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: var(--text);
+      font-size: 12.5px; line-height: 1.4;
+      overflow: hidden; user-select: none;
+    }
+    button, input, select { font-family: inherit; color: inherit; }
+
+    /* Top Chrome matching Kutu Harf Stüdyosu */
+    .app-shell { display: flex; flex-direction: column; height: 100vh; }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 7px 14px; background: var(--bg-bar);
+      border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand-mark {
+      width: 28px; height: 28px; border-radius: 6px;
+      background: linear-gradient(135deg, #e5b865, #b4822c);
+      color: #0b0f17; font-weight: 800; font-size: 12px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.35);
+    }
+    .brand h1 { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.01em; }
+    .brand p { margin: 0; font-size: 11px; color: var(--muted); }
+
+    .toolbar-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .sec-btn {
+      background: var(--card); color: var(--text);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 6px 10px; font-size: 11.5px; font-weight: 500;
+      cursor: pointer; transition: 0.14s ease; display: inline-flex; align-items: center; gap: 5px;
+    }
+    .sec-btn:hover:not(:disabled) { background: var(--card-hover); border-color: var(--border-strong); }
+    .sec-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .sec-btn.active {
+      background: var(--accent-soft); border-color: var(--accent); color: var(--accent-hi);
+    }
+    .cta-btn {
+      background: linear-gradient(180deg, var(--accent-hi), var(--accent));
+      color: #0b0f17; border: 1px solid #f1ca7f; border-radius: 6px;
+      padding: 7px 12px; font-size: 12px; font-weight: 700;
+      cursor: pointer; transition: 0.14s ease; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .cta-btn:hover:not(:disabled) { filter: brightness(1.06); }
+    .cta-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .hidden { display: none !important; }
+
+    /* 3-Column CAD Workspace */
+    .workspace { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+    .dock-left {
+      width: 288px; background: var(--panel); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; flex-shrink: 0; min-height: 0;
+    }
+    .dock-right {
+      width: 336px; background: var(--panel); border-left: 1px solid var(--border);
+      overflow-y: auto; padding: 7px 8px; display: flex; flex-direction: column; gap: 5px; flex-shrink: 0;
+    }
+    .center-stage {
+      flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: #080b12;
+    }
+
+    /* Left Mini Preview + Presets */
+    .mini-box { padding: 10px; border-bottom: 1px solid var(--border); }
+    .mini-frame {
+      height: 88px; width: 100%; border-radius: 6px; background: #070a10;
+      border: 1px solid var(--border); display: flex; align-items: center; justify-content: center;
+      position: relative; overflow: hidden;
+    }
+    .mini-frame canvas { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .dim-badge {
+      position: absolute; right: 5px; bottom: 5px; font-size: 10px; font-family: ui-monospace, monospace;
+      background: rgba(11, 15, 23, 0.85); border: 1px solid var(--border); padding: 1px 6px; border-radius: 4px; color: var(--muted);
+    }
+    .scale-row { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
+    .scale-head { display: flex; align-items: center; justify-content: space-between; }
+    .scale-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .seg-group { display: grid; grid-template-columns: repeat(5, 1fr); width: 100%; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+    .seg-group button {
+      background: var(--input); border: none; border-right: 1px solid var(--border);
+      padding: 4px 4px; font-size: 11px; cursor: pointer; color: var(--muted); font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .seg-group button:last-child { border-right: none; }
+    .seg-group button.on { background: var(--accent); color: #0b0f17; }
+
+    .preset-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .preset-card {
+      display: flex; align-items: center; gap: 9px; text-align: left; width: 100%;
+      padding: 7px 8px; border-radius: 7px; background: var(--card); border: 1px solid var(--border);
+      cursor: pointer; transition: 0.14s ease;
+    }
+    .preset-card:hover { background: var(--card-hover); border-color: var(--border-strong); }
+    .preset-card.active {
+      background: linear-gradient(135deg, rgba(212, 162, 76, 0.18), rgba(212, 162, 76, 0.04));
+      border-color: var(--accent); box-shadow: 0 0 0 1px rgba(212, 162, 76, 0.28);
+    }
+    .preset-thumb {
+      width: 44px; height: 34px; border-radius: 5px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 800; color: #fff; border: 1px solid rgba(255,255,255,0.14);
+    }
+    .preset-name { font-size: 12px; font-weight: 600; color: var(--text); }
+    .preset-desc { font-size: 10.5px; color: var(--muted); line-height: 1.3; margin-top: 1px; }
+
+    .left-footer { padding: 10px; border-top: 1px solid var(--border); background: var(--bg-bar); }
+    .progress-wrap { margin-bottom: 8px; }
+    .progress-head { display: flex; justify-content: space-between; font-size: 11px; color: var(--accent-hi); margin-bottom: 4px; }
+    .progress-track { height: 5px; background: var(--input); border-radius: 99px; overflow: hidden; border: 1px solid var(--border); }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-hi)); width: 0%; transition: width 0.1s linear; }
+
+    /* Center Bar & Stage */
+    .stage-bar {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 6px 12px; background: var(--bg-bar); border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .view-tabs { display: flex; gap: 4px; }
+    .view-tab {
+      background: transparent; border: 1px solid transparent; border-radius: 5px;
+      padding: 4px 10px; font-size: 11.5px; font-weight: 600; color: var(--muted); cursor: pointer;
+    }
+    .view-tab:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+    .view-tab.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-hi); }
+
+    .zoom-bar { display: flex; align-items: center; gap: 4px; }
+    .zoom-val { min-width: 48px; text-align: center; font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--text); }
+
+    .stage-scroll {
+      flex: 1; position: relative; overflow: auto;
+      display: flex; align-items: center; justify-content: center; padding: 18px;
+      background-image: radial-gradient(rgba(255,255,255,0.04) 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+    .checker-bg {
+      background-color: #131924;
+      background-image:
+        linear-gradient(45deg, #1b2332 25%, transparent 25%),
+        linear-gradient(-45deg, #1b2332 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #1b2332 75%),
+        linear-gradient(-45deg, transparent 75%, #1b2332 75%);
+      background-size: 16px 16px;
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    }
+    .raster-stage {
+      position: relative; flex-shrink: 0; border-radius: 7px;
+      border: 1px solid var(--border-strong); overflow: hidden;
+      box-shadow: 0 18px 45px rgba(0,0,0,0.6); cursor: ew-resize;
+    }
+    .raster-stage canvas { display: block; }
+    .before-clip { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+    .split-handle {
+      position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent);
+      box-shadow: 0 0 10px rgba(0,0,0,0.85); pointer-events: none; z-index: 10;
+    }
+    .split-knob {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 30px; height: 30px; border-radius: 999px; background: var(--accent);
+      color: #0b0f17; border: 2px solid #fff; font-weight: 800; font-size: 12px;
+      display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+    }
+    .corner-tag {
+      position: absolute; top: 8px; padding: 2px 8px; border-radius: 4px; font-size: 10.5px;
+      font-weight: 700; pointer-events: none; z-index: 5;
+    }
+    .corner-tag.left { left: 8px; background: rgba(11, 15, 23, 0.8); color: var(--text); border: 1px solid var(--border); }
+    .corner-tag.right { right: 8px; background: var(--accent); color: #0b0f17; }
+
+    .vector-stage {
+      width: 100%; height: 100%; border-radius: 7px; border: 1px solid var(--border-strong);
+      position: relative; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    .vector-stage.bg-light { background: #f3f5f8; }
+    .vector-stage.bg-dark { background: #070a10; }
+    .vector-overlay-ctrl {
+      position: absolute; top: 10px; right: 10px; z-index: 10;
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+      background: rgba(15, 21, 32, 0.92); border: 1px solid var(--border); padding: 4px 9px; border-radius: 6px;
+    }
+    .vbg-group { display: inline-flex; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+    .vbg-btn {
+      background: var(--input); border: none; border-right: 1px solid var(--border);
+      padding: 2px 7px; font-size: 10.5px; color: var(--muted); cursor: pointer; font-weight: 600;
+    }
+    .vbg-btn:last-child { border-right: none; }
+    .vbg-btn.on { background: var(--accent); color: #0b0f17; }
+
+    .drop-overlay {
+      position: absolute; inset: 12px; z-index: 30; border-radius: 10px;
+      border: 2px dashed var(--accent); background: rgba(212, 162, 76, 0.1);
+      backdrop-filter: blur(4px); display: flex; flex-direction: column;
+      align-items: center; justify-content: center; pointer-events: none;
+    }
+
+    .statusbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+      padding: 5px 12px; background: var(--bg-bar); border-top: 1px solid var(--border);
+      font-size: 11px; color: var(--muted); flex-shrink: 0;
+    }
+    .statusbar .ok { color: var(--ok); font-weight: 600; }
+    .statusbar .busy { color: var(--accent-hi); font-weight: 600; }
+
+    /* Right Panel CAD Sections (.sec) matching Kutu Harf Stüdyosu */
+    .sec {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 7px 9px; display: flex; flex-direction: column; gap: 5px;
+    }
+    .sec-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .sec-title {
+      margin: 0; font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--accent-hi);
+    }
+    .badge {
+      font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px;
+      background: var(--input); border: 1px solid var(--border); color: var(--muted);
+    }
+    .badge.gold { background: var(--accent-soft); border-color: rgba(212, 162, 76, 0.4); color: var(--accent-hi); }
+    .badge.ok { background: rgba(52, 211, 153, 0.14); border-color: rgba(52, 211, 153, 0.35); color: var(--ok); }
+    .badge.info { background: rgba(96, 165, 250, 0.14); border-color: rgba(96, 165, 250, 0.35); color: var(--info); }
+
+    .scan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    .scan-cell {
+      background: var(--input); border: 1px solid var(--border); border-radius: 6px; padding: 5px 7px;
+    }
+    .scan-cell span { display: block; font-size: 10px; color: var(--muted); }
+    .scan-cell strong { font-size: 11px; color: var(--text); font-weight: 600; }
+
+    .field-row { display: flex; flex-direction: column; gap: 3px; }
+    .field-row label { font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; }
+    select, input[type="text"], input[type="number"] {
+      width: 100%; background: var(--input); border: 1px solid var(--border); border-radius: 6px;
+      padding: 5px 8px; font-size: 11.5px; color: var(--text); outline: none;
+    }
+    select:focus, input[type="text"]:focus, input[type="number"]:focus { border-color: var(--accent); }
+    :focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 2px; }
+    ::selection { background: var(--accent-soft); color: var(--accent-hi); }
+    input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer; }
+    .chk-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text); cursor: pointer; }
+    .chk-row input { accent-color: var(--accent); margin: 0; }
+    .hint { margin: 0; font-size: 10.5px; color: var(--muted); line-height: 1.35; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .btn-row { display: flex; gap: 6px; }
+    .dim-badge, .zoom-val, .statusbar, .badge, .lbl-val { font-variant-numeric: tabular-nums; }
+    .ico { width: 14px; height: 14px; flex-shrink: 0; display: inline-block; vertical-align: middle; }
+    .palette-strip { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; min-height: 22px; padding: 2px 0; }
+    .swatch-chip {
+      display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px 2px 4px;
+      border-radius: 99px; background: var(--input); border: 1px solid var(--border-strong);
+      font-size: 10px; font-weight: 600; color: var(--text); cursor: pointer; transition: 0.14s ease;
+    }
+    .swatch-chip:hover { border-color: var(--accent); }
+    .swatch-chip.off { opacity: 0.42; text-decoration: line-through; border-style: dashed; }
+    .swatch-dot { width: 11px; height: 11px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.28); flex-shrink: 0; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition: none !important; animation: none !important; }
+    }
+
+    .toast {
+      position: fixed; bottom: 38px; left: 50%; transform: translateX(-50%); z-index: 60;
+      padding: 7px 14px; border-radius: 6px; background: #131b29;
+      border: 1px solid var(--accent); color: var(--accent-hi);
+      font-size: 11.5px; font-weight: 600; box-shadow: 0 10px 30px rgba(0,0,0,0.65);
+    }
+
+    @media (max-width: 1024px) {
+      body { overflow: auto; }
+      .app-shell { height: auto; min-height: 100vh; }
+      .workspace { flex-direction: column; overflow: visible; }
+      .dock-left, .dock-right { width: 100%; max-height: none; border-right: none; border-left: none; border-bottom: 1px solid var(--border); }
+      .preset-list { display: grid; grid-template-columns: 1fr 1fr; max-height: 220px; }
+      .stage-scroll { min-height: 360px; }
+    }
+    @media (max-width: 600px) {
+      .preset-list { grid-template-columns: 1fr; }
+      .stage-bar { flex-wrap: wrap; padding: 6px 8px; }
+      .view-tab { padding: 4px 7px; font-size: 11px; }
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: #2a364d; border-radius: 99px; }
+  </style>
+</head>
+<body>
+<div class="app-shell">
+
+  <!-- Top Navigation matching Kutu Harf Stüdyosu -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">KH</div>
+      <div>
+        <h1>Resim İyileştirme &amp; Vektör Trace Stüdyosu</h1>
+        <p>Kutu Harf Stüdyosu • Süper Çözünürlük · Çeper Histogramlı Arka Plan Silme · Eğri-Korumalı SVG/DXF</p>
+      </div>
+    </div>
+
+    <div class="toolbar-actions">
+      <button id="btnUndo" type="button" class="sec-btn" disabled title="Geri Al (Ctrl+Z)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg>
+        Geri Al
+      </button>
+      <button id="btnRedo" type="button" class="sec-btn" disabled title="Yinele (Ctrl+Y)">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/></svg>
+        Yinele
+      </button>
+      <label class="sec-btn" style="cursor:pointer">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Görsel Yükle
+        <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/gif" class="hidden" />
+      </label>
+      <button id="btnSampleLogo" type="button" class="sec-btn">Örnek Tabela</button>
+      <button id="btnSampleBadge" type="button" class="sec-btn">Örnek Amblem</button>
+      <button id="btnSendToNesting" type="button" class="sec-btn" title="İzlenen vektörü doğrudan Nesting sekmesine gönder">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        Nesting'e Gönder
+      </button>
+      <button id="btnSendToStudio" type="button" class="cta-btn" title="SVG vektörünü Kutu Harf Stüdyosuna aktar">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        Sahneye Aktar
+      </button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <!-- LEFT DOCK: Mini Preview + 8 Enhancement Models -->
+    <aside class="dock-left">
+      <div class="mini-box">
+        <div class="mini-frame">
+          <canvas id="miniPreviewCanvas"></canvas>
+          <span id="miniDimBadge" class="dim-badge">0×0</span>
+        </div>
+        <div class="scale-row">
+          <div class="scale-head">
+            <span class="scale-label">Büyütme Ölçeği</span>
+            <span id="scaleCapHint" class="hint" style="font-size:10px;font-variant-numeric:tabular-nums">2×</span>
+          </div>
+          <div class="seg-group">
+            <button type="button" data-scale="1" class="scale-btn">1×</button>
+            <button type="button" data-scale="2" class="scale-btn on">2×</button>
+            <button type="button" data-scale="4" class="scale-btn">4×</button>
+            <button type="button" data-scale="8" class="scale-btn">8×</button>
+            <button type="button" data-scale="16" class="scale-btn">16×</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="presetList" class="preset-list"></div>
+
+      <div class="left-footer">
+        <div id="progressWrap" class="progress-wrap hidden">
+          <div class="progress-head">
+            <span id="progressLabel">İşleniyor...</span>
+            <span id="progressPct">0%</span>
+          </div>
+          <div class="progress-track"><div id="progressBar" class="progress-fill"></div></div>
+        </div>
+        <button id="btnProcess" type="button" class="cta-btn" style="width:100%">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+          İşle (İyileştir &amp; Netleştir)
+        </button>
+      </div>
+    </aside>
+
+    <!-- CENTER STAGE -->
+    <main class="center-stage">
+      <div class="stage-bar">
+        <div class="view-tabs">
+          <button type="button" data-view="compare" class="view-tab on">Önce / Sonra</button>
+          <button type="button" data-view="result" class="view-tab">İşlenmiş Sonuç</button>
+          <button type="button" data-view="vector" class="view-tab">Vektör (SVG / CNC)</button>
+        </div>
+
+        <div class="zoom-bar">
+          <button id="btnZoomOut" type="button" class="sec-btn" style="padding:3px 8px">−</button>
+          <span id="zoomLabel" class="zoom-val">Sığdır</span>
+          <button id="btnZoomIn" type="button" class="sec-btn" style="padding:3px 8px">+</button>
+          <button id="btnZoomFit" type="button" class="sec-btn" style="padding:3px 8px">Sığdır</button>
+        </div>
+      </div>
+
+      <div id="stageContainer" class="stage-scroll">
+        <div id="dropOverlay" class="drop-overlay hidden">
+          <strong style="color:var(--accent-hi);font-size:16px">Görseli Buraya Bırakın</strong>
+          <span style="color:var(--muted);font-size:12px;margin-top:4px">PNG, JPG, WEBP veya BMP</span>
+        </div>
+
+        <div id="rasterStage" class="raster-stage checker-bg">
+          <canvas id="afterCanvas"></canvas>
+          <div id="beforeClip" class="before-clip">
+            <canvas id="beforeCanvas"></canvas>
+          </div>
+          <div id="splitHandle" class="split-handle" style="left:50%">
+            <div class="split-knob">⇄</div>
+          </div>
+          <span id="lblBefore" class="corner-tag left">Orijinal</span>
+          <span id="lblAfter" class="corner-tag right">İyileştirilmiş</span>
+        </div>
+
+        <div id="vectorStage" class="vector-stage checker-bg hidden">
+          <div class="vector-overlay-ctrl">
+            <label class="chk-row" style="font-size:11px">
+              <input id="chkWireframe" type="checkbox" />
+              Tel Kafes (CNC)
+            </label>
+            <label class="chk-row" style="font-size:11px">
+              <input id="chkShowNodes" type="checkbox" />
+              Düğümler
+            </label>
+            <div class="vbg-group" title="Vektör Önizleme Zemini">
+              <button type="button" data-vbg="checker" class="vbg-btn on">Damalı</button>
+              <button type="button" data-vbg="light" class="vbg-btn">Beyaz</button>
+              <button type="button" data-vbg="dark" class="vbg-btn">Koyu</button>
+            </div>
+          </div>
+          <div id="svgPreviewHost" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%">
+            <p class="hint">Vektör önizleme için sağ panelden <strong>"Vektöre Çevir"</strong> butonuna tıklayın.</p>
+          </div>
+        </div>
+      </div>
+
+      <footer class="statusbar">
+        <div>
+          <span id="statusText" class="ok">Hazır</span> ·
+          <span id="statusModel">Model: Art &amp; Vector Graphics</span>
+        </div>
+        <div style="font-family:ui-monospace,monospace">
+          <span id="statusSize">Giriş: — → Çıkış: —</span> ·
+          <span id="statusVector">Vektör: 0 yol</span>
+        </div>
+      </footer>
+    </main>
+
+    <!-- RIGHT DOCK (.sec cards matching Kutu Harf Stüdyosu) -->
+    <aside class="dock-right">
+      <section class="sec">
+        <div class="sec-head">
+          <h2 class="sec-title">1. Otomatik Görsel Analizi</h2>
+          <span id="presetTag" class="badge gold">Oto 2×</span>
+        </div>
+        <div class="scan-grid">
+          <div class="scan-cell"><span>Gürültü</span><strong id="scanNoise">—</strong></div>
+          <div class="scan-cell"><span>Keskinlik</span><strong id="scanSharp">—</strong></div>
+          <div class="scan-cell"><span>Arka Plan</span><strong id="scanBg">—</strong></div>
+          <div class="scan-cell"><span>Önerilen Trace</span><strong id="scanTrace">—</strong></div>
+        </div>
+        <label class="chk-row">
+          <input id="chkFlatColorLock" type="checkbox" checked />
+          <span>Düz renkleri kilitle (JPEG lekesiz logo netliği)</span>
+        </label>
+      </section>
+
+      <section class="sec">
+        <div class="sec-head">
+          <h2 class="sec-title" style="color:var(--info)">2. Arka Plan Kaldırma</h2>
+          <span id="bgStatusBadge" class="badge">Kapalı</span>
+        </div>
+        <div class="field-row">
+          <select id="bgMode">
+            <option value="flood">Akıllı Çeper Histogramı + Flood-Fill (Önerilen)</option>
+            <option value="global">Tüm Görselde Renk Sil (Damlalık / Mat)</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <label><span>Renk Toleransı</span><span id="lblBgTol">32</span></label>
+          <input id="rngBgTol" type="range" min="10" max="110" step="2" value="32" />
+        </div>
+        <label class="chk-row">
+          <input id="chkBgDecontam" type="checkbox" checked />
+          <span>Kenar halo / renk sızıntısını temizle</span>
+        </label>
+        <label class="chk-row">
+          <input id="chkBgInnerHoles" type="checkbox" checked />
+          <span>Harf iç boşluklarını da temizle (A, B, O)</span>
+        </label>
+        <div class="btn-row">
+          <button id="btnRemoveBg" type="button" class="sec-btn" style="flex:1;justify-content:center;border-color:rgba(96,165,250,0.45);color:#93c5fd">
+            Arka Planı Kaldır
+          </button>
+          <button id="btnEyedropper" type="button" class="sec-btn" title="Görselden silinecek rengi seç">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>
+            Damlalık
+          </button>
+          <button id="btnResetBg" type="button" class="sec-btn" title="Arka Planı Sıfırla" aria-label="Arka Planı Sıfırla">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          </button>
+        </div>
+      </section>
+
+      <section class="sec">
+        <div class="sec-head">
+          <h2 class="sec-title" style="color:var(--ok)">3. Vektör Trace (SVG &amp; CNC)</h2>
+          <span id="traceBadge" class="badge">Bekliyor</span>
+        </div>
+        <div class="grid-2">
+          <div class="field-row">
+            <label>Trace Modu</label>
+            <select id="traceMode">
+              <option value="logo_hd">Çok Renkli Logo</option>
+              <option value="detailed">Detaylı Grafik</option>
+              <option value="mono">Tek Renk CNC</option>
+            </select>
+          </div>
+          <div class="field-row">
+            <label>Renk Sayısı</label>
+            <select id="selColorCount">
+              <option value="auto" selected>Otomatik (CIELAB)</option>
+              <option value="2">2 Renk</option>
+              <option value="3">3 Renk</option>
+              <option value="4">4 Renk</option>
+              <option value="6">6 Renk</option>
+              <option value="8">8 Renk</option>
+              <option value="12">12 Renk</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="field-row">
+            <label><span>Sadeleştirme</span><span id="lblSimp" class="lbl-val">1.0 px</span></label>
+            <input id="rngSimp" type="range" min="0.4" max="3.0" step="0.2" value="1.0" />
+          </div>
+          <div class="field-row">
+            <label><span>Köşe Keskinliği</span><span id="lblCorner" class="lbl-val">1.0</span></label>
+            <input id="rngCorner" type="range" min="0.4" max="1.4" step="0.1" value="1.0" />
+          </div>
+        </div>
+        <div class="field-row">
+          <label><span>Min. Leke Temizliği (Despeckle)</span><span id="lblDespeckle" class="lbl-val">24 px²</span></label>
+          <input id="rngDespeckle" type="range" min="0" max="120" step="4" value="24" />
+        </div>
+        <div id="paletteSwatches" class="palette-strip" title="Renk katmanını aç/kapat"></div>
+        <div class="grid-2">
+          <label class="chk-row">
+            <input id="chkTraceSmooth" type="checkbox" checked />
+            <span>Bezier &amp; Yay (Arc)</span>
+          </label>
+          <label class="chk-row">
+            <input id="chkCadSnap" type="checkbox" checked />
+            <span>CAD H/V Hizalama</span>
+          </label>
+        </div>
+        <button id="btnRunTrace" type="button" class="cta-btn" style="width:100%">
+          Vektöre Çevir (SVG &amp; DXF Trace)
+        </button>
+      </section>
+
+      <section class="sec">
+        <div class="sec-head">
+          <h2 class="sec-title">4. Çıktı &amp; Kutu Harf Aktarımı</h2>
+        </div>
+        <div class="grid-2">
+          <div class="field-row">
+            <label>Dosya Eki</label>
+            <input id="txtSuffix" type="text" value="_VKT" />
+          </div>
+          <div class="field-row">
+            <label>Raster Formatı</label>
+            <select id="selFormat">
+              <option value="image/png">PNG (Şeffaf)</option>
+              <option value="image/webp">WEBP</option>
+              <option value="image/jpeg">JPG</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-row">
+          <label><span>DXF Çıktı Genişliği (mm)</span><span class="hint">1:1 CAM Ölçeği</span></label>
+          <input id="txtDxfWidthMm" type="number" min="20" max="10000" step="10" value="600" />
+        </div>
+        <button id="btnExportRaster" type="button" class="sec-btn" style="width:100%;justify-content:center">
+          İyileştirilmiş Raster İndir
+        </button>
+        <div class="grid-2">
+          <button id="btnExportSvg" type="button" class="sec-btn" style="justify-content:center;border-color:rgba(212,162,76,0.45);color:var(--accent-hi)">
+            SVG İndir
+          </button>
+          <button id="btnExportDxf" type="button" class="sec-btn" style="justify-content:center;border-color:rgba(52,211,153,0.45);color:var(--ok)">
+            DXF (1:1 mm)
+          </button>
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script>
+(() => {
+  const PRESETS = [
+    { id: 'art_vector', name: 'Art & Vector Graphics', desc: 'Logo, yazı ve tabela grafiği (Trace için önerilen).', sharp: 85, denoise: 45, contrast: 26, edgeBoost: 1.45, flatDefault: true, grad: 'linear-gradient(135deg,#d4a24c,#10b981)' },
+    { id: 'photo_text', name: 'Photo LN + Text', desc: 'Tabela fotoğrafı ve ekran görüntüsü netleştirme.', sharp: 90, denoise: 30, contrast: 28, edgeBoost: 1.35, flatDefault: true, grad: 'linear-gradient(135deg,#6366f1,#ec4899)' },
+    { id: 'pixel_line', name: 'Pixel & Line Art', desc: 'Küçük piksel ve çizgi logoları keskin büyütme.', sharp: 120, denoise: 20, contrast: 34, edgeBoost: 1.65, flatDefault: true, grad: 'linear-gradient(135deg,#84cc16,#0f172a)' },
+    { id: 'diffusion_razor', name: 'Diffusion Razor', desc: 'AI üretimi ve sert kenarlı illüstrasyonlar.', sharp: 110, denoise: 28, contrast: 20, edgeBoost: 1.4, flatDefault: true, grad: 'linear-gradient(135deg,#ec4899,#06b6d4)' },
+    { id: 'digital_art', name: 'Digital Art Supreme', desc: 'Kurumsal görsellerde canlı doku güçlendirme.', sharp: 75, denoise: 35, contrast: 22, edgeBoost: 1.15, flatDefault: false, grad: 'linear-gradient(135deg,#f43f5e,#d4a24c)' },
+    { id: 'photo_sharp', name: 'Photo Sharp UHD', desc: 'Yüksek dokulu fotoğraflar için detay artırma.', sharp: 95, denoise: 12, contrast: 18, edgeBoost: 1.2, flatDefault: false, grad: 'linear-gradient(135deg,#0ea5e9,#d4a24c)' },
+    { id: 'photo_3d_nr', name: 'Photo, 3D + NR', desc: 'Gradyan ve 3D renderlarda gürültü giderme.', sharp: 55, denoise: 65, contrast: 12, edgeBoost: 1.0, flatDefault: false, grad: 'linear-gradient(135deg,#14b8a6,#334155)' },
+    { id: 'photo_3d_soft', name: 'Photo, 3D Soft', desc: 'Doğal yumuşak kenarlı pürüzsüzleştirme.', sharp: 32, denoise: 72, contrast: 8, edgeBoost: 0.85, flatDefault: false, grad: 'linear-gradient(135deg,#b45309,#334155)' }
+  ];
+
+  const $ = (id) => document.getElementById(id);
+  const beforeCanvas = $('beforeCanvas'), afterCanvas = $('afterCanvas'), miniPreviewCanvas = $('miniPreviewCanvas');
+  const beforeClip = $('beforeClip'), splitHandle = $('splitHandle');
+
+  const state = {
+    fileName: 'ornek_tabela_logo',
+    presetId: 'art_vector',
+    scale: 2,
+    autoParams: { sharp: 85, denoise: 40, contrast: 24, bgTol: 32, bgFeather: 8, traceColors: 4, traceThresh: 128 },
+    viewMode: 'compare',
+    zoom: 'fit',
+    splitPct: 50,
+    hasNativeAlpha: false,
+    bgRemoved: false,
+    bgKeyColor: null,
+    eyedropperActive: false,
+    isProcessing: false,
+    runId: 0,
+    sourceCanvas: document.createElement('canvas'),
+    enhancedCanvas: document.createElement('canvas'),
+    workingCanvas: document.createElement('canvas'),
+    svgText: '',
+    dxfText: '',
+    vectorPathsCount: 0,
+    vectorNodesCount: 0,
+    vectorNodeMarkers: [],
+    palette: [],
+    disabledPaletteKeys: new Set()
+  };
+
+  const yieldFrame = () => new Promise(r => requestAnimationFrame(r));
+  const rgbToHex = (r, g, b) => '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+  function rgbToLab(r, g, b) {
+    let sr = r / 255, sg = g / 255, sb = b / 255;
+    sr = sr > 0.04045 ? ((sr + 0.055) / 1.055) ** 2.4 : sr / 12.92;
+    sg = sg > 0.04045 ? ((sg + 0.055) / 1.055) ** 2.4 : sg / 12.92;
+    sb = sb > 0.04045 ? ((sb + 0.055) / 1.055) ** 2.4 : sb / 12.92;
+    const x = (sr * 0.4124564 + sg * 0.3575761 + sb * 0.1804375) / 0.95047;
+    const y = (sr * 0.2126729 + sg * 0.7151522 + sb * 0.0721750);
+    const z = (sr * 0.0193339 + sg * 0.1191920 + sb * 0.9503041) / 1.08883;
+    const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+    const fx = f(x), fy = f(y), fz = f(z);
+    return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+  }
+  const labDist2 = (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+
+  let toastTimer = null;
+  function showToast(msg) {
+    const el = $('toast');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.add('hidden'), 2600);
+  }
+  function setStatus(msg, busy = false) {
+    const el = $('statusText');
+    el.textContent = msg;
+    el.className = busy ? 'busy' : 'ok';
+  }
+  function setProgress(pct, label) {
+    const wrap = $('progressWrap');
+    if (pct === null) { wrap.classList.add('hidden'); return; }
+    wrap.classList.remove('hidden');
+    $('progressBar').style.width = `${Math.max(0, Math.min(100, pct))}%`;
+    $('progressPct').textContent = `${Math.round(pct)}%`;
+    if (label) $('progressLabel').textContent = label;
+  }
+
+  // Undo / Redo History
+  const undoStack = [], redoStack = [], MAX_HISTORY = 20;
+  function cloneC(c) {
+    if (!c.width || !c.height) return null;
+    return { w: c.width, h: c.height, data: c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height) };
+  }
+  function restoreC(c, snap) {
+    if (!snap) return;
+    c.width = snap.w; c.height = snap.h;
+    c.getContext('2d', { willReadFrequently: true }).putImageData(snap.data, 0, 0);
+  }
+  function updateHistoryUI() {
+    $('btnUndo').disabled = undoStack.length === 0;
+    $('btnRedo').disabled = redoStack.length === 0;
+  }
+  function clearHistory() {
+    undoStack.length = 0; redoStack.length = 0; updateHistoryUI();
+  }
+  function captureSnap(label) {
+    return {
+      label, presetId: state.presetId, scale: state.scale, viewMode: state.viewMode,
+      bgRemoved: state.bgRemoved, bgKeyColor: state.bgKeyColor ? state.bgKeyColor.slice() : null,
+      svgText: state.svgText, dxfText: state.dxfText,
+      vectorPathsCount: state.vectorPathsCount, vectorNodesCount: state.vectorNodesCount,
+      enhanced: cloneC(state.enhancedCanvas), working: cloneC(state.workingCanvas)
+    };
+  }
+  const MAX_HISTORY_BYTES = 180 * 1024 * 1024;
+  function pushHistory(label) {
+    if (!state.workingCanvas.width) return;
+    undoStack.push(captureSnap(label));
+    if (undoStack.length > MAX_HISTORY) undoStack.shift();
+    let totalBytes = undoStack.reduce((sum, s) => sum + (s.enhanced?.data?.data?.byteLength || 0) + (s.working?.data?.data?.byteLength || 0), 0);
+    while (undoStack.length > 1 && totalBytes > MAX_HISTORY_BYTES) {
+      const rem = undoStack.shift();
+      totalBytes -= (rem.enhanced?.data?.data?.byteLength || 0) + (rem.working?.data?.data?.byteLength || 0);
+    }
+    redoStack.length = 0;
+    updateHistoryUI();
+  }
+  function applySnap(snap) {
+    state.presetId = snap.presetId; state.scale = snap.scale;
+    state.bgRemoved = snap.bgRemoved; state.bgKeyColor = snap.bgKeyColor ? snap.bgKeyColor.slice() : null;
+    state.svgText = snap.svgText; state.dxfText = snap.dxfText;
+    state.vectorPathsCount = snap.vectorPathsCount; state.vectorNodesCount = snap.vectorNodesCount;
+    restoreC(state.enhancedCanvas, snap.enhanced);
+    restoreC(state.workingCanvas, snap.working);
+    renderPresets(); syncScaleButtons(); updateBgBadge();
+    $('traceBadge').textContent = state.vectorPathsCount ? `${state.vectorPathsCount} yol` : 'Bekliyor';
+    $('statusVector').textContent = `Vektör: ${state.vectorPathsCount} yol / ${state.vectorNodesCount} düğüm`;
+    renderViewports();
+    if (state.svgText) renderSvgPreview();
+    setViewMode(snap.viewMode || 'compare');
+    updateHistoryUI();
+  }
+
+  function syncScaleButtons() {
+    document.querySelectorAll('.scale-btn').forEach(b => b.classList.toggle('on', Number(b.dataset.scale) === state.scale));
+    $('presetTag').textContent = `Oto ${state.scale}×`;
+    const hint = $('scaleCapHint');
+    if (hint) {
+      hint.textContent = state.scale >= 16 ? '16× · maks 6144px' : state.scale >= 8 ? '8× · maks 4096px' : `${state.scale}×`;
+    }
+  }
+  function updateBgBadge() {
+    const b = $('bgStatusBadge');
+    if (state.hasNativeAlpha && !state.bgRemoved) {
+      b.textContent = 'Şeffaf PNG'; b.className = 'badge info';
+    } else if (state.bgRemoved) {
+      b.textContent = 'Temizlendi'; b.className = 'badge info';
+    } else {
+      b.textContent = 'Kapalı'; b.className = 'badge';
+    }
+  }
+
+  // Perimeter Histogram Background Detector (Alpha-safe!)
+  function detectPerimeterBg(data, w, h) {
+    let transparentPx = 0;
+    const total = w * h;
+    for (let i = 3; i < data.length; i += 4) if (data[i] < 128) transparentPx++;
+    if (transparentPx > total * 0.02) return { hasAlpha: true, rgb: null, variance: 0 };
+
+    const bins = new Map();
+    const samplePx = (x, y) => {
+      const i = (y * w + x) * 4;
+      if (data[i + 3] < 200) return;
+      const key = `${data[i] >> 4}_${data[i + 1] >> 4}_${data[i + 2] >> 4}`;
+      let entry = bins.get(key);
+      if (!entry) { entry = { r: 0, g: 0, b: 0, n: 0 }; bins.set(key, entry); }
+      entry.r += data[i]; entry.g += data[i + 1]; entry.b += data[i + 2]; entry.n++;
+    };
+    const sx = Math.max(1, Math.floor(w / 80)), sy = Math.max(1, Math.floor(h / 80));
+    for (let x = 0; x < w; x += sx) { samplePx(x, 0); samplePx(x, h - 1); }
+    for (let y = 0; y < h; y += sy) { samplePx(0, y); samplePx(w - 1, y); }
+
+    let best = { r: 255, g: 255, b: 255, n: 1 }, totalS = 0;
+    for (const v of bins.values()) {
+      totalS += v.n;
+      if (v.n > best.n) best = v;
+    }
+    const rgb = [Math.round(best.r / best.n), Math.round(best.g / best.n), Math.round(best.b / best.n)];
+    const dominance = best.n / Math.max(1, totalS);
+    return { hasAlpha: false, rgb, variance: Math.round((1 - dominance) * 60) };
+  }
+
+  function analyzeImageAuto(canvas) {
+    const w = canvas.width, h = canvas.height;
+    if (!w || !h) return;
+    const d = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+    const perim = detectPerimeterBg(d, w, h);
+    state.hasNativeAlpha = perim.hasAlpha;
+
+    const hist = new Uint32Array(256);
+    let lapSum = 0, lapCount = 0, flatLapSum = 0, flatCount = 0;
+    const step = Math.max(1, Math.floor(Math.sqrt((w * h) / 25000)));
+    const lumAt = (x, y) => { const i = (y * w + x) * 4; return 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; };
+    for (let y = 1; y < h - 1; y += step) {
+      for (let x = 1; x < w - 1; x += step) {
+        const c = lumAt(x, y);
+        const lL = lumAt(x - 1, y), lR = lumAt(x + 1, y), lT = lumAt(x, y - 1), lB = lumAt(x, y + 1);
+        const lap = Math.abs(4 * c - lL - lR - lT - lB);
+        const gx = Math.abs(lR - lL), gy = Math.abs(lB - lT);
+        hist[Math.round(c)]++;
+        lapSum += lap;
+        lapCount++;
+        if (gx + gy < 24) {
+          flatLapSum += lap;
+          flatCount++;
+        }
+      }
+    }
+    const totalPix = lapCount || 1;
+    const flatNoiseVal = flatCount > 20 ? (flatLapSum / flatCount) : 0;
+
+    let sumAll = 0; for (let i = 0; i < 256; i++) sumAll += i * hist[i];
+    let sumB = 0, wB = 0, maxVar = 0, otsu = 128;
+    for (let i = 0; i < 256; i++) {
+      wB += hist[i]; if (!wB) continue;
+      const wF = totalPix - wB; if (!wF) break;
+      sumB += i * hist[i];
+      const mB = sumB / wB, mF = (sumAll - sumB) / wF;
+      const v = wB * wF * (mB - mF) * (mB - mF);
+      if (v > maxVar) { maxVar = v; otsu = i; }
+    }
+
+    const colorBuckets = new Set();
+    for (let y = 0; y < h; y += step * 2) {
+      for (let x = 0; x < w; x += step * 2) {
+        const i = (y * w + x) * 4;
+        if (d[i + 3] < 128) continue;
+        colorBuckets.add(`${d[i] >> 5}_${d[i + 1] >> 5}_${d[i + 2] >> 5}`);
+      }
+    }
+
+    const preset = PRESETS.find(p => p.id === state.presetId) || PRESETS[0];
+    const noiseRatio = Math.min(1, Math.max(0, (flatNoiseVal - 1.2) / 14));
+    const autoDenoise = Math.round(Math.min(80, Math.max(0, noiseRatio * 68 + (noiseRatio > 0.12 ? preset.denoise * 0.25 : 0))));
+    const autoSharp = Math.round(Math.min(135, Math.max(40, preset.sharp * 0.8 + (1 - noiseRatio) * 30)));
+    const autoBgTol = Math.round(Math.min(72, Math.max(20, 24 + perim.variance * 0.8)));
+
+    state.autoParams = {
+      sharp: autoSharp, denoise: autoDenoise, flatNoise: noiseRatio, contrast: preset.contrast,
+      bgTol: autoBgTol, bgFeather: 8,
+      traceColors: Math.min(6, Math.max(2, colorBuckets.size <= 4 ? 3 : 5)),
+      traceThresh: Math.max(45, Math.min(215, otsu))
+    };
+
+    $('rngBgTol').value = autoBgTol;
+    $('lblBgTol').textContent = autoBgTol;
+    $('scanNoise').textContent = noiseRatio > 0.55 ? `Yüksek (%${autoDenoise})` : noiseRatio > 0.25 ? `Orta (%${autoDenoise})` : `Düşük (%${autoDenoise})`;
+    $('scanSharp').textContent = `+%${autoSharp} · Knt %${preset.contrast}`;
+    $('scanBg').textContent = perim.hasAlpha ? 'Şeffaf PNG' : perim.variance < 12 ? `Düz (Tol ${autoBgTol})` : `Dokulu (Tol ${autoBgTol})`;
+    $('scanTrace').textContent = `${state.autoParams.traceColors} Renk · Eşik ${state.autoParams.traceThresh}`;
+    updateBgBadge();
+  }
+
+  function renderPresets() {
+    const host = $('presetList');
+    host.innerHTML = PRESETS.map(p => `
+      <button type="button" data-preset="${p.id}" class="preset-card ${state.presetId === p.id ? 'active' : ''}">
+        <div class="preset-thumb" style="background:${p.grad}">${p.id === 'pixel_line' ? '8×' : p.id === 'photo_text' ? '+TXT' : 'HD'}</div>
+        <div style="min-width:0">
+          <div class="preset-name">${p.name}</div>
+          <div class="preset-desc">${p.desc}</div>
+        </div>
+      </button>
+    `).join('');
+
+    host.querySelectorAll('[data-preset]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const p = PRESETS.find(x => x.id === btn.dataset.preset);
+        if (!p) return;
+        pushHistory(`Model: ${p.name}`);
+        state.presetId = p.id;
+        $('chkFlatColorLock').checked = p.flatDefault;
+        $('statusModel').textContent = `Model: ${p.name}`;
+        renderPresets();
+        analyzeImageAuto(state.sourceCanvas);
+        runEnhancement(true);
+      });
+    });
+  }
+
+  // Separable Ringing-Free Catmull-Rom Bicubic Resampler + Anisotropic Shock Filter
+  async function bicubicUpscale(srcCanvas, outW, outH, isPixelArt, myRun) {
+    const srcW = srcCanvas.width, srcH = srcCanvas.height;
+    const sctx = srcCanvas.getContext('2d', { willReadFrequently: true });
+    if (isPixelArt || (outW === srcW && outH === srcH)) {
+      const tmp = document.createElement('canvas');
+      tmp.width = outW; tmp.height = outH;
+      const tctx = tmp.getContext('2d', { willReadFrequently: true });
+      tctx.imageSmoothingEnabled = !isPixelArt;
+      tctx.drawImage(srcCanvas, 0, 0, outW, outH);
+      return tctx.getImageData(0, 0, outW, outH);
+    }
+
+    const srcData = sctx.getImageData(0, 0, srcW, srcH).data;
+    const cubicW = (t) => {
+      const x = Math.abs(t);
+      if (x < 1) return (1.5 * x - 2.5) * x * x + 1;
+      if (x < 2) return ((-0.5 * x + 2.5) * x - 4) * x + 2;
+      return 0;
+    };
+
+    const xIdx = new Int32Array(outW * 4);
+    const xWts = new Float32Array(outW * 4);
+    const scaleX = srcW / outW;
+    for (let x = 0; x < outW; x++) {
+      const sx = (x + 0.5) * scaleX - 0.5;
+      const ix = Math.floor(sx), fx = sx - ix;
+      let wSum = 0;
+      for (let k = 0; k < 4; k++) {
+        const idx = Math.max(0, Math.min(srcW - 1, ix + (k - 1)));
+        const w = cubicW(fx - (k - 1));
+        xIdx[x * 4 + k] = idx;
+        xWts[x * 4 + k] = w;
+        wSum += w;
+      }
+      const inv = wSum ? 1 / wSum : 1;
+      for (let k = 0; k < 4; k++) xWts[x * 4 + k] *= inv;
+    }
+
+    const horiz = new Float32Array(outW * srcH * 4);
+    for (let y = 0; y < srcH; y++) {
+      if (y % 180 === 0) {
+        setProgress(10 + (y / srcH) * 8, 'Catmull-Rom yatay örnekleme...');
+        await yieldFrame();
+        if (myRun !== state.runId) return null;
+      }
+      const sRow = y * srcW * 4, hRow = y * outW * 4;
+      for (let x = 0; x < outW; x++) {
+        const o4 = x * 4;
+        const i0 = sRow + xIdx[o4] * 4, i1 = sRow + xIdx[o4 + 1] * 4, i2 = sRow + xIdx[o4 + 2] * 4, i3 = sRow + xIdx[o4 + 3] * 4;
+        const w0 = xWts[o4], w1 = xWts[o4 + 1], w2 = xWts[o4 + 2], w3 = xWts[o4 + 3];
+        const dst = hRow + o4;
+        for (let ch = 0; ch < 4; ch++) {
+          const v0 = srcData[i0 + ch], v1 = srcData[i1 + ch], v2 = srcData[i2 + ch], v3 = srcData[i3 + ch];
+          const mn = Math.min(v0, v1, v2, v3), mx = Math.max(v0, v1, v2, v3);
+          const v = v0 * w0 + v1 * w1 + v2 * w2 + v3 * w3;
+          horiz[dst + ch] = v < mn ? mn : v > mx ? mx : v;
+        }
+      }
+    }
+
+    const yIdx = new Int32Array(outH * 4);
+    const yWts = new Float32Array(outH * 4);
+    const scaleY = srcH / outH;
+    for (let y = 0; y < outH; y++) {
+      const sy = (y + 0.5) * scaleY - 0.5;
+      const iy = Math.floor(sy), fy = sy - iy;
+      let wSum = 0;
+      for (let k = 0; k < 4; k++) {
+        const idx = Math.max(0, Math.min(srcH - 1, iy + (k - 1)));
+        const w = cubicW(fy - (k - 1));
+        yIdx[y * 4 + k] = idx;
+        yWts[y * 4 + k] = w;
+        wSum += w;
+      }
+      const inv = wSum ? 1 / wSum : 1;
+      for (let k = 0; k < 4; k++) yWts[y * 4 + k] *= inv;
+    }
+
+    const outBuf = new Uint8ClampedArray(outW * outH * 4);
+    const stride = outW * 4;
+    for (let y = 0; y < outH; y++) {
+      if (y % 180 === 0) {
+        setProgress(18 + (y / outH) * 8, 'Catmull-Rom dikey örnekleme...');
+        await yieldFrame();
+        if (myRun !== state.runId) return null;
+      }
+      const y4 = y * 4;
+      const r0 = yIdx[y4] * stride, r1 = yIdx[y4 + 1] * stride, r2 = yIdx[y4 + 2] * stride, r3 = yIdx[y4 + 3] * stride;
+      const w0 = yWts[y4], w1 = yWts[y4 + 1], w2 = yWts[y4 + 2], w3 = yWts[y4 + 3];
+      const dRow = y * stride;
+      for (let k = 0; k < stride; k++) {
+        const v0 = horiz[r0 + k], v1 = horiz[r1 + k], v2 = horiz[r2 + k], v3 = horiz[r3 + k];
+        const mn = Math.min(v0, v1, v2, v3), mx = Math.max(v0, v1, v2, v3);
+        const v = v0 * w0 + v1 * w1 + v2 * w2 + v3 * w3;
+        outBuf[dRow + k] = Math.round(v < mn ? mn : v > mx ? mx : v);
+      }
+    }
+    return new ImageData(outBuf, outW, outH);
+  }
+
+  async function applyAnisotropicShockFilter(buf, w, h, strength, passes, myRun) {
+    let cur = buf;
+    const sampleBilinear = (src, x, y, ch) => {
+      const cx = x < 0 ? 0 : x > w - 1 ? w - 1 : x;
+      const cy = y < 0 ? 0 : y > h - 1 ? h - 1 : y;
+      const x0 = Math.floor(cx), y0 = Math.floor(cy);
+      const x1 = x0 < w - 1 ? x0 + 1 : x0, y1 = y0 < h - 1 ? y0 + 1 : y0;
+      const fx = cx - x0, fy = cy - y0;
+      const i00 = (y0 * w + x0) * 4 + ch, i10 = (y0 * w + x1) * 4 + ch;
+      const i01 = (y1 * w + x0) * 4 + ch, i11 = (y1 * w + x1) * 4 + ch;
+      const top = src[i00] + (src[i10] - src[i00]) * fx;
+      const bot = src[i01] + (src[i11] - src[i01]) * fx;
+      return top + (bot - top) * fy;
+    };
+    const lum = (src, idx) => 0.299 * src[idx] + 0.587 * src[idx + 1] + 0.114 * src[idx + 2];
+    const shockStep = Math.min(0.48, Math.max(0.20, strength * 0.36));
+
+    for (let pass = 0; pass < passes; pass++) {
+      const out = new Uint8ClampedArray(cur);
+      for (let y = 1; y < h - 1; y++) {
+        if (y % 140 === 0) {
+          setProgress(74 + ((pass * h + y) / (passes * h)) * 12, `Anizotropik kenar netleştirme (${pass + 1}/${passes})...`);
+          await yieldFrame();
+          if (myRun !== state.runId) return null;
+        }
+        const rowM = (y - 1) * w, row = y * w, rowP = (y + 1) * w;
+        for (let x = 1; x < w - 1; x++) {
+          const idx = (row + x) * 4;
+          if (cur[idx + 3] < 245) continue;
+          const aMin = Math.min(
+            cur[(rowM + x - 1) * 4 + 3], cur[(rowM + x) * 4 + 3], cur[(rowM + x + 1) * 4 + 3],
+            cur[(row + x - 1) * 4 + 3], cur[(row + x + 1) * 4 + 3],
+            cur[(rowP + x - 1) * 4 + 3], cur[(rowP + x) * 4 + 3], cur[(rowP + x + 1) * 4 + 3]
+          );
+          if (aMin < 200) continue;
+
+          const lTL = lum(cur, (rowM + x - 1) * 4), lT = lum(cur, (rowM + x) * 4), lTR = lum(cur, (rowM + x + 1) * 4);
+          const lL = lum(cur, (row + x - 1) * 4), lC = lum(cur, idx), lR = lum(cur, (row + x + 1) * 4);
+          const lBL = lum(cur, (rowP + x - 1) * 4), lB = lum(cur, (rowP + x) * 4), lBR = lum(cur, (rowP + x + 1) * 4);
+
+          const gx = ((lTR + 2 * lR + lBR) - (lTL + 2 * lL + lBL)) * 0.125;
+          const gy = ((lBL + 2 * lB + lBR) - (lTL + 2 * lT + lTR)) * 0.125;
+          const mag = Math.hypot(gx, gy);
+          if (mag <= 8) continue;
+
+          const nx = gx / mag, ny = gy / mag;
+          const tx = -ny, ty = nx;
+
+          const lp0 = 0.299 * sampleBilinear(cur, x + nx, y + ny, 0) + 0.587 * sampleBilinear(cur, x + nx, y + ny, 1) + 0.114 * sampleBilinear(cur, x + nx, y + ny, 2);
+          const lm0 = 0.299 * sampleBilinear(cur, x - nx, y - ny, 0) + 0.587 * sampleBilinear(cur, x - nx, y - ny, 1) + 0.114 * sampleBilinear(cur, x - nx, y - ny, 2);
+          const lap = lp0 + lm0 - 2 * lC;
+          const isRamp = (lp0 - lC) * (lC - lm0) > 0;
+          const dir = (isRamp && Math.abs(lap) > 2.0) ? (lap > 0 ? -1 : 1) : 0;
+
+          for (let ch = 0; ch < 3; ch++) {
+            const c = cur[idx + ch];
+            const tPos = sampleBilinear(cur, x + 0.85 * tx, y + 0.85 * ty, ch);
+            const tNeg = sampleBilinear(cur, x - 0.85 * tx, y - 0.85 * ty, ch);
+            const tAvg = 0.5 * (tPos + tNeg);
+            const tBlend = Math.abs(c - tAvg) < 22 ? 0.14 : 0;
+            const base = c * (1 - tBlend) + tAvg * tBlend;
+
+            const pPlus = sampleBilinear(cur, x + nx, y + ny, ch);
+            const pMinus = sampleBilinear(cur, x - nx, y - ny, ch);
+            let val = dir === 0 ? base : base * (1 - shockStep) + (dir > 0 ? pPlus : pMinus) * shockStep;
+            const mn = Math.min(c, pPlus, pMinus), mx = Math.max(c, pPlus, pMinus);
+            if (val < mn) val = mn;
+            if (val > mx) val = mx;
+            out[idx + ch] = Math.round(val);
+          }
+        }
+      }
+      cur = out;
+    }
+    return cur;
+  }
+
+  async function runEnhancement(silent = false) {
+    const src = state.sourceCanvas;
+    if (!src.width || !src.height) return;
+    const myRun = ++state.runId;
+    state.isProcessing = true;
+    $('btnProcess').disabled = true;
+
+    try {
+      const preset = PRESETS.find(p => p.id === state.presetId) || PRESETS[0];
+      const capByScale = state.scale >= 16 ? 6144 : state.scale >= 8 ? 4096 : state.scale >= 4 ? 3200 : 2400;
+      const maxPixels = 20_000_000;
+      let targetW = src.width * state.scale;
+      let targetH = src.height * state.scale;
+      const ratio = Math.min(1, capByScale / Math.max(targetW, targetH));
+      targetW = Math.max(1, Math.round(targetW * ratio));
+      targetH = Math.max(1, Math.round(targetH * ratio));
+      if (targetW * targetH > maxPixels) {
+        const pRatio = Math.sqrt(maxPixels / (targetW * targetH));
+        targetW = Math.max(1, Math.round(targetW * pRatio));
+        targetH = Math.max(1, Math.round(targetH * pRatio));
+      }
+      const outW = targetW, outH = targetH;
+      const wasCapped = outW < src.width * state.scale || outH < src.height * state.scale;
+
+      setStatus('Süper çözünürlük hazırlanıyor...', true);
+      setProgress(10, 'Ölçekleniyor...');
+      await yieldFrame();
+      if (myRun !== state.runId) return;
+
+      const flatLock = $('chkFlatColorLock').checked;
+      const denoiseAmt = state.autoParams.denoise / 100;
+      const sharpAmt = (state.autoParams.sharp / 100) * (preset.edgeBoost || 1);
+      const contrastAmt = state.autoParams.contrast / 100;
+      const flatNoise = state.autoParams.flatNoise ?? denoiseAmt;
+
+      // O(N) Kaiming He Guided Image Filter (radius-independent edge-preserving smoothing)
+      const boxFilter = (src, w, h, r, tmpBuf, outBuf) => {
+        const win = 2 * r + 1;
+        const invWin = 1 / win;
+        for (let y = 0; y < h; y++) {
+          const row = y * w;
+          let sum = 0;
+          for (let k = -r; k <= r; k++) {
+            const cx = k < 0 ? 0 : k >= w ? w - 1 : k;
+            sum += src[row + cx];
+          }
+          tmpBuf[row] = sum * invWin;
+          for (let x = 1; x < w; x++) {
+            const addX = x + r >= w ? w - 1 : x + r;
+            const remX = x - 1 - r < 0 ? 0 : x - 1 - r;
+            sum += src[row + addX] - src[row + remX];
+            tmpBuf[row + x] = sum * invWin;
+          }
+        }
+        for (let x = 0; x < w; x++) {
+          let sum = 0;
+          for (let k = -r; k <= r; k++) {
+            const cy = k < 0 ? 0 : k >= h ? h - 1 : k;
+            sum += tmpBuf[cy * w + x];
+          }
+          outBuf[x] = sum * invWin;
+          for (let y = 1; y < h; y++) {
+            const addY = y + r >= h ? h - 1 : y + r;
+            const remY = y - 1 - r < 0 ? 0 : y - 1 - r;
+            sum += tmpBuf[addY * w + x] - tmpBuf[remY * w + x];
+            outBuf[y * w + x] = sum * invWin;
+          }
+        }
+        return outBuf;
+      };
+
+      const guidedFilterRGBA = async (srcBuf, w, h, r, eps, passesCount) => {
+        const total = w * h;
+        let cur = new Uint8ClampedArray(srcBuf);
+        const I = new Float32Array(total);
+        const II = new Float32Array(total);
+        const meanI = new Float32Array(total);
+        const corrI = new Float32Array(total);
+        const varI = new Float32Array(total);
+        const pBuf = new Float32Array(total);
+        const ipBuf = new Float32Array(total);
+        const meanP = new Float32Array(total);
+        const corrIP = new Float32Array(total);
+        const aBuf = new Float32Array(total);
+        const bBuf = new Float32Array(total);
+        const meanA = new Float32Array(total);
+        const meanB = new Float32Array(total);
+        const tmp = new Float32Array(total);
+
+        for (let pass = 0; pass < passesCount; pass++) {
+          setProgress(28 + pass * 18, `Kaiming He Guided Filter (${pass + 1}/${passesCount})...`);
+          await yieldFrame();
+          if (myRun !== state.runId) return null;
+
+          for (let k = 0; k < total; k++) {
+            const i4 = k * 4;
+            const lum = (0.299 * cur[i4] + 0.587 * cur[i4 + 1] + 0.114 * cur[i4 + 2]) / 255;
+            I[k] = lum;
+            II[k] = lum * lum;
+          }
+          boxFilter(I, w, h, r, tmp, meanI);
+          boxFilter(II, w, h, r, tmp, corrI);
+          for (let k = 0; k < total; k++) {
+            const v = corrI[k] - meanI[k] * meanI[k];
+            varI[k] = v > 0 ? v : 0;
+          }
+
+          const nextBuf = new Uint8ClampedArray(cur);
+          for (let ch = 0; ch < 3; ch++) {
+            for (let k = 0; k < total; k++) {
+              const pv = cur[k * 4 + ch] / 255;
+              pBuf[k] = pv;
+              ipBuf[k] = I[k] * pv;
+            }
+            boxFilter(pBuf, w, h, r, tmp, meanP);
+            boxFilter(ipBuf, w, h, r, tmp, corrIP);
+            for (let k = 0; k < total; k++) {
+              const cov = corrIP[k] - meanI[k] * meanP[k];
+              const ak = cov / (varI[k] + eps);
+              aBuf[k] = ak;
+              bBuf[k] = meanP[k] - ak * meanI[k];
+            }
+            boxFilter(aBuf, w, h, r, tmp, meanA);
+            boxFilter(bBuf, w, h, r, tmp, meanB);
+            for (let k = 0; k < total; k++) {
+              const q = (meanA[k] * I[k] + meanB[k]) * 255;
+              nextBuf[k * 4 + ch] = q < 0 ? 0 : q > 255 ? 255 : Math.round(q);
+            }
+          }
+          cur = nextBuf;
+        }
+        return cur;
+      };
+
+      const applyInteriorFlatLock = (buf, w, h) => {
+        const samples = [];
+        const sStep = Math.max(1, Math.floor(Math.sqrt((w * h) / 5000)));
+        for (let y = 2; y < h - 2; y += sStep) {
+          for (let x = 2; x < w - 2; x += sStep) {
+            const idx = (y * w + x) * 4;
+            if (buf[idx + 3] < 200) continue;
+            const rt = idx + 4, dn = idx + w * 4;
+            const grad = Math.abs(buf[idx] - buf[rt]) + Math.abs(buf[idx + 1] - buf[rt + 1]) + Math.abs(buf[idx + 2] - buf[rt + 2]) +
+                         Math.abs(buf[idx] - buf[dn]) + Math.abs(buf[idx + 1] - buf[dn + 1]) + Math.abs(buf[idx + 2] - buf[dn + 2]);
+            if (grad < 18) samples.push([buf[idx], buf[idx + 1], buf[idx + 2]]);
+          }
+        }
+        if (samples.length < 16) return;
+        const maxK = Math.min(10, Math.max(3, state.autoParams.traceColors + 3));
+        const cents = [samples[0].slice()];
+        while (cents.length < maxK) {
+          let far = null, farD = 0;
+          for (let i = 0; i < samples.length; i += 2) {
+            const s = samples[i]; let md = Infinity;
+            for (const c of cents) { const d = (s[0]-c[0])**2+(s[1]-c[1])**2+(s[2]-c[2])**2; if (d < md) md = d; }
+            if (md > farD) { farD = md; far = s; }
+          }
+          if (!far || farD < 1200) break;
+          cents.push(far.slice());
+        }
+        for (let it = 0; it < 6; it++) {
+          const sums = cents.map(() => [0, 0, 0, 0]);
+          for (const s of samples) {
+            let best = 0, bestD = Infinity;
+            for (let c = 0; c < cents.length; c++) {
+              const d = (s[0]-cents[c][0])**2+(s[1]-cents[c][1])**2+(s[2]-cents[c][2])**2;
+              if (d < bestD) { bestD = d; best = c; }
+            }
+            sums[best][0]+=s[0]; sums[best][1]+=s[1]; sums[best][2]+=s[2]; sums[best][3]++;
+          }
+          for (let c = 0; c < cents.length; c++) if (sums[c][3]) {
+            cents[c][0] = Math.round(sums[c][0]/sums[c][3]);
+            cents[c][1] = Math.round(sums[c][1]/sums[c][3]);
+            cents[c][2] = Math.round(sums[c][2]/sums[c][3]);
+          }
+        }
+        const tightR2 = 28 * 28 * 3;
+        for (let y = 1; y < h - 1; y++) {
+          for (let x = 1; x < w - 1; x++) {
+            const idx = (y * w + x) * 4;
+            if (buf[idx + 3] < 220) continue;
+            const lt = idx-4, rt = idx+4, up = idx-w*4, dn = idx+w*4;
+            const grad = Math.abs(buf[rt]-buf[lt])+Math.abs(buf[rt+1]-buf[lt+1])+Math.abs(buf[rt+2]-buf[lt+2])+
+                         Math.abs(buf[dn]-buf[up])+Math.abs(buf[dn+1]-buf[up+1])+Math.abs(buf[dn+2]-buf[up+2]);
+            if (grad > 18) continue;
+            let best = 0, bestD = Infinity;
+            for (let c = 0; c < cents.length; c++) {
+              const d = (buf[idx]-cents[c][0])**2+(buf[idx+1]-cents[c][1])**2+(buf[idx+2]-cents[c][2])**2;
+              if (d < bestD) { bestD = d; best = c; }
+            }
+            if (bestD < tightR2) {
+              const t = Math.min(1, (grad < 8 ? 1 : (18 - grad) / 10) * (1 - Math.sqrt(bestD / tightR2) * 0.25));
+              buf[idx] = Math.round(buf[idx]*(1-t)+cents[best][0]*t);
+              buf[idx+1] = Math.round(buf[idx+1]*(1-t)+cents[best][1]*t);
+              buf[idx+2] = Math.round(buf[idx+2]*(1-t)+cents[best][2]*t);
+            }
+          }
+        }
+      };
+
+      const gfPasses = flatNoise > 0.08 ? 1 : 0;
+      const gfRadius = flatNoise > 0.45 ? 2 : 1;
+      const gfEps = flatLock
+        ? (0.0012 + flatNoise * 0.0055)
+        : (0.0008 + flatNoise * 0.0065);
+      const usePyramid = state.presetId !== 'pixel_line' && Math.max(outW / src.width, outH / src.height) > 2.2;
+
+      let imgData = null;
+      let clean = null;
+
+      if (usePyramid) {
+        const stageCanvas = document.createElement('canvas');
+        stageCanvas.width = src.width; stageCanvas.height = src.height;
+        const stCtx = stageCanvas.getContext('2d', { willReadFrequently: true });
+        stCtx.drawImage(src, 0, 0);
+
+        if (gfPasses > 0 || (flatLock && flatNoise > 0.06)) {
+          const sImg = stCtx.getImageData(0, 0, src.width, src.height);
+          let clean1x = gfPasses > 0 ? await guidedFilterRGBA(sImg.data, src.width, src.height, gfRadius, gfEps, gfPasses) : new Uint8ClampedArray(sImg.data);
+          if (!clean1x || myRun !== state.runId) { stageCanvas.width = 1; stageCanvas.height = 1; return; }
+          if (flatLock && flatNoise > 0.06) applyInteriorFlatLock(clean1x, src.width, src.height);
+          stCtx.putImageData(new ImageData(clean1x, src.width, src.height), 0, 0);
+        }
+
+        const stages = [];
+        let curW = src.width, curH = src.height;
+        while (curW < outW || curH < outH) {
+          const nextW = curW * 2 < outW ? curW * 2 : outW;
+          const nextH = curH * 2 < outH ? curH * 2 : outH;
+          stages.push([nextW, nextH]);
+          curW = nextW; curH = nextH;
+        }
+
+        for (let si = 0; si < stages.length; si++) {
+          const [sw, sh] = stages[si];
+          setProgress(12 + Math.round((si / stages.length) * 70), `Piramit süper çözünürlük (${si + 1}/${stages.length} · ${sw}×${sh})...`);
+          const stData = await bicubicUpscale(stageCanvas, sw, sh, false, myRun);
+          if (!stData || myRun !== state.runId) { stageCanvas.width = 1; stageCanvas.height = 1; return; }
+          const stClean = await applyAnisotropicShockFilter(stData.data, sw, sh, sharpAmt, 1, myRun);
+          if (!stClean || myRun !== state.runId) { stageCanvas.width = 1; stageCanvas.height = 1; return; }
+          if (si < stages.length - 1) {
+            stageCanvas.width = sw; stageCanvas.height = sh;
+            stageCanvas.getContext('2d', { willReadFrequently: true }).putImageData(new ImageData(stClean, sw, sh), 0, 0);
+          } else {
+            clean = stClean;
+            imgData = stData;
+          }
+        }
+        stageCanvas.width = 1; stageCanvas.height = 1;
+      } else {
+        imgData = await bicubicUpscale(src, outW, outH, state.presetId === 'pixel_line', myRun);
+        if (!imgData || myRun !== state.runId) return;
+        clean = gfPasses > 0 ? await guidedFilterRGBA(imgData.data, outW, outH, gfRadius, gfEps, gfPasses) : new Uint8ClampedArray(imgData.data);
+        if (!clean || myRun !== state.runId) return;
+        if (flatLock && flatNoise > 0.06) {
+          setProgress(66, 'Düz renk alanları sabitleniyor...');
+          await yieldFrame();
+          if (myRun !== state.runId) return;
+          applyInteriorFlatLock(clean, outW, outH);
+        }
+        // True Osher-Rudin anisotropic directional shock edge steepening (2 light monotonic passes)
+        clean = await applyAnisotropicShockFilter(clean, outW, outH, sharpAmt, 2, myRun);
+        if (!clean || myRun !== state.runId) return;
+      }
+
+      const enh = state.enhancedCanvas;
+      enh.width = outW; enh.height = outH;
+      const ectx = enh.getContext('2d', { willReadFrequently: true });
+      const data = imgData.data;
+
+      // Copy full buffer (including 1px borders) then run final detail/clarity pass
+      data.set(clean);
+      setProgress(88, 'Detay & netlik dengeleniyor...');
+      await yieldFrame();
+      if (myRun !== state.runId) return;
+
+      if (flatLock) {
+        const gain = Math.min(1.65, 0.95 + sharpAmt * 0.60);
+        for (let y = 1; y < outH - 1; y++) {
+          for (let x = 1; x < outW - 1; x++) {
+            const idx = (y * outW + x) * 4;
+            const up = idx - outW*4, dn = idx + outW*4, lt = idx - 4, rt = idx + 4;
+            const ul = up - 4, ur = up + 4, dl = dn - 4, dr = dn + 4;
+            for (let ch = 0; ch < 4; ch++) {
+              const c = clean[idx + ch];
+              const blur = (c*4 + (clean[up+ch]+clean[dn+ch]+clean[lt+ch]+clean[rt+ch])*2 + (clean[ul+ch]+clean[ur+ch]+clean[dl+ch]+clean[dr+ch])) / 16;
+              const nbrs = [clean[up+ch],clean[dn+ch],clean[lt+ch],clean[rt+ch],clean[ul+ch],clean[ur+ch],clean[dl+ch],clean[dr+ch]];
+              let mn = c, mx = c;
+              for (let n = 0; n < 8; n++) { if (nbrs[n] < mn) mn = nbrs[n]; if (nbrs[n] > mx) mx = nbrs[n]; }
+              let val = Math.abs(c - blur) > 1.5 ? (c + (c - blur) * (ch === 3 ? 1.15 : gain)) : c;
+              if (val < mn) val = mn; if (val > mx) val = mx;
+              data[idx + ch] = val < 0 ? 0 : val > 255 ? 255 : Math.round(val);
+            }
+          }
+        }
+      } else {
+        // Luminance-only unsharp mask + soft S-curve local clarity (prevents hue shift on photos)
+        const lumGain = sharpAmt * 1.15;
+        const cAmt = contrastAmt * 0.55;
+        const lumAt = (i) => 0.299 * clean[i] + 0.587 * clean[i + 1] + 0.114 * clean[i + 2];
+        for (let y = 1; y < outH - 1; y++) {
+          for (let x = 1; x < outW - 1; x++) {
+            const idx = (y * outW + x) * 4;
+            const up = idx - outW*4, dn = idx + outW*4, lt = idx - 4, rt = idx + 4;
+            const ul = up - 4, ur = up + 4, dl = dn - 4, dr = dn + 4;
+            const lC = lumAt(idx);
+            const lNbrs = [lumAt(up), lumAt(dn), lumAt(lt), lumAt(rt), lumAt(ul), lumAt(ur), lumAt(dl), lumAt(dr)];
+            const lBlur = (lC * 4 + (lNbrs[0] + lNbrs[1] + lNbrs[2] + lNbrs[3]) * 2 + (lNbrs[4] + lNbrs[5] + lNbrs[6] + lNbrs[7])) / 16;
+            let mnL = lC, mxL = lC;
+            for (let n = 0; n < 8; n++) { if (lNbrs[n] < mnL) mnL = lNbrs[n]; if (lNbrs[n] > mxL) mxL = lNbrs[n]; }
+            let targetL = Math.abs(lC - lBlur) > 2 ? lC + (lC - lBlur) * lumGain : lC;
+            if (targetL < mnL) targetL = mnL;
+            if (targetL > mxL) targetL = mxL;
+            const norm = targetL / 255;
+            const sCurve = norm + cAmt * (norm - 0.5) * (1 - (2 * norm - 1) ** 2);
+            const deltaL = sCurve * 255 - lC;
+            for (let ch = 0; ch < 3; ch++) {
+              const v = clean[idx + ch] + deltaL;
+              data[idx + ch] = v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
+            }
+            const aC = clean[idx + 3];
+            const aBlur = (aC*4 + (clean[up+3]+clean[dn+3]+clean[lt+3]+clean[rt+3])*2 + (clean[ul+3]+clean[ur+3]+clean[dl+3]+clean[dr+3])) / 16;
+            let aVal = Math.abs(aC - aBlur) > 2 ? aC + (aC - aBlur) * 1.15 : aC;
+            data[idx + 3] = aVal < 0 ? 0 : aVal > 255 ? 255 : Math.round(aVal);
+          }
+        }
+      }
+      ectx.putImageData(imgData, 0, 0);
+
+      state.workingCanvas.width = outW; state.workingCanvas.height = outH;
+      state.workingCanvas.getContext('2d', { willReadFrequently: true }).drawImage(enh, 0, 0);
+      if (state.bgRemoved) applyBackgroundRemoval(true);
+
+      renderViewports();
+      setProgress(100, 'Tamamlandı');
+      setTimeout(() => setProgress(null), 300);
+      setStatus(`İyileştirme tamamlandı (${preset.name})`);
+      $('statusSize').textContent = wasCapped ? `Giriş: ${src.width}×${src.height} → Çıkış: ${outW}×${outH} px (${state.scale}× sınır)` : `Giriş: ${src.width}×${src.height} → Çıkış: ${outW}×${outH} px`;
+      if (!silent) showToast(`Görsel ${state.scale}× büyütülüp netleştirildi.`);
+    } finally {
+      state.isProcessing = false;
+      $('btnProcess').disabled = false;
+    }
+  }
+
+  // Alpha-Safe Perimeter Flood-Fill Background Removal + Halo Decontamination
+  function applyBackgroundRemoval(silent = false) {
+    const enh = state.enhancedCanvas;
+    if (!enh.width) return;
+
+    const w = enh.width, h = enh.height;
+    const work = state.workingCanvas;
+    work.width = w; work.height = h;
+    const wctx = work.getContext('2d', { willReadFrequently: true });
+    wctx.drawImage(enh, 0, 0);
+    const imgData = wctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+
+    let bgRgb = state.bgKeyColor;
+    if (!bgRgb) {
+      const perim = detectPerimeterBg(d, w, h);
+      if (perim.hasAlpha) {
+        state.bgRemoved = true;
+        updateBgBadge();
+        renderViewports();
+        if (!silent) showToast('Görsel zaten şeffaf arka plana sahip.');
+        return;
+      }
+      bgRgb = perim.rgb;
+    }
+
+    const [bgR, bgG, bgB] = bgRgb;
+    const tol = Number($('rngBgTol').value) || state.autoParams.bgTol;
+    const feather = state.autoParams.bgFeather;
+    const maxDist = tol + feather;
+    const mode = $('bgMode').value;
+    const decontam = $('chkBgDecontam').checked;
+
+    const colorDist = (idx) => {
+      const dr = d[idx] - bgR, dg = d[idx + 1] - bgG, db = d[idx + 2] - bgB;
+      return Math.sqrt(0.299 * dr * dr + 0.587 * dg * dg + 0.114 * db * db) * 1.732;
+    };
+    const clearByDist = (idx, dist) => {
+      if (d[idx + 3] < 16) return;
+      if (dist <= tol) d[idx + 3] = 0;
+      else if (dist < maxDist && feather > 0) d[idx + 3] = Math.round(d[idx + 3] * ((dist - tol) / feather));
+    };
+
+    if (mode === 'global') {
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i + 3] === 0) continue;
+        clearByDist(i, colorDist(i));
+      }
+    } else {
+      const visited = new Uint8Array(w * h);
+      const queue = new Int32Array(w * h);
+      let head = 0, tail = 0;
+      const tryPush = (px, py) => {
+        const p = py * w + px;
+        if (visited[p]) return;
+        const idx = p * 4;
+        if (d[idx + 3] < 16 || colorDist(idx) <= maxDist) {
+          visited[p] = 1; queue[tail++] = p;
+        }
+      };
+      for (let x = 0; x < w; x++) { tryPush(x, 0); tryPush(x, h - 1); }
+      for (let y = 0; y < h; y++) { tryPush(0, y); tryPush(w - 1, y); }
+      while (head < tail) {
+        const p = queue[head++], idx = p * 4;
+        clearByDist(idx, colorDist(idx));
+        const x = p % w, y = (p - x) / w;
+        if (x > 0) tryPush(x - 1, y);
+        if (x < w - 1) tryPush(x + 1, y);
+        if (y > 0) tryPush(x, y - 1);
+        if (y < h - 1) tryPush(x, y + 1);
+      }
+
+      if ($('chkBgInnerHoles')?.checked) {
+        const maxHolePx = w * h * 0.12;
+        const innerQueue = new Int32Array(w * h);
+        for (let seed = 0; seed < w * h; seed++) {
+          if (visited[seed]) continue;
+          const sIdx = seed * 4;
+          if (d[sIdx + 3] < 16 || colorDist(sIdx) > tol * 0.9) continue;
+
+          visited[seed] = 1;
+          let iqHead = 0, iqTail = 0;
+          innerQueue[iqTail++] = seed;
+          while (iqHead < iqTail) {
+            const p = innerQueue[iqHead++];
+            const x = p % w, y = (p - x) / w;
+            const tryInner = (nx, ny) => {
+              const np = ny * w + nx;
+              if (visited[np]) return;
+              const nIdx = np * 4;
+              if (d[nIdx + 3] < 16 || colorDist(nIdx) <= maxDist) {
+                visited[np] = 1;
+                innerQueue[iqTail++] = np;
+              }
+            };
+            if (x > 0) tryInner(x - 1, y);
+            if (x < w - 1) tryInner(x + 1, y);
+            if (y > 0) tryInner(x, y - 1);
+            if (y < h - 1) tryInner(x, y + 1);
+          }
+
+          if (iqTail < maxHolePx) {
+            for (let k = 0; k < iqTail; k++) {
+              const idx = innerQueue[k] * 4;
+              clearByDist(idx, colorDist(idx));
+            }
+          }
+        }
+      }
+    }
+
+    if (decontam) {
+      for (let i = 0; i < d.length; i += 4) {
+        const a = d[i + 3];
+        if (a > 0 && a < 245) {
+          const af = a / 255;
+          d[i] = Math.max(0, Math.min(255, (d[i] - bgR * (1 - af)) / Math.max(0.25, af)));
+          d[i+1] = Math.max(0, Math.min(255, (d[i+1] - bgG * (1 - af)) / Math.max(0.25, af)));
+          d[i+2] = Math.max(0, Math.min(255, (d[i+2] - bgB * (1 - af)) / Math.max(0.25, af)));
+        }
+      }
+    }
+
+    wctx.putImageData(imgData, 0, 0);
+    state.bgRemoved = true;
+    updateBgBadge();
+    renderViewports();
+    if (state.viewMode === 'vector') runVectorTrace(false);
+    if (!silent) showToast('Arka plan temizlendi.');
+  }
+
+  // Fringe-Free Sub-Pixel Vectorizer (Gaussian Scalar Field + BFS Label Dilation + Sub-Pixel Marching Squares + Taubin/Cubic Bezier)
+  function smoothScalarField(field, w, h, passes = 1) {
+    let cur = new Float32Array(field);
+    let nxt = new Float32Array(w * h);
+    for (let pass = 0; pass < passes; pass++) {
+      for (let y = 0; y < h; y++) {
+        const ym = y > 0 ? y - 1 : 0;
+        const yp = y < h - 1 ? y + 1 : h - 1;
+        const row = y * w, rowM = ym * w, rowP = yp * w;
+        for (let x = 0; x < w; x++) {
+          const xm = x > 0 ? x - 1 : 0;
+          const xp = x < w - 1 ? x + 1 : w - 1;
+          nxt[row + x] = (
+            cur[row + x] * 4 +
+            (cur[row + xm] + cur[row + xp] + cur[rowM + x] + cur[rowP + x]) * 2 +
+            (cur[rowM + xm] + cur[rowM + xp] + cur[rowP + xm] + cur[rowP + xp])
+          ) * 0.0625;
+        }
+      }
+      const tmp = cur; cur = nxt; nxt = tmp;
+    }
+    return cur;
+  }
+
+  function smoothScalarFieldCornerSafe(field, w, h, passes = 2) {
+    let cur = new Float32Array(field);
+    let nxt = new Float32Array(w * h);
+    const inv14 = 1 / 14;
+    for (let pass = 0; pass < passes; pass++) {
+      for (let y = 0; y < h; y++) {
+        const ym = y > 0 ? y - 1 : 0;
+        const yp = y < h - 1 ? y + 1 : h - 1;
+        const row = y * w, rowM = ym * w, rowP = yp * w;
+        for (let x = 0; x < w; x++) {
+          const xm = x > 0 ? x - 1 : 0;
+          const xp = x < w - 1 ? x + 1 : w - 1;
+          nxt[row + x] = (
+            cur[row + x] * 5.2 +
+            (cur[row + xm] + cur[row + xp] + cur[rowM + x] + cur[rowP + x]) * 1.5 +
+            (cur[rowM + xm] + cur[rowM + xp] + cur[rowP + xm] + cur[rowP + xp]) * 0.7
+          ) * inv14;
+        }
+      }
+      const tmp = cur; cur = nxt; nxt = tmp;
+    }
+    return cur;
+  }
+
+  function buildFgAlphaField(d0, tw, th, perim) {
+    const total = tw * th;
+    const raw = new Float32Array(total);
+    if (state.bgRemoved || perim.hasAlpha || !perim.rgb) {
+      for (let p = 0; p < total; p++) raw[p] = d0[p * 4 + 3] / 255;
+      return smoothScalarField(raw, tw, th, 1);
+    }
+
+    const [bgR, bgG, bgB] = perim.rgb;
+    const tol = Number($('rngBgTol').value) || state.autoParams.bgTol;
+    const feather = Math.max(4, state.autoParams.bgFeather || 8);
+    const maxDist = tol + feather;
+    const colorDist = (idx) => {
+      const dr = d0[idx] - bgR, dg = d0[idx + 1] - bgG, db = d0[idx + 2] - bgB;
+      return Math.sqrt(0.299 * dr * dr + 0.587 * dg * dg + 0.114 * db * db) * 1.732;
+    };
+
+    if ($('bgMode').value === 'global') {
+      for (let p = 0; p < total; p++) {
+        const idx = p * 4;
+        if (d0[idx + 3] < 16) { raw[p] = 0; continue; }
+        const dist = colorDist(idx);
+        raw[p] = dist <= tol ? 0 : dist < maxDist ? (dist - tol) / feather : 1;
+      }
+      return smoothScalarField(raw, tw, th, 1);
+    }
+
+    raw.fill(1);
+    const visited = new Uint8Array(total);
+    const queue = new Int32Array(total);
+    let head = 0, tail = 0;
+    const tryPush = (px, py) => {
+      const p = py * tw + px;
+      if (visited[p]) return;
+      const idx = p * 4;
+      if (d0[idx + 3] < 16 || colorDist(idx) <= maxDist) {
+        visited[p] = 1; queue[tail++] = p;
+      }
+    };
+    for (let x = 0; x < tw; x++) { tryPush(x, 0); tryPush(x, th - 1); }
+    for (let y = 0; y < th; y++) { tryPush(0, y); tryPush(tw - 1, y); }
+    while (head < tail) {
+      const p = queue[head++], idx = p * 4;
+      if (d0[idx + 3] < 16) raw[p] = 0;
+      else {
+        const dist = colorDist(idx);
+        raw[p] = dist <= tol ? 0 : dist < maxDist ? (dist - tol) / feather : 1;
+      }
+      const x = p % tw, y = (p - x) / tw;
+      if (x > 0) tryPush(x - 1, y);
+      if (x < tw - 1) tryPush(x + 1, y);
+      if (y > 0) tryPush(x, y - 1);
+      if (y < th - 1) tryPush(x, y + 1);
+    }
+
+    if ($('chkBgInnerHoles')?.checked) {
+      const maxHolePx = total * 0.12;
+      const innerQueue = new Int32Array(total);
+      for (let seed = 0; seed < total; seed++) {
+        if (visited[seed]) continue;
+        const sIdx = seed * 4;
+        if (d0[sIdx + 3] < 16 || colorDist(sIdx) > tol * 0.9) continue;
+        visited[seed] = 1;
+        let iqHead = 0, iqTail = 0;
+        innerQueue[iqTail++] = seed;
+        while (iqHead < iqTail) {
+          const p = innerQueue[iqHead++];
+          const x = p % tw, y = (p - x) / tw;
+          const tryInner = (nx, ny) => {
+            const np = ny * tw + nx;
+            if (visited[np]) return;
+            const nIdx = np * 4;
+            if (d0[nIdx + 3] < 16 || colorDist(nIdx) <= maxDist) {
+              visited[np] = 1;
+              innerQueue[iqTail++] = np;
+            }
+          };
+          if (x > 0) tryInner(x - 1, y);
+          if (x < tw - 1) tryInner(x + 1, y);
+          if (y > 0) tryInner(x, y - 1);
+          if (y < th - 1) tryInner(x, y + 1);
+        }
+        if (iqTail < maxHolePx) {
+          for (let k = 0; k < iqTail; k++) {
+            const p = innerQueue[k], idx = p * 4;
+            if (d0[idx + 3] < 16) raw[p] = 0;
+            else {
+              const dist = colorDist(idx);
+              raw[p] = dist <= tol ? 0 : dist < maxDist ? (dist - tol) / feather : 1;
+            }
+          }
+        }
+      }
+    }
+    return smoothScalarField(raw, tw, th, 1);
+  }
+
+  function buildCleanColorLayers(d0, fgAlpha, tw, th, mode, colorCountOpt = 'auto') {
+    const total = tw * th;
+    const samples = [];
+    const step = Math.max(1, Math.floor(Math.sqrt(total / 8000)));
+    const isSolidInterior = (x, y, rad, minA) => {
+      for (let dy = -rad; dy <= rad; dy++) {
+        const ny = y + dy; if (ny < 0 || ny >= th) return false;
+        const row = ny * tw;
+        for (let dx = -rad; dx <= rad; dx++) {
+          const nx = x + dx; if (nx < 0 || nx >= tw) return false;
+          if (fgAlpha[row + nx] < minA) return false;
+        }
+      }
+      return true;
+    };
+
+    for (let y = 2; y < th - 2; y += step) {
+      for (let x = 2; x < tw - 2; x += step) {
+        if (!isSolidInterior(x, y, 2, 0.96)) continue;
+        const p = y * tw + x, i = p * 4;
+        const lt = i - 4, rt = i + 4, up = i - tw * 4, dn = i + tw * 4;
+        const grad = Math.abs(d0[rt] - d0[lt]) + Math.abs(d0[rt + 1] - d0[lt + 1]) + Math.abs(d0[rt + 2] - d0[lt + 2]) +
+                     Math.abs(d0[dn] - d0[up]) + Math.abs(d0[dn + 1] - d0[up + 1]) + Math.abs(d0[dn + 2] - d0[up + 2]);
+        if (grad < 16) {
+          const lab = rgbToLab(d0[i], d0[i + 1], d0[i + 2]);
+          samples.push({ rgb: [d0[i], d0[i + 1], d0[i + 2]], lab });
+        }
+      }
+    }
+    if (!samples.length) {
+      for (let p = 0; p < total; p += Math.max(1, step)) {
+        if (fgAlpha[p] >= 0.5) {
+          const i = p * 4;
+          samples.push({ rgb: [d0[i], d0[i + 1], d0[i + 2]], lab: rgbToLab(d0[i], d0[i + 1], d0[i + 2]) });
+        }
+      }
+    }
+    if (!samples.length) return { cents: [], labels: new Int16Array(total).fill(-1) };
+
+    const explicitN = colorCountOpt !== 'auto' ? Math.max(2, Math.min(16, Number(colorCountOpt) || 4)) : 0;
+    const maxColors = explicitN || (mode === 'detailed' ? 14 : 6);
+    const minDe2 = explicitN ? 18 : (mode === 'detailed' ? 45 : 110);
+
+    let cents = [{ rgb: samples[0].rgb.slice(), lab: samples[0].lab.slice() }];
+    while (cents.length < maxColors) {
+      let far = null, farD = 0;
+      for (let i = 0; i < samples.length; i += 2) {
+        const s = samples[i];
+        let md = Infinity;
+        for (const c of cents) {
+          const dd = labDist2(s.lab, c.lab);
+          if (dd < md) md = dd;
+        }
+        if (md > farD) { farD = md; far = s; }
+      }
+      if (!far || farD < minDe2) break;
+      cents.push({ rgb: far.rgb.slice(), lab: far.lab.slice() });
+    }
+
+    for (let it = 0; it < 8; it++) {
+      const sums = cents.map(() => [0, 0, 0, 0]);
+      for (const s of samples) {
+        let best = 0, bestD = Infinity;
+        for (let c = 0; c < cents.length; c++) {
+          const dd = labDist2(s.lab, cents[c].lab);
+          if (dd < bestD) { bestD = dd; best = c; }
+        }
+        sums[best][0] += s.rgb[0]; sums[best][1] += s.rgb[1]; sums[best][2] += s.rgb[2]; sums[best][3]++;
+      }
+      for (let c = 0; c < cents.length; c++) {
+        if (sums[c][3]) {
+          const r = Math.round(sums[c][0] / sums[c][3]);
+          const g = Math.round(sums[c][1] / sums[c][3]);
+          const b = Math.round(sums[c][2] / sums[c][3]);
+          cents[c].rgb = [r, g, b];
+          cents[c].lab = rgbToLab(r, g, b);
+        }
+      }
+    }
+
+    const clusterCounts = new Int32Array(cents.length);
+    for (const s of samples) {
+      let best = 0, bestD = Infinity;
+      for (let c = 0; c < cents.length; c++) {
+        const dd = labDist2(s.lab, cents[c].lab);
+        if (dd < bestD) { bestD = dd; best = c; }
+      }
+      clusterCounts[best]++;
+    }
+    const minRatio = explicitN ? 0.001 : (mode === 'detailed' ? 0.002 : 0.0045);
+    const minClusterCount = Math.max(1, samples.length * minRatio);
+    const kept = cents.filter((_, idx) => clusterCounts[idx] >= minClusterCount);
+    if (kept.length) cents = kept;
+
+    // Seed confident deep-interior pixels using CIELAB perceptual distance
+    const labels = new Int16Array(total).fill(-1);
+    const seedDe2 = 2200;
+    for (let y = 1; y < th - 1; y++) {
+      for (let x = 1; x < tw - 1; x++) {
+        if (!isSolidInterior(x, y, 1, 0.92)) continue;
+        const p = y * tw + x, i = p * 4;
+        const lt = i - 4, rt = i + 4, up = i - tw * 4, dn = i + tw * 4;
+        const grad = Math.abs(d0[rt] - d0[lt]) + Math.abs(d0[rt + 1] - d0[lt + 1]) + Math.abs(d0[rt + 2] - d0[lt + 2]) +
+                     Math.abs(d0[dn] - d0[up]) + Math.abs(d0[dn + 1] - d0[up + 1]) + Math.abs(d0[dn + 2] - d0[up + 2]);
+        if (grad >= 24) continue;
+        const pLab = rgbToLab(d0[i], d0[i + 1], d0[i + 2]);
+        let best = 0, bestD = Infinity;
+        for (let c = 0; c < cents.length; c++) {
+          const dd = labDist2(pLab, cents[c].lab);
+          if (dd < bestD) { bestD = dd; best = c; }
+        }
+        if (bestD < seedDe2) labels[p] = best;
+      }
+    }
+
+    // BFS boundary label dilation outward from confident seeds into anti-aliased perimeter/seam pixels
+    const inQueue = new Uint8Array(total);
+    const bfsQueue = new Int32Array(total);
+    let qHead = 0, qTail = 0;
+    for (let y = 0; y < th; y++) {
+      for (let x = 0; x < tw; x++) {
+        const p = y * tw + x;
+        if (labels[p] !== -1 || fgAlpha[p] < 0.12) continue;
+        let hasSeedNbr = false;
+        for (let dy = -1; dy <= 1 && !hasSeedNbr; dy++) {
+          const ny = y + dy; if (ny < 0 || ny >= th) continue;
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx; if (nx < 0 || nx >= tw) continue;
+            if (labels[ny * tw + nx] >= 0) { hasSeedNbr = true; break; }
+          }
+        }
+        if (hasSeedNbr) { inQueue[p] = 1; bfsQueue[qTail++] = p; }
+      }
+    }
+    while (qHead < qTail) {
+      const p = bfsQueue[qHead++];
+      const x = p % tw, y = (p - x) / tw, i = p * 4;
+      const pLab = rgbToLab(d0[i], d0[i + 1], d0[i + 2]);
+      let bestLbl = -1, bestDist = Infinity;
+      for (let dy = -1; dy <= 1; dy++) {
+        const ny = y + dy; if (ny < 0 || ny >= th) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nx = x + dx; if (nx < 0 || nx >= tw) continue;
+          const lbl = labels[ny * tw + nx];
+          if (lbl < 0) continue;
+          const dd = labDist2(pLab, cents[lbl].lab);
+          if (dd < bestDist) { bestDist = dd; bestLbl = lbl; }
+        }
+      }
+      if (bestLbl >= 0) {
+        labels[p] = bestLbl;
+        for (let dy = -1; dy <= 1; dy++) {
+          const ny = y + dy; if (ny < 0 || ny >= th) continue;
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx; if (nx < 0 || nx >= tw) continue;
+            const np = ny * tw + nx;
+            if (!inQueue[np] && labels[np] === -1 && fgAlpha[np] >= 0.12) {
+              inQueue[np] = 1; bfsQueue[qTail++] = np;
+            }
+          }
+        }
+      }
+    }
+
+    for (let p = 0; p < total; p++) {
+      if (labels[p] === -1 && fgAlpha[p] >= 0.25) {
+        const i = p * 4;
+        const pLab = rgbToLab(d0[i], d0[i + 1], d0[i + 2]);
+        let best = 0, bestD = Infinity;
+        for (let c = 0; c < cents.length; c++) {
+          const dd = labDist2(pLab, cents[c].lab);
+          if (dd < bestD) { bestD = dd; best = c; }
+        }
+        labels[p] = best;
+      }
+    }
+
+    const counts = new Int16Array(cents.length);
+    for (let pass = 0; pass < 2; pass++) {
+      const nextLabels = new Int16Array(labels);
+      for (let y = 1; y < th - 1; y++) {
+        for (let x = 1; x < tw - 1; x++) {
+          const p = y * tw + x;
+          if (fgAlpha[p] < 0.35 || labels[p] < 0) continue;
+          counts.fill(0);
+          for (let dy = -1; dy <= 1; dy++) {
+            const row = (y + dy) * tw;
+            for (let dx = -1; dx <= 1; dx++) {
+              const lbl = labels[row + x + dx];
+              if (lbl >= 0) counts[lbl]++;
+            }
+          }
+          let maj = labels[p], majCnt = counts[maj];
+          for (let c = 0; c < cents.length; c++) {
+            if (counts[c] > majCnt) { majCnt = counts[c]; maj = c; }
+          }
+          if (maj !== labels[p] && majCnt >= 5) nextLabels[p] = maj;
+        }
+      }
+      labels.set(nextLabels);
+    }
+
+    return { cents: cents.map(c => c.rgb), labels };
+  }
+
+  function ringArea(pts) {
+    let a = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i], q = pts[(i + 1) % pts.length];
+      a += p.x * q.y - q.x * p.y;
+    }
+    return Math.abs(a * 0.5);
+  }
+
+  function simplifyOpenDP(pts, eps) {
+    if (pts.length <= 2) return pts;
+    let maxD = 0, idx = 0;
+    const a = pts[0], b = pts[pts.length - 1], dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1e-6;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const d = Math.abs(dy * pts[i].x - dx * pts[i].y + b.x * a.y - b.y * a.x) / len;
+      if (d > maxD) { maxD = d; idx = i; }
+    }
+    if (maxD > eps) return simplifyOpenDP(pts.slice(0, idx + 1), eps).slice(0, -1).concat(simplifyOpenDP(pts.slice(idx), eps));
+    return [a, b];
+  }
+
+  function simplifyClosedDP(pts, eps) {
+    let ring = pts;
+    if (ring.length > 2 && Math.hypot(ring[0].x - ring[ring.length-1].x, ring[0].y - ring[ring.length-1].y) < 1e-3) ring = ring.slice(0, -1);
+    if (ring.length <= 4) return ring;
+    let far = 1, maxD2 = -1;
+    for (let i = 1; i < ring.length; i++) {
+      const d2 = (ring[i].x - ring[0].x)**2 + (ring[i].y - ring[0].y)**2;
+      if (d2 > maxD2) { maxD2 = d2; far = i; }
+    }
+    const h1 = simplifyOpenDP(ring.slice(0, far + 1), eps);
+    const h2 = simplifyOpenDP(ring.slice(far).concat([ring[0]]), eps);
+    const out = h1.slice(0, -1).concat(h2.slice(0, -1));
+    return out.length >= 3 ? out : ring;
+  }
+
+  function traceScalarField(field, w, h, iso, minAreaPx) {
+    const segs = [];
+    const at = (x, y) => (x >= 0 && y >= 0 && x < w && y < h) ? field[y * w + x] : 0;
+    const clampT = (t) => (t < 0.02 ? 0.02 : t > 0.98 ? 0.98 : t);
+    const interp = (vA, vB) => clampT((iso - vA) / ((vB - vA) || 1e-6));
+
+    for (let y = -1; y < h; y++) {
+      for (let x = -1; x < w; x++) {
+        const v0 = at(x, y), v1 = at(x + 1, y), v2 = at(x + 1, y + 1), v3 = at(x, y + 1);
+        const c = ((v0 >= iso ? 1 : 0) << 3) | ((v1 >= iso ? 1 : 0) << 2) | ((v2 >= iso ? 1 : 0) << 1) | (v3 >= iso ? 1 : 0);
+        if (c === 0 || c === 15) continue;
+
+        const T = { key: `H:${x},${y}`, x: x + interp(v0, v1), y };
+        const R = { key: `V:${x + 1},${y}`, x: x + 1, y: y + interp(v1, v2) };
+        const B = { key: `H:${x},${y + 1}`, x: x + interp(v3, v2), y: y + 1 };
+        const L = { key: `V:${x},${y}`, x, y: y + interp(v0, v3) };
+
+        switch (c) {
+          case 1: segs.push([L, B]); break;
+          case 2: segs.push([B, R]); break;
+          case 3: segs.push([L, R]); break;
+          case 4: segs.push([R, T]); break;
+          case 5: {
+            const vc = 0.25 * (v0 + v1 + v2 + v3);
+            if (vc >= iso) segs.push([L, T], [R, B]);
+            else segs.push([L, B], [R, T]);
+            break;
+          }
+          case 6: segs.push([B, T]); break;
+          case 7: segs.push([L, T]); break;
+          case 8: segs.push([T, L]); break;
+          case 9: segs.push([T, B]); break;
+          case 10: {
+            const vc = 0.25 * (v0 + v1 + v2 + v3);
+            if (vc >= iso) segs.push([T, R], [B, L]);
+            else segs.push([T, L], [B, R]);
+            break;
+          }
+          case 11: segs.push([T, R]); break;
+          case 12: segs.push([R, L]); break;
+          case 13: segs.push([R, B]); break;
+          case 14: segs.push([B, L]); break;
+        }
+      }
+    }
+
+    const adj = new Map();
+    for (let i = 0; i < segs.length; i++) {
+      const k = segs[i][0].key;
+      if (!adj.has(k)) adj.set(k, []);
+      adj.get(k).push(i);
+    }
+
+    const used = new Uint8Array(segs.length), loops = [];
+    for (let i = 0; i < segs.length; i++) {
+      if (used[i]) continue;
+      used[i] = 1;
+      const pts = [{ x: segs[i][0].x, y: segs[i][0].y }];
+      const startKey = segs[i][0].key;
+      let curKey = segs[i][1].key, guard = 0;
+      while (guard++ < 60000 && curKey !== startKey) {
+        const list = adj.get(curKey);
+        if (!list) break;
+        const nextIdx = list.find(idx => !used[idx]);
+        if (nextIdx === undefined) break;
+        used[nextIdx] = 1;
+        pts.push({ x: segs[nextIdx][0].x, y: segs[nextIdx][0].y });
+        curKey = segs[nextIdx][1].key;
+      }
+      if (pts.length >= 4 && curKey === startKey && ringArea(pts) >= minAreaPx) {
+        loops.push(pts);
+      }
+    }
+    return loops;
+  }
+
+  function fitTaubinCircle(pts) {
+    const n = pts.length;
+    if (n < 5) return null;
+    let mx = 0, my = 0;
+    for (let i = 0; i < n; i++) { mx += pts[i].x; my += pts[i].y; }
+    mx /= n; my /= n;
+
+    let Mxx = 0, Myy = 0, Mxy = 0, Mxz = 0, Myz = 0, Mzz = 0;
+    for (let i = 0; i < n; i++) {
+      const xi = pts[i].x - mx, yi = pts[i].y - my;
+      const zi = xi * xi + yi * yi;
+      Mxy += xi * yi; Mxx += xi * xi; Myy += yi * yi;
+      Mxz += xi * zi; Myz += yi * zi; Mzz += zi * zi;
+    }
+    Mxx /= n; Myy /= n; Mxy /= n; Mxz /= n; Myz /= n; Mzz /= n;
+
+    const Mz = Mxx + Myy;
+    const CovXY = Mxx * Myy - Mxy * Mxy;
+    const VarZ = Mzz - Mz * Mz;
+    const A2 = 4 * CovXY - 3 * Mz * Mz - Mzz;
+    const A1 = VarZ * Mz + 4 * CovXY * Mz - Mxz * Mxz - Myz * Myz;
+    const A0 = Mxz * (Mxz * Myy - Myz * Mxy) + Myz * (Myz * Mxx - Mxz * Mxy) - VarZ * CovXY;
+    const A22 = A2 + A2;
+
+    let x = 0, y = A0;
+    for (let it = 0; it < 16; it++) {
+      const yNext = A0 + x * (A1 + x * (A2 + 4 * Mz * x));
+      const dExact = A1 + x * (A22 + 12 * Mz * x);
+      if (Math.abs(dExact) < 1e-14) break;
+      const xNext = x - yNext / dExact;
+      if (Math.abs(xNext - x) < 1e-10) { x = xNext; break; }
+      x = xNext;
+      y = yNext;
+    }
+
+    const DET = x * x - x * Mz + CovXY;
+    if (Math.abs(DET) < 1e-12) return null;
+    const dx = (Mxz * (Myy - x) - Myz * Mxy) / DET * 0.5;
+    const dy = (Myz * (Mxx - x) - Mxz * Mxy) / DET * 0.5;
+    const r2 = dx * dx + dy * dy + Mz + 2 * x;
+    if (r2 <= 0 || !Number.isFinite(r2)) return null;
+    const r = Math.sqrt(r2);
+    const cx = mx + dx, cy = my + dy;
+
+    let maxErr = 0;
+    for (let i = 0; i < n; i++) {
+      const e = Math.abs(Math.hypot(pts[i].x - cx, pts[i].y - cy) - r);
+      if (e > maxErr) maxErr = e;
+    }
+    return { cx, cy, r, maxErr };
+  }
+
+  // Peter Selinger Potrace-inspired Optimal Polygon (Prefix Sums + Cone Linearity + DP Cycle)
+  function potraceOptimalPolygon(pts, maxDev = 0.75) {
+    const n = pts.length;
+    if (n <= 6) return pts.map((_, i) => i);
+
+    const m2 = n * 2;
+    const P = new Array(m2);
+    const sx = new Float64Array(m2 + 1), sy = new Float64Array(m2 + 1);
+    const sxx = new Float64Array(m2 + 1), syy = new Float64Array(m2 + 1), sxy = new Float64Array(m2 + 1);
+    for (let i = 0; i < m2; i++) {
+      const pt = pts[i % n];
+      P[i] = pt;
+      sx[i + 1] = sx[i] + pt.x;
+      sy[i + 1] = sy[i] + pt.y;
+      sxx[i + 1] = sxx[i] + pt.x * pt.x;
+      syy[i + 1] = syy[i] + pt.y * pt.y;
+      sxy[i + 1] = sxy[i] + pt.x * pt.y;
+    }
+
+    const maxSpan = Math.min(n - 2, Math.max(36, Math.floor(n * 0.55)));
+    const lon = new Int32Array(n);
+    for (let i = 0; i < n; i++) {
+      let c0x = 0, c0y = 0, c1x = 0, c1y = 0, hasCone = false;
+      let farJ = i + 1;
+      for (let j = i + 1; j <= i + maxSpan; j++) {
+        const dx = P[j].x - P[i].x, dy = P[j].y - P[i].y;
+        const d = Math.hypot(dx, dy);
+        const stepDx = P[j].x - P[j - 1].x, stepDy = P[j].y - P[j - 1].y;
+        if (d > 1e-6 && (stepDx * dx + stepDy * dy) < -0.25 * d) break;
+        if (hasCone) {
+          if ((c0x * dy - c0y * dx) < -1e-6 || (dx * c1y - dy * c1x) < -1e-6) break;
+        }
+        farJ = j;
+        if (d > maxDev + 1e-4) {
+          const sinA = maxDev / d;
+          const cosA = Math.sqrt(Math.max(0, 1 - sinA * sinA));
+          const a0x = dx * cosA + dy * sinA, a0y = -dx * sinA + dy * cosA;
+          const a1x = dx * cosA - dy * sinA, a1y = dx * sinA + dy * cosA;
+          if (!hasCone) {
+            c0x = a0x; c0y = a0y; c1x = a1x; c1y = a1y; hasCone = true;
+          } else {
+            if (c0x * a0y - c0y * a0x > 0) { c0x = a0x; c0y = a0y; }
+            if (a1x * c1y - a1y * c1x > 0) { c1x = a1x; c1y = a1y; }
+            if (c0x * c1y - c0y * c1x < -1e-6) break;
+          }
+        }
+      }
+      lon[i] = Math.max(i + 1, farJ);
+    }
+
+    const penalty = (i, j) => {
+      const dx = P[j].x - P[i].x, dy = P[j].y - P[i].y;
+      const len = Math.hypot(dx, dy);
+      if (len < 1e-6) return 1e9;
+      const nx = -dy / len, ny = dx / len;
+      const cnt = j - i + 1;
+      const sumX = sx[j + 1] - sx[i], sumY = sy[j + 1] - sy[i];
+      const sumXX = sxx[j + 1] - sxx[i], sumYY = syy[j + 1] - syy[i], sumXY = sxy[j + 1] - sxy[i];
+      const a0 = nx * P[i].x + ny * P[i].y;
+      const sumD2 = nx * nx * sumXX + 2 * nx * ny * sumXY + ny * ny * sumYY - 2 * a0 * (nx * sumX + ny * sumY) + cnt * a0 * a0;
+      return len * Math.sqrt(Math.max(0, sumD2 / cnt));
+    };
+
+    let s0 = 0, minSpan = Infinity;
+    for (let i = 0; i < n; i++) {
+      const sp = lon[i] - i;
+      if (sp < minSpan) { minSpan = sp; s0 = i; }
+    }
+
+    const end = s0 + n;
+    const dpSegs = new Int32Array(end + 1).fill(1e9);
+    const dpPen = new Float64Array(end + 1).fill(Infinity);
+    const prevIdx = new Int32Array(end + 1).fill(-1);
+    dpSegs[s0] = 0; dpPen[s0] = 0;
+
+    for (let i = s0; i < end; i++) {
+      if (dpSegs[i] >= 1e9) continue;
+      const base = i % n;
+      const maxJ = Math.min(end, i + (lon[base] - base));
+      for (let j = i + 1; j <= maxJ; j++) {
+        const cSeg = dpSegs[i] + 1;
+        const cPen = dpPen[i] + penalty(i, j);
+        if (cSeg < dpSegs[j] || (cSeg === dpSegs[j] && cPen < dpPen[j])) {
+          dpSegs[j] = cSeg; dpPen[j] = cPen; prevIdx[j] = i;
+        }
+      }
+    }
+
+    if (prevIdx[end] === -1) return pts.map((_, i) => i);
+    const rev = [];
+    for (let cur = end; cur > s0; cur = prevIdx[cur]) rev.push(cur % n);
+    rev.reverse();
+    return rev.length >= 3 ? rev : pts.map((_, i) => i);
+  }
+
+  function pointInPolygon(pt, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y;
+      if (((yi > pt.y) !== (yj > pt.y)) && (pt.x < (xj - xi) * (pt.y - yi) / ((yj - yi) || 1e-9) + xi)) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  function classifyLoopIsHole(loopIdx, allLoops) {
+    const pt = allLoops[loopIdx][0];
+    let depth = 0;
+    for (let j = 0; j < allLoops.length; j++) {
+      if (j === loopIdx) continue;
+      if (pointInPolygon(pt, allLoops[j])) depth++;
+    }
+    return (depth % 2) === 1;
+  }
+
+  function fitCubicSpan(points, leftTan, rightTan, errTol, depth = 0) {
+    const n = points.length;
+    if (n <= 1) return [];
+    if (n === 2) {
+      const p0 = points[0], p3 = points[1];
+      const d = Math.hypot(p3.x - p0.x, p3.y - p0.y) / 3;
+      return [{
+        p0,
+        c1: { x: p0.x + leftTan.x * d, y: p0.y + leftTan.y * d },
+        c2: { x: p3.x + rightTan.x * d, y: p3.y + rightTan.y * d },
+        p3
+      }];
+    }
+
+    const u = new Float64Array(n);
+    for (let i = 1; i < n; i++) {
+      u[i] = u[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+    }
+    const totalLen = u[n - 1] || 1;
+    for (let i = 1; i < n; i++) u[i] /= totalLen;
+
+    const p0 = points[0], p3 = points[n - 1];
+    let c00 = 0, c01 = 0, c11 = 0, x0 = 0, x1 = 0;
+    for (let i = 0; i < n; i++) {
+      const t = u[i], mt = 1 - t;
+      const b0 = mt * mt * mt, b1 = 3 * mt * mt * t, b2 = 3 * mt * t * t, b3 = t * t * t;
+      const a1x = leftTan.x * b1, a1y = leftTan.y * b1;
+      const a2x = rightTan.x * b2, a2y = rightTan.y * b2;
+      c00 += a1x * a1x + a1y * a1y;
+      c01 += a1x * a2x + a1y * a2y;
+      c11 += a2x * a2x + a2y * a2y;
+      const tmpx = points[i].x - (p0.x * (b0 + b1) + p3.x * (b2 + b3));
+      const tmpy = points[i].y - (p0.y * (b0 + b1) + p3.y * (b2 + b3));
+      x0 += a1x * tmpx + a1y * tmpy;
+      x1 += a2x * tmpx + a2y * tmpy;
+    }
+
+    const segLen = Math.hypot(p3.x - p0.x, p3.y - p0.y);
+    const detC0C1 = c00 * c11 - c01 * c01;
+    let alphaL = Math.abs(detC0C1) > 1e-9 ? (x0 * c11 - x1 * c01) / detC0C1 : 0;
+    let alphaR = Math.abs(detC0C1) > 1e-9 ? (c00 * x1 - c01 * x0) / detC0C1 : 0;
+    const eps = 1e-6 * segLen;
+    if (alphaL < eps || alphaR < eps) {
+      alphaL = alphaR = segLen / 3;
+    } else {
+      const maxH = segLen * 0.45;
+      if (alphaL > maxH) alphaL = maxH;
+      if (alphaR > maxH) alphaR = maxH;
+    }
+
+    const bez = {
+      p0,
+      c1: { x: p0.x + leftTan.x * alphaL, y: p0.y + leftTan.y * alphaL },
+      c2: { x: p3.x + rightTan.x * alphaR, y: p3.y + rightTan.y * alphaR },
+      p3
+    };
+
+    let maxErr2 = 0, splitIdx = Math.floor(n / 2);
+    for (let i = 1; i < n - 1; i++) {
+      const t = u[i], mt = 1 - t;
+      const bx = mt * mt * mt * bez.p0.x + 3 * mt * mt * t * bez.c1.x + 3 * mt * t * t * bez.c2.x + t * t * t * bez.p3.x;
+      const by = mt * mt * mt * bez.p0.y + 3 * mt * mt * t * bez.c1.y + 3 * mt * t * t * bez.c2.y + t * t * t * bez.p3.y;
+      const d2 = (points[i].x - bx) ** 2 + (points[i].y - by) ** 2;
+      if (d2 >= maxErr2) { maxErr2 = d2; splitIdx = i; }
+    }
+
+    if (maxErr2 <= errTol * errTol || depth >= 7 || n <= 4) {
+      return [bez];
+    }
+
+    splitIdx = Math.max(1, Math.min(n - 2, splitIdx));
+    const tx = points[splitIdx - 1].x - points[splitIdx + 1].x;
+    const ty = points[splitIdx - 1].y - points[splitIdx + 1].y;
+    const tl = Math.hypot(tx, ty) || 1;
+    const centerTan = { x: tx / tl, y: ty / tl };
+    const negTan = { x: -centerTan.x, y: -centerTan.y };
+    return fitCubicSpan(points.slice(0, splitIdx + 1), leftTan, centerTan, errTol, depth + 1)
+      .concat(fitCubicSpan(points.slice(splitIdx), negTan, rightTan, errTol, depth + 1));
+  }
+
+  function fitSmoothContour(rawPts, simpEps, smooth, cadSnap = true, cornerSensitivity = 1.0) {
+    const dedup = [];
+    for (const p of rawPts) {
+      if (!dedup.length || Math.hypot(p.x - dedup[dedup.length - 1].x, p.y - dedup[dedup.length - 1].y) >= 0.30) {
+        dedup.push({ x: p.x, y: p.y });
+      }
+    }
+    if (dedup.length > 2 && Math.hypot(dedup[0].x - dedup[dedup.length - 1].x, dedup[0].y - dedup[dedup.length - 1].y) < 0.30) {
+      dedup.pop();
+    }
+    const pts = dedup;
+    const n = pts.length;
+    if (!smooth || n < 6) {
+      const simp = simplifyClosedDP(pts, simpEps);
+      return {
+        svg: `M${simp[0].x.toFixed(2)},${simp[0].y.toFixed(2)} ` + simp.slice(1).map(p => `L${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ') + ' Z',
+        isCircle: false,
+        dxfVertices: simp.map(p => ({ x: p.x, y: p.y, bulge: 0 })),
+        nodes: simp.length,
+        stats: { lines: simp.length, arcs: 0, circles: 0, curves: 0 },
+        markers: simp.map(p => ({ x: p.x, y: p.y, type: 'corner' }))
+      };
+    }
+
+    // 1. Vectorizer.AI Primitive Recognition: exact Circle detection first
+    if (n >= 12) {
+      const circ = fitTaubinCircle(pts);
+      if (circ && circ.r >= 3.5 && circ.maxErr <= Math.max(0.75, simpEps * 0.85)) {
+        let qMask = 0;
+        for (const p of pts) {
+          const q = (p.x >= circ.cx ? 1 : 0) | (p.y >= circ.cy ? 2 : 0);
+          qMask |= (1 << q);
+        }
+        if (qMask === 15) {
+          const { cx, cy, r } = circ;
+          const xL = cx - r, xR = cx + r;
+          return {
+            svg: `M${xL.toFixed(2)},${cy.toFixed(2)} A${r.toFixed(2)},${r.toFixed(2)} 0 1,0 ${xR.toFixed(2)},${cy.toFixed(2)} A${r.toFixed(2)},${r.toFixed(2)} 0 1,0 ${xL.toFixed(2)},${cy.toFixed(2)} Z`,
+            isCircle: true,
+            circle: circ,
+            dxfVertices: [{ x: xL, y: cy, bulge: -1 }, { x: xR, y: cy, bulge: -1 }],
+            nodes: 2,
+            stats: { lines: 0, arcs: 0, circles: 1, curves: 0 },
+            markers: [{ x: xL, y: cy, type: 'arc' }, { x: xR, y: cy, type: 'arc' }]
+          };
+        }
+      }
+    }
+
+    // 2. Potrace Optimal Polygon + Bevel-Robust Corner & Tangent Breakpoint Detection
+    const polyIdxs = potraceOptimalPolygon(pts, Math.max(0.45, simpEps * 0.60));
+    const mPoly = polyIdxs.length;
+    const cosThresh = -0.68 - (1.0 - cornerSensitivity) * 0.18;
+    const isCorner = new Uint8Array(n);
+    const isBreak = new Uint8Array(n);
+
+    const cumArc = new Float64Array(n + 1);
+    for (let i = 0; i < n; i++) {
+      const pA = pts[i], pB = pts[(i + 1) % n];
+      cumArc[i + 1] = cumArc[i] + Math.hypot(pB.x - pA.x, pB.y - pA.y);
+    }
+    const totalArc = cumArc[n] || 1;
+    const arcDistFwd = (iA, iB) => (iB >= iA ? (cumArc[iB] - cumArc[iA]) : (totalArc - cumArc[iA] + cumArc[iB]));
+    const arcDistMin = (iA, iB) => { const f = arcDistFwd(iA, iB); return Math.min(f, totalArc - f); };
+
+    if (mPoly >= 3) {
+      const walkPolyPt = (k, stepSign, minDist = 6.5) => {
+        const p0 = pts[polyIdxs[k]];
+        const maxSteps = Math.max(1, Math.min(6, Math.floor(mPoly / 2)));
+        for (let s = 1; s <= maxSteps; s++) {
+          const p = pts[polyIdxs[(k + stepSign * s + mPoly) % mPoly]];
+          if (Math.hypot(p.x - p0.x, p.y - p0.y) >= minDist || s === maxSteps) return p;
+        }
+        return pts[polyIdxs[(k + stepSign + mPoly) % mPoly]];
+      };
+
+      const cosLocalArr = new Float64Array(mPoly);
+      const rawCornerKs = [];
+      for (let k = 0; k < mPoly; k++) {
+        const pPrev = pts[polyIdxs[(k - 1 + mPoly) % mPoly]];
+        const idx = polyIdxs[k];
+        const pCur = pts[idx];
+        const pNext = pts[polyIdxs[(k + 1) % mPoly]];
+        const v1x = pPrev.x - pCur.x, v1y = pPrev.y - pCur.y;
+        const v2x = pNext.x - pCur.x, v2y = pNext.y - pCur.y;
+        const l1 = Math.hypot(v1x, v1y) || 1, l2 = Math.hypot(v2x, v2y) || 1;
+        const cosLocal = (v1x * v2x + v1y * v2y) / (l1 * l2);
+        cosLocalArr[k] = cosLocal;
+
+        const pB = walkPolyPt(k, -1, 6.5);
+        const pA = walkPolyPt(k, 1, 6.5);
+        const b1x = pB.x - pCur.x, b1y = pB.y - pCur.y;
+        const b2x = pA.x - pCur.x, b2y = pA.y - pCur.y;
+        const lb1 = Math.hypot(b1x, b1y) || 1, lb2 = Math.hypot(b2x, b2y) || 1;
+        const cosBridge = (b1x * b2x + b1y * b2y) / (lb1 * lb2);
+
+        if (cosLocal > cosThresh || cosBridge > cosThresh || (l1 >= 10 && l2 >= 10 && cosLocal > -0.88)) {
+          rawCornerKs.push(k);
+        }
+      }
+
+      if (rawCornerKs.length) {
+        const clusters = [[rawCornerKs[0]]];
+        for (let rIdx = 1; rIdx < rawCornerKs.length; rIdx++) {
+          const prevK = rawCornerKs[rIdx - 1];
+          const curK = rawCornerKs[rIdx];
+          if (arcDistFwd(polyIdxs[prevK], polyIdxs[curK]) <= 7.0) {
+            clusters[clusters.length - 1].push(curK);
+          } else {
+            clusters.push([curK]);
+          }
+        }
+        if (clusters.length > 1) {
+          const lastCl = clusters[clusters.length - 1];
+          const wrapDist = arcDistFwd(polyIdxs[lastCl[lastCl.length - 1]], polyIdxs[clusters[0][0]]);
+          if (wrapDist <= 7.0) {
+            clusters[0] = clusters.pop().concat(clusters[0]);
+          }
+        }
+        for (const cl of clusters) {
+          if (cl.length === 1) {
+            isCorner[polyIdxs[cl[0]]] = 1;
+          } else {
+            const kFirst = cl[0], kLast = cl[cl.length - 1];
+            const pBefore = walkPolyPt(kFirst, -1, 6.5);
+            const pAfter = walkPolyPt(kLast, 1, 6.5);
+            const cdx = pAfter.x - pBefore.x, cdy = pAfter.y - pBefore.y;
+            const clen = Math.hypot(cdx, cdy) || 1;
+            let bestIdx = polyIdxs[kFirst], bestD = -1;
+            let cur = polyIdxs[kFirst];
+            const stop = polyIdxs[kLast];
+            for (let step = 0; step < n; step++) {
+              const d = Math.abs(cdy * pts[cur].x - cdx * pts[cur].y + pAfter.x * pBefore.y - pAfter.y * pBefore.x) / clen;
+              if (d > bestD) { bestD = d; bestIdx = cur; }
+              if (cur === stop) break;
+              cur = (cur + 1) % n;
+            }
+            isCorner[bestIdx] = 1;
+          }
+        }
+      }
+
+      // Tangential straight-edge breakpoints (handles rounded rectangles, U/D/P/B, etc.)
+      const isPolyEdgeStraight = new Uint8Array(mPoly);
+      const straightTol = Math.max(0.60, simpEps * 0.65);
+      for (let k = 0; k < mPoly; k++) {
+        const i0 = polyIdxs[k], i1 = polyIdxs[(k + 1) % mPoly];
+        const p0 = pts[i0], p1 = pts[i1];
+        const dx = p1.x - p0.x, dy = p1.y - p0.y;
+        const chord = Math.hypot(dx, dy);
+        if (chord < 10.0) continue;
+        let maxPerp = 0;
+        let m = (i0 + 1) % n;
+        let guard = 0;
+        while (m !== i1 && guard++ < n) {
+          const d = Math.abs(dy * pts[m].x - dx * pts[m].y + p1.x * p0.y - p1.y * p0.x) / chord;
+          if (d > maxPerp) maxPerp = d;
+          m = (m + 1) % n;
+        }
+        if (maxPerp <= straightTol) isPolyEdgeStraight[k] = 1;
+      }
+      for (let k = 0; k < mPoly; k++) {
+        if (!isPolyEdgeStraight[k]) continue;
+        const i0 = polyIdxs[k], i1 = polyIdxs[(k + 1) % mPoly];
+        const prevK = (k - 1 + mPoly) % mPoly;
+        const nextK = (k + 1) % mPoly;
+        if (!(isPolyEdgeStraight[prevK] && !isCorner[i0] && cosLocalArr[k] < -0.992)) isBreak[i0] = 1;
+        if (!(isPolyEdgeStraight[nextK] && !isCorner[i1] && cosLocalArr[nextK] < -0.992)) isBreak[i1] = 1;
+      }
+
+      const cornerPtsList = [];
+      for (let i = 0; i < n; i++) if (isCorner[i]) cornerPtsList.push(i);
+      const keptBreaks = [];
+      for (let i = 0; i < n; i++) {
+        if (!isBreak[i] || isCorner[i]) continue;
+        let nearCorner = false;
+        for (const cIdx of cornerPtsList) {
+          if (arcDistMin(i, cIdx) <= 3.0) { nearCorner = true; break; }
+        }
+        if (nearCorner) { isBreak[i] = 0; continue; }
+        if (keptBreaks.length && arcDistFwd(keptBreaks[keptBreaks.length - 1], i) < 2.5) {
+          isBreak[i] = 0; continue;
+        }
+        keptBreaks.push(i);
+      }
+      if (keptBreaks.length > 1 && arcDistFwd(keptBreaks[keptBreaks.length - 1], keptBreaks[0]) < 2.5) {
+        isBreak[keptBreaks[0]] = 0;
+      }
+    }
+
+    const cornerIdxs = [];
+    for (let i = 0; i < n; i++) {
+      if (isCorner[i] || isBreak[i]) cornerIdxs.push(i);
+    }
+
+    // Light shrink-free Taubin fairing on non-corner/non-breakpoint vertices only
+    let sm = pts.map(p => ({ x: p.x, y: p.y }));
+    const taubinPass = (alpha) => {
+      const nxt = sm.map(p => ({ x: p.x, y: p.y }));
+      for (let i = 0; i < n; i++) {
+        if (isCorner[i] || isBreak[i]) continue;
+        const pr = sm[(i - 1 + n) % n], nx = sm[(i + 1) % n];
+        nxt[i].x = sm[i].x + alpha * (0.5 * (pr.x + nx.x) - sm[i].x);
+        nxt[i].y = sm[i].y + alpha * (0.5 * (pr.y + nx.y) - sm[i].y);
+      }
+      sm = nxt;
+    };
+    for (let it = 0; it < 2; it++) { taubinPass(0.35); taubinPass(-0.36); }
+
+    const normVec = (vx, vy) => {
+      const l = Math.hypot(vx, vy);
+      return l > 1e-6 ? { x: vx / l, y: vy / l } : { x: 1, y: 0 };
+    };
+    const tessellateCubic = (p0, c1, c2, p3, dxfVertices, includeEnd) => {
+      const chord = Math.hypot(p3.x - p0.x, p3.y - p0.y);
+      const steps = Math.min(18, Math.max(5, Math.ceil(chord / 4)));
+      const limit = includeEnd ? steps : steps - 1;
+      for (let s = 1; s <= limit; s++) {
+        const t = s / steps, mt = 1 - t;
+        dxfVertices.push({
+          x: mt * mt * mt * p0.x + 3 * mt * mt * t * c1.x + 3 * mt * t * t * c2.x + t * t * t * p3.x,
+          y: mt * mt * mt * p0.y + 3 * mt * mt * t * c1.y + 3 * mt * t * t * c2.y + t * t * t * p3.y,
+          bulge: 0
+        });
+      }
+    };
+
+    const tryFitArcSpan = (curvePts) => {
+      if (curvePts.length < 5) return null;
+      const pA = curvePts[0], pB = curvePts[curvePts.length - 1];
+      const chord = Math.hypot(pB.x - pA.x, pB.y - pA.y);
+      if (chord < 3.5) return null;
+      const circ = fitTaubinCircle(curvePts);
+      if (!circ || circ.r < 3.0 || circ.r > chord * 10 || circ.maxErr > Math.max(0.50, simpEps * 0.60)) return null;
+      const { cx, cy, r } = circ;
+      const pMid = curvePts[Math.floor(curvePts.length * 0.5)];
+      const a1 = Math.atan2(pA.y - cy, pA.x - cx);
+      const a2 = Math.atan2(pB.y - cy, pB.x - cx);
+      const aM = Math.atan2(pMid.y - cy, pMid.x - cx);
+      const twoPi = Math.PI * 2;
+      const dPos = ((a2 - a1) % twoPi + twoPi) % twoPi;
+      const dMid = ((aM - a1) % twoPi + twoPi) % twoPi;
+      const sweepFlag = dMid < dPos ? 1 : 0;
+      const theta = sweepFlag === 1 ? dPos : (twoPi - dPos);
+      if (theta < 0.314 || theta > 3.84) return null; // 18°..220°
+
+      // Angular monotonicity check (rejects S-curves)
+      let angSum = 0, prevAng = a1, maxOpp = 0;
+      for (let i = 1; i < curvePts.length; i++) {
+        const curAng = Math.atan2(curvePts[i].y - cy, curvePts[i].x - cx);
+        const delta = ((curAng - prevAng + 3 * Math.PI) % twoPi) - Math.PI;
+        angSum += delta;
+        if (sweepFlag === 1 && delta < -maxOpp) maxOpp = -delta;
+        if (sweepFlag === 0 && delta > maxOpp) maxOpp = delta;
+        prevAng = curAng;
+      }
+      const expectedDir = sweepFlag === 1 ? 1 : -1;
+      if (angSum * expectedDir < theta * 0.7 || maxOpp > 0.18) return null;
+
+      const rSafe = Math.max(r, chord * 0.5002);
+      const largeArc = theta > Math.PI ? 1 : 0;
+      const bulgeDxf = (sweepFlag === 1 ? -1 : 1) * Math.tan(theta * 0.25);
+      return { r: rSafe, largeArc, sweepFlag, bulgeDxf };
+    };
+
+    const lineTol = Math.max(0.85, simpEps * 1.15);
+    const errTol = Math.max(0.50, simpEps * 0.70);
+    const dxfVertices = [];
+    const markers = [];
+    const stats = { lines: 0, arcs: 0, circles: 0, curves: 0 };
+    let svg = '';
+    let nodes = 0;
+
+    if (cornerIdxs.length >= 1) {
+      const cCount = cornerIdxs.length;
+      const cornerVerts = cornerIdxs.map(idx => ({ x: sm[idx].x, y: sm[idx].y }));
+      const spans = [];
+
+      for (let ci = 0; ci < cCount; ci++) {
+        const iStart = cornerIdxs[ci];
+        const iEnd = cornerIdxs[(ci + 1) % cCount];
+        const span = [];
+        let k = iStart;
+        do {
+          span.push(sm[k]);
+          k = (k + 1) % n;
+        } while (k !== iEnd);
+        span.push(sm[iEnd]);
+
+        const pA = span[0], pB = span[span.length - 1];
+        const dx = pB.x - pA.x, dy = pB.y - pA.y, chordLen = Math.hypot(dx, dy) || 1e-6;
+        let maxPerp = 0;
+        for (let m = 1; m < span.length - 1; m++) {
+          const d = Math.abs(dy * span[m].x - dx * span[m].y + pB.x * pA.y - pB.y * pA.x) / chordLen;
+          if (d > maxPerp) maxPerp = d;
+        }
+        const isLine = maxPerp <= lineTol || span.length <= 2;
+
+        let lineEq = null;
+        if (isLine) {
+          const fitPts = span.length >= 9 ? span.slice(2, -2) : (span.length >= 5 ? span.slice(1, -1) : span);
+          let mx = 0, my = 0;
+          for (const p of fitPts) { mx += p.x; my += p.y; }
+          mx /= fitPts.length; my /= fitPts.length;
+          let sxx = 0, syy = 0, sxy = 0;
+          for (const p of fitPts) {
+            const ox = p.x - mx, oy = p.y - my;
+            sxx += ox * ox; syy += oy * oy; sxy += ox * oy;
+          }
+          let vx = sxx - syy + Math.hypot(sxx - syy, 2 * sxy);
+          let vy = 2 * sxy;
+          if (Math.hypot(vx, vy) < 1e-6) { vx = dx; vy = dy; }
+          const dir = normVec(vx, vy);
+          if (dir.x * dx + dir.y * dy < 0) { dir.x = -dir.x; dir.y = -dir.y; }
+
+          if (cadSnap && chordLen >= 6) {
+            if (Math.abs(dx) / chordLen < 0.026) { dir.x = 0; dir.y = dy >= 0 ? 1 : -1; }
+            else if (Math.abs(dy) / chordLen < 0.026) { dir.x = dx >= 0 ? 1 : -1; dir.y = 0; }
+          }
+          const a = -dir.y, b = dir.x;
+          lineEq = { a, b, c: -(a * mx + b * my), dir, mx, my, chordLen };
+        }
+        spans.push({ ci, nextCi: (ci + 1) % cCount, span, isLine, lineEq });
+      }
+
+      if (cCount >= 2) {
+        for (let ci = 0; ci < cCount; ci++) {
+          const prevS = spans[(ci - 1 + cCount) % cCount];
+          const curS = spans[ci];
+          if (prevS.isLine && curS.isLine && prevS.lineEq && curS.lineEq) {
+            const L1 = prevS.lineEq, L2 = curS.lineEq;
+            const det = L1.a * L2.b - L2.a * L1.b;
+            if (Math.abs(det) > 0.15) {
+              const ix = (L1.b * L2.c - L2.b * L1.c) / det;
+              const iy = (L2.a * L1.c - L1.a * L2.c) / det;
+              if (Math.hypot(ix - cornerVerts[ci].x, iy - cornerVerts[ci].y) <= 2.8) {
+                cornerVerts[ci] = { x: ix, y: iy };
+              }
+            }
+          }
+        }
+      }
+
+      if (cadSnap) {
+        for (const spObj of spans) {
+          if (!spObj.isLine || !spObj.lineEq || spObj.lineEq.chordLen < 6) continue;
+          const { a, b, mx, my } = spObj.lineEq;
+          if (b === 0) {
+            if (Math.abs(cornerVerts[spObj.ci].x - mx) <= 1.3) cornerVerts[spObj.ci].x = mx;
+            if (Math.abs(cornerVerts[spObj.nextCi].x - mx) <= 1.3) cornerVerts[spObj.nextCi].x = mx;
+          } else if (a === 0) {
+            if (Math.abs(cornerVerts[spObj.ci].y - my) <= 1.3) cornerVerts[spObj.ci].y = my;
+            if (Math.abs(cornerVerts[spObj.nextCi].y - my) <= 1.3) cornerVerts[spObj.nextCi].y = my;
+          }
+        }
+      }
+
+      const startPt = cornerVerts[0];
+      svg = `M${startPt.x.toFixed(2)},${startPt.y.toFixed(2)}`;
+      dxfVertices.push({ x: startPt.x, y: startPt.y, bulge: 0 });
+      markers.push({ x: startPt.x, y: startPt.y, type: 'corner' });
+
+      for (let sIdx = 0; sIdx < spans.length; sIdx++) {
+        const spObj = spans[sIdx];
+        const isLastSpan = sIdx === spans.length - 1;
+        const pEnd = cornerVerts[spObj.nextCi];
+
+        if (spObj.isLine) {
+          svg += ` L${pEnd.x.toFixed(2)},${pEnd.y.toFixed(2)}`;
+          dxfVertices[dxfVertices.length - 1].bulge = 0;
+          if (!isLastSpan) dxfVertices.push({ x: pEnd.x, y: pEnd.y, bulge: 0 });
+          markers.push({ x: pEnd.x, y: pEnd.y, type: 'corner' });
+          stats.lines++;
+          nodes++;
+        } else {
+          const curvePts = spObj.span.slice();
+          curvePts[0] = cornerVerts[spObj.ci];
+          curvePts[curvePts.length - 1] = pEnd;
+
+          const arc = tryFitArcSpan(curvePts);
+          if (arc) {
+            svg += ` A${arc.r.toFixed(2)},${arc.r.toFixed(2)} 0 ${arc.largeArc},${arc.sweepFlag} ${pEnd.x.toFixed(2)},${pEnd.y.toFixed(2)}`;
+            dxfVertices[dxfVertices.length - 1].bulge = arc.bulgeDxf;
+            if (!isLastSpan) dxfVertices.push({ x: pEnd.x, y: pEnd.y, bulge: 0 });
+            markers.push({ x: pEnd.x, y: pEnd.y, type: 'arc' });
+            stats.arcs++;
+            nodes++;
+          } else {
+            const m = curvePts.length;
+            const leftTan = normVec(curvePts[Math.min(2, m - 1)].x - curvePts[0].x, curvePts[Math.min(2, m - 1)].y - curvePts[0].y);
+            const rightTan = normVec(curvePts[Math.max(0, m - 3)].x - curvePts[m - 1].x, curvePts[Math.max(0, m - 3)].y - curvePts[m - 1].y);
+            const beziers = fitCubicSpan(curvePts, leftTan, rightTan, errTol, 0);
+            for (let bi = 0; bi < beziers.length; bi++) {
+              const b = beziers[bi];
+              const isLastSeg = isLastSpan && bi === beziers.length - 1;
+              svg += ` C${b.c1.x.toFixed(2)},${b.c1.y.toFixed(2)} ${b.c2.x.toFixed(2)},${b.c2.y.toFixed(2)} ${b.p3.x.toFixed(2)},${b.p3.y.toFixed(2)}`;
+              tessellateCubic(b.p0, b.c1, b.c2, b.p3, dxfVertices, !isLastSeg);
+              markers.push({ x: b.p3.x, y: b.p3.y, type: bi === beziers.length - 1 ? 'corner' : 'curve' });
+              stats.curves++;
+              nodes++;
+            }
+          }
+        }
+      }
+    } else {
+      let farIdx = Math.floor(n / 2), maxD2 = -1;
+      for (let i = 1; i < n; i++) {
+        const d2 = (sm[i].x - sm[0].x) ** 2 + (sm[i].y - sm[0].y) ** 2;
+        if (d2 > maxD2) { maxD2 = d2; farIdx = i; }
+      }
+      const winT = Math.min(3, Math.max(1, Math.floor(n / 12)));
+      const tanAt = (idx) => {
+        const pr = sm[(idx - winT + n) % n], nx = sm[(idx + winT) % n];
+        return normVec(nx.x - pr.x, nx.y - pr.y);
+      };
+      const t0 = tanAt(0), t1 = tanAt(farIdx);
+      const half1 = sm.slice(0, farIdx + 1);
+      const half2 = sm.slice(farIdx).concat([sm[0]]);
+      const beziers = fitCubicSpan(half1, t0, { x: -t1.x, y: -t1.y }, errTol, 0)
+        .concat(fitCubicSpan(half2, t1, { x: -t0.x, y: -t0.y }, errTol, 0));
+
+      svg = `M${sm[0].x.toFixed(2)},${sm[0].y.toFixed(2)}`;
+      dxfVertices.push({ x: sm[0].x, y: sm[0].y, bulge: 0 });
+      markers.push({ x: sm[0].x, y: sm[0].y, type: 'curve' });
+      for (let bi = 0; bi < beziers.length; bi++) {
+        const b = beziers[bi];
+        svg += ` C${b.c1.x.toFixed(2)},${b.c1.y.toFixed(2)} ${b.c2.x.toFixed(2)},${b.c2.y.toFixed(2)} ${b.p3.x.toFixed(2)},${b.p3.y.toFixed(2)}`;
+        tessellateCubic(b.p0, b.c1, b.c2, b.p3, dxfVertices, bi < beziers.length - 1);
+        markers.push({ x: b.p3.x, y: b.p3.y, type: 'curve' });
+        stats.curves++;
+        nodes++;
+      }
+    }
+
+    return { svg: svg + ' Z', isCircle: false, dxfVertices, nodes: Math.max(1, nodes), stats, markers };
+  }
+
+  function buildDxfHeader(mmPerPx, w, h) {
+    return ['0','SECTION','2','HEADER','9','$INSUNITS','70','4','9','$EXTMIN','10','0.00','20','0.00','9','$EXTMAX','10',(w*mmPerPx).toFixed(2),'20',(h*mmPerPx).toFixed(2),'0','ENDSEC','0','SECTION','2','ENTITIES'];
+  }
+
+  function emitDxfCmd(dxfLines, cmd, layerName, mmPerPx, h) {
+    if (cmd.isCircle && cmd.circle) {
+      dxfLines.push(
+        '0', 'CIRCLE', '8', layerName,
+        '10', (cmd.circle.cx * mmPerPx).toFixed(3),
+        '20', ((h - cmd.circle.cy) * mmPerPx).toFixed(3),
+        '40', (cmd.circle.r * mmPerPx).toFixed(3)
+      );
+      return;
+    }
+    const verts = cmd.dxfVertices || [];
+    if (verts.length < 2) return;
+    dxfLines.push('0', 'LWPOLYLINE', '8', layerName, '90', String(verts.length), '70', '1');
+    for (const v of verts) {
+      dxfLines.push('10', (v.x * mmPerPx).toFixed(3), '20', ((h - v.y) * mmPerPx).toFixed(3));
+      if (v.bulge && Math.abs(v.bulge) > 1e-5) {
+        dxfLines.push('42', v.bulge.toFixed(5));
+      }
+    }
+  }
+
+  function renderPaletteSwatches() {
+    const host = $('paletteSwatches');
+    if (!host) return;
+    if (!state.palette.length) { host.innerHTML = ''; return; }
+    host.innerHTML = state.palette.map(sw => `
+      <button type="button" data-swatch="${sw.hex}" class="swatch-chip ${sw.enabled ? '' : 'off'}" title="${sw.hex} (${sw.count} yol) — aç/kapat">
+        <span class="swatch-dot" style="background:${sw.hex}"></span>
+        <span>${sw.hex}</span>
+      </button>
+    `).join('');
+    host.querySelectorAll('[data-swatch]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const hex = btn.dataset.swatch;
+        if (state.disabledPaletteKeys.has(hex)) state.disabledPaletteKeys.delete(hex);
+        else state.disabledPaletteKeys.add(hex);
+        runVectorTrace(true);
+      });
+    });
+  }
+
+  function runVectorTrace(recordHistory = true) {
+    const work = state.workingCanvas;
+    if (!work.width) return;
+    if (recordHistory) pushHistory('Vektör Trace');
+
+    setStatus('Potrace + Taubin + Bezier CAD vektör trace çalışıyor...', true);
+    const mode = $('traceMode').value;
+    const colorCountOpt = $('selColorCount')?.value || 'auto';
+    const smooth = $('chkTraceSmooth').checked;
+    const cadSnap = $('chkCadSnap') ? $('chkCadSnap').checked : true;
+    const cornerSens = Number($('rngCorner')?.value) || 1.0;
+    const simpTol = Number($('rngSimp').value) || 1.0;
+    const minArea = Number($('rngDespeckle').value) || 24;
+    const targetWidthMm = Math.max(20, Number($('txtDxfWidthMm').value) || 600);
+    const w = work.width, h = work.height;
+    const mmPerPx = targetWidthMm / w;
+
+    const targetMax = 1500;
+    const upScale = Math.min(2.5, Math.max(1, targetMax / Math.max(w, h)));
+    const tw = Math.round(w * upScale), th = Math.round(h * upScale);
+    const invX = w / tw, invY = h / th;
+
+    const prepC = document.createElement('canvas');
+    prepC.width = tw; prepC.height = th;
+    const pCtx = prepC.getContext('2d', { willReadFrequently: true });
+    pCtx.imageSmoothingEnabled = true; pCtx.imageSmoothingQuality = 'high';
+    pCtx.drawImage(work, 0, 0, tw, th);
+    const d0 = pCtx.getImageData(0, 0, tw, th).data;
+
+    const perim = detectPerimeterBg(d0, tw, th);
+    const fgAlpha = buildFgAlphaField(d0, tw, th, perim);
+    const allMarkers = [];
+    const totalStats = { lines: 0, arcs: 0, circles: 0, curves: 0 };
+
+    if (mode !== 'mono') {
+      const { cents, labels } = buildCleanColorLayers(d0, fgAlpha, tw, th, mode, colorCountOpt);
+      const layersOut = [];
+      const total = tw * th;
+
+      for (let c = 0; c < cents.length; c++) {
+        const rawField = new Float32Array(total);
+        for (let p = 0; p < total; p++) {
+          rawField[p] = labels[p] === c ? fgAlpha[p] : 0;
+        }
+        const smoothField = smoothScalarFieldCornerSafe(rawField, tw, th, 2);
+        const rawLoops = traceScalarField(smoothField, tw, th, 0.5, minArea * upScale * upScale);
+        if (!rawLoops.length) continue;
+
+        const hex = rgbToHex(cents[c][0], cents[c][1], cents[c][2]);
+        const enabled = !state.disabledPaletteKeys.has(hex);
+        const scaledLoops = rawLoops.map(l => l.map(pt => ({ x: pt.x * invX, y: pt.y * invY })));
+
+        let layerArea = 0;
+        const cmds = [];
+        for (let li = 0; li < scaledLoops.length; li++) {
+          const scaled = scaledLoops[li];
+          layerArea += ringArea(scaled);
+          if (!enabled) continue;
+          const isHole = classifyLoopIsHole(li, scaledLoops);
+          const cmd = fitSmoothContour(scaled, simpTol, smooth, cadSnap, cornerSens);
+          cmd.isHole = isHole;
+          cmds.push(cmd);
+          for (const mk of cmd.markers) allMarkers.push(mk);
+          totalStats.lines += cmd.stats.lines;
+          totalStats.arcs += cmd.stats.arcs;
+          totalStats.circles += cmd.stats.circles;
+          totalStats.curves += cmd.stats.curves;
+        }
+        layersOut.push({
+          idx: c,
+          hex,
+          enabled,
+          fillCss: `rgb(${cents[c][0]},${cents[c][1]},${cents[c][2]})`,
+          area: layerArea,
+          loopCount: scaledLoops.length,
+          cmds
+        });
+      }
+
+      layersOut.sort((a, b) => b.area - a.area);
+      state.palette = layersOut.map(l => ({ hex: l.hex, enabled: l.enabled, count: l.loopCount }));
+      renderPaletteSwatches();
+
+      const svgPaths = [];
+      const dxfLines = buildDxfHeader(mmPerPx, w, h);
+      let totalPaths = 0, totalNodes = 0;
+
+      for (const layer of layersOut) {
+        if (!layer.enabled) continue;
+        const compoundD = [];
+        for (const cmd of layer.cmds) {
+          compoundD.push(cmd.svg);
+          totalPaths++;
+          totalNodes += cmd.nodes;
+          const lName = cmd.isHole ? `RENK_${layer.idx + 1}_DELIK` : `RENK_${layer.idx + 1}_DIS`;
+          emitDxfCmd(dxfLines, cmd, lName, mmPerPx, h);
+        }
+        if (compoundD.length) {
+          svgPaths.push(`  <path d="${compoundD.join(' ')}" fill="${layer.fillCss}" fill-rule="evenodd" stroke="none" />`);
+        }
+      }
+      dxfLines.push('0', 'ENDSEC', '0', 'EOF');
+
+      state.svgText = `<svg xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">\n${svgPaths.join('\n')}\n</svg>`;
+      state.dxfText = dxfLines.join('\n');
+      state.vectorPathsCount = totalPaths;
+      state.vectorNodesCount = totalNodes;
+      state.vectorNodeMarkers = allMarkers;
+    } else {
+      state.palette = [];
+      renderPaletteSwatches();
+      const total = tw * th;
+      const rawField = new Float32Array(total);
+      if (state.bgRemoved || perim.hasAlpha) {
+        rawField.set(fgAlpha);
+      } else {
+        const thresh = state.autoParams.traceThresh;
+        for (let p = 0; p < total; p++) {
+          const i = p * 4;
+          const lum = 0.299 * d0[i] + 0.587 * d0[i + 1] + 0.114 * d0[i + 2];
+          const val = Math.max(0, Math.min(1, 0.5 + (thresh - lum) / 36));
+          rawField[p] = val * fgAlpha[p];
+        }
+      }
+      const smoothField = smoothScalarFieldCornerSafe(rawField, tw, th, 2);
+      const loops = traceScalarField(smoothField, tw, th, 0.5, minArea * upScale * upScale)
+        .map(l => l.map(pt => ({ x: pt.x * invX, y: pt.y * invY })));
+
+      let totalPaths = 0, totalNodes = 0;
+      const dxfLines = buildDxfHeader(mmPerPx, w, h);
+      const pathsD = [];
+      for (let li = 0; li < loops.length; li++) {
+        const isHole = classifyLoopIsHole(li, loops);
+        const cmd = fitSmoothContour(loops[li], simpTol, smooth, cadSnap, cornerSens);
+        pathsD.push(cmd.svg);
+        totalPaths++;
+        totalNodes += cmd.nodes;
+        totalStats.lines += cmd.stats.lines;
+        totalStats.arcs += cmd.stats.arcs;
+        totalStats.circles += cmd.stats.circles;
+        totalStats.curves += cmd.stats.curves;
+        for (const mk of cmd.markers) allMarkers.push(mk);
+        emitDxfCmd(dxfLines, cmd, isHole ? 'CNC_IC_DELIK' : 'CNC_DIS_KONTUR', mmPerPx, h);
+      }
+      dxfLines.push('0', 'ENDSEC', '0', 'EOF');
+
+      state.svgText = `<svg xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">\n  <path d="${pathsD.join(' ')}" fill="#d4a24c" fill-rule="evenodd" stroke="none" />\n</svg>`;
+      state.dxfText = dxfLines.join('\n');
+      state.vectorPathsCount = totalPaths;
+      state.vectorNodesCount = totalNodes;
+      state.vectorNodeMarkers = allMarkers;
+    }
+
+    $('traceBadge').textContent = `${state.vectorPathsCount} yol`;
+    $('traceBadge').className = 'badge ok';
+    $('statusVector').textContent = `Vektör: ${state.vectorPathsCount} yol / ${state.vectorNodesCount} düğüm (${totalStats.lines} L · ${totalStats.arcs} ARC · ${totalStats.circles} Daire · ${totalStats.curves} C)`;
+    renderSvgPreview();
+    setViewMode('vector');
+    setStatus(`Vektör trace tamamlandı (${state.vectorPathsCount} yol)`);
+    showToast(`${state.vectorPathsCount} temiz CAD/CNC vektör yolu üretildi.`);
+  }
+
+  function renderSvgPreview() {
+    if (!state.svgText) return;
+    let displaySvg = state.svgText;
+    if ($('chkWireframe').checked) {
+      displaySvg = displaySvg.replace(/fill="[^"]+"/g, 'fill="none"').replace(/stroke="none"/g, 'stroke="#d4a24c" stroke-width="1.4"');
+    }
+    if ($('chkShowNodes')?.checked && state.vectorNodeMarkers.length) {
+      const r = Math.max(1.8, (state.workingCanvas.width || 600) * 0.0038);
+      const dots = state.vectorNodeMarkers.map(m => m.type === 'corner'
+        ? `<rect x="${(m.x - r).toFixed(2)}" y="${(m.y - r).toFixed(2)}" width="${(r * 2).toFixed(2)}" height="${(r * 2).toFixed(2)}" fill="#e5b865" stroke="#0b0f17" stroke-width="${(r * 0.4).toFixed(2)}" />`
+        : m.type === 'arc'
+          ? `<circle cx="${m.x.toFixed(2)}" cy="${m.y.toFixed(2)}" r="${r.toFixed(2)}" fill="#34d399" stroke="#0b0f17" stroke-width="${(r * 0.4).toFixed(2)}" />`
+          : `<circle cx="${m.x.toFixed(2)}" cy="${m.y.toFixed(2)}" r="${(r * 0.9).toFixed(2)}" fill="#60a5fa" stroke="#0b0f17" stroke-width="${(r * 0.4).toFixed(2)}" />`
+      ).join('');
+      displaySvg = displaySvg.replace('</svg>', `  <g class="node-overlay" pointer-events="none">${dots}</g>\n</svg>`);
+    }
+    $('svgPreviewHost').innerHTML = displaySvg;
+    applyZoom();
+  }
+
+  function renderViewports() {
+    const src = state.sourceCanvas, work = state.workingCanvas;
+    if (!work.width) return;
+    miniPreviewCanvas.width = work.width; miniPreviewCanvas.height = work.height;
+    miniPreviewCanvas.getContext('2d', { willReadFrequently: true }).drawImage(work, 0, 0);
+    $('miniDimBadge').textContent = `${work.width}×${work.height}`;
+
+    beforeCanvas.width = work.width; beforeCanvas.height = work.height;
+    const bctx = beforeCanvas.getContext('2d', { willReadFrequently: true });
+    bctx.imageSmoothingEnabled = false;
+    bctx.drawImage(src, 0, 0, work.width, work.height);
+
+    afterCanvas.width = work.width; afterCanvas.height = work.height;
+    afterCanvas.getContext('2d', { willReadFrequently: true }).drawImage(work, 0, 0);
+    applyZoom();
+    updateSplitUI();
+  }
+
+  function applyZoom() {
+    const container = $('stageContainer'), stage = $('rasterStage'), work = state.workingCanvas;
+    if (!work.width || !work.height) return;
+    const availW = Math.max(120, container.clientWidth - 36), availH = Math.max(120, container.clientHeight - 36);
+    let dispW, dispH;
+    if (state.zoom === 'fit') {
+      const s = Math.min(availW / work.width, availH / work.height);
+      dispW = Math.max(1, Math.round(work.width * s)); dispH = Math.max(1, Math.round(work.height * s));
+      $('zoomLabel').textContent = 'Sığdır';
+    } else {
+      dispW = Math.max(1, Math.round(work.width * state.zoom)); dispH = Math.max(1, Math.round(work.height * state.zoom));
+      $('zoomLabel').textContent = `${Math.round(state.zoom * 100)}%`;
+    }
+    [stage, beforeCanvas, afterCanvas].forEach(el => { el.style.width = `${dispW}px`; el.style.height = `${dispH}px`; });
+    const svgEl = $('svgPreviewHost')?.querySelector('svg');
+    if (svgEl) { svgEl.style.width = `${dispW}px`; svgEl.style.height = `${dispH}px`; }
+  }
+
+  function updateSplitUI() {
+    const isCmp = state.viewMode === 'compare';
+    beforeClip.style.display = isCmp ? 'block' : 'none';
+    splitHandle.style.display = isCmp ? 'block' : 'none';
+    $('lblBefore').style.display = isCmp ? 'block' : 'none';
+    $('lblAfter').textContent = (state.bgRemoved || state.hasNativeAlpha) ? 'İyileştirilmiş + Şeffaf' : 'İyileştirilmiş';
+    if (isCmp) {
+      beforeClip.style.clipPath = `inset(0 ${100 - state.splitPct}% 0 0)`;
+      splitHandle.style.left = `${state.splitPct}%`;
+    }
+  }
+
+  function setViewMode(mode) {
+    state.viewMode = mode;
+    document.querySelectorAll('.view-tab').forEach(b => b.classList.toggle('on', b.dataset.view === mode));
+    $('rasterStage').classList.toggle('hidden', mode === 'vector');
+    $('vectorStage').classList.toggle('hidden', mode !== 'vector');
+    updateSplitUI();
+  }
+
+  function downloadBlob(filename, content, mime) {
+    const blob = content instanceof Blob ? content : new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function loadSampleImage(kind = 'logo') {
+    clearHistory();
+    const c = state.sourceCanvas; c.width = 340; c.height = 200;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.fillStyle = '#f8fafc'; ctx.fillRect(0, 0, 340, 200);
+    if (kind === 'logo') {
+      state.fileName = 'ornek_tabela_logo';
+      ctx.fillStyle = '#101622'; ctx.beginPath(); ctx.roundRect(22, 30, 86, 140, 14); ctx.fill();
+      ctx.fillStyle = '#d4a24c'; ctx.beginPath(); ctx.moveTo(65, 52); ctx.lineTo(92, 100); ctx.lineTo(65, 148); ctx.lineTo(38, 100); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#f8fafc'; ctx.beginPath(); ctx.arc(65, 100, 14, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#0b0f17'; ctx.font = '800 44px Inter, sans-serif'; ctx.fillText('ALFA', 124, 100);
+      ctx.fillStyle = '#b4822c'; ctx.font = '700 22px Inter, sans-serif'; ctx.fillText('TABELA', 126, 134);
+    } else {
+      state.fileName = 'ornek_amblem';
+      ctx.fillStyle = '#0f172a'; ctx.beginPath(); ctx.arc(170, 100, 74, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#d4a24c'; ctx.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const a = (i * Math.PI) / 5 - Math.PI / 2, r = i % 2 === 0 ? 54 : 23;
+        const x = 170 + Math.cos(a) * r, y = 100 + Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath(); ctx.fill();
+    }
+    const id = ctx.getImageData(0, 0, 340, 200);
+    for (let i = 0; i < id.data.length; i += 4) {
+      const n = ((Math.sin(i * 12.9898) * 43758.5453) % 1) * 10 - 5;
+      id.data[i] = Math.max(0, Math.min(255, id.data[i] + n));
+      id.data[i+1] = Math.max(0, Math.min(255, id.data[i+1] + n));
+      id.data[i+2] = Math.max(0, Math.min(255, id.data[i+2] + n));
+    }
+    ctx.putImageData(id, 0, 0);
+    state.bgRemoved = false; state.bgKeyColor = null; state.svgText = ''; state.dxfText = '';
+    state.palette = []; state.disabledPaletteKeys.clear(); renderPaletteSwatches();
+    $('traceBadge').textContent = 'Bekliyor'; $('traceBadge').className = 'badge';
+    analyzeImageAuto(state.sourceCanvas);
+    runEnhancement(true);
+  }
+
+  function loadFile(file) {
+    if (!file || !file.type.startsWith('image/')) { showToast('Geçerli bir görsel dosyası seçin.'); return; }
+    clearHistory();
+    state.fileName = file.name.replace(/\.[^.]+$/, '');
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxIn = 1400;
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (w > maxIn || h > maxIn) { const r = maxIn / Math.max(w, h); w = Math.round(w * r); h = Math.round(h * r); }
+        state.sourceCanvas.width = w; state.sourceCanvas.height = h;
+        state.sourceCanvas.getContext('2d', { willReadFrequently: true }).drawImage(img, 0, 0, w, h);
+        state.bgRemoved = false; state.bgKeyColor = null; state.svgText = ''; state.dxfText = '';
+        $('traceBadge').textContent = 'Bekliyor'; $('traceBadge').className = 'badge';
+        analyzeImageAuto(state.sourceCanvas);
+        runEnhancement(false);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // Event Bindings
+  $('fileInput').addEventListener('change', e => { if (e.target.files?.[0]) loadFile(e.target.files[0]); });
+  $('btnSampleLogo').addEventListener('click', () => loadSampleImage('logo'));
+  $('btnSampleBadge').addEventListener('click', () => loadSampleImage('badge'));
+
+  document.querySelectorAll('.scale-btn').forEach(btn => btn.addEventListener('click', () => {
+    pushHistory(`Ölçek ${btn.dataset.scale}×`);
+    state.scale = Number(btn.dataset.scale);
+    syncScaleButtons();
+    runEnhancement(true);
+  }));
+  document.querySelectorAll('.view-tab').forEach(b => b.addEventListener('click', () => setViewMode(b.dataset.view)));
+
+  $('chkFlatColorLock').addEventListener('change', () => { pushHistory('Düz Renk Kilidi'); runEnhancement(true); });
+  $('rngBgTol').addEventListener('input', e => { $('lblBgTol').textContent = e.target.value; });
+  $('rngBgTol').addEventListener('change', () => { if (state.bgRemoved) applyBackgroundRemoval(true); });
+  $('bgMode').addEventListener('change', () => { if (state.bgRemoved) applyBackgroundRemoval(true); });
+  $('chkBgDecontam').addEventListener('change', () => { if (state.bgRemoved) applyBackgroundRemoval(true); });
+  $('chkBgInnerHoles')?.addEventListener('change', () => { if (state.bgRemoved) applyBackgroundRemoval(true); });
+
+  $('rngSimp').addEventListener('input', e => { $('lblSimp').textContent = `${e.target.value} px`; });
+  $('rngSimp').addEventListener('change', () => { if (state.svgText) runVectorTrace(true); });
+  $('rngCorner')?.addEventListener('input', e => { $('lblCorner').textContent = e.target.value; });
+  $('rngCorner')?.addEventListener('change', () => { if (state.svgText) runVectorTrace(true); });
+  $('selColorCount')?.addEventListener('change', () => {
+    state.disabledPaletteKeys.clear();
+    if (state.svgText || state.viewMode === 'vector') runVectorTrace(true);
+  });
+  $('rngDespeckle').addEventListener('input', e => { $('lblDespeckle').textContent = `${e.target.value} px²`; });
+  $('rngDespeckle').addEventListener('change', () => { if (state.svgText) runVectorTrace(true); });
+  $('traceMode').addEventListener('change', () => { if (state.svgText || state.viewMode === 'vector') runVectorTrace(true); });
+  $('chkTraceSmooth').addEventListener('change', () => { if (state.svgText) runVectorTrace(true); });
+  $('chkCadSnap')?.addEventListener('change', () => { if (state.svgText) runVectorTrace(true); });
+
+  $('btnProcess').addEventListener('click', () => { pushHistory('İyileştirme'); runEnhancement(false); });
+  $('btnRemoveBg').addEventListener('click', () => { pushHistory('Arka Plan Sil'); applyBackgroundRemoval(false); });
+  $('btnResetBg').addEventListener('click', () => {
+    pushHistory('Arka Plan Sıfırla');
+    state.bgRemoved = false; state.bgKeyColor = null;
+    updateBgBadge();
+    state.workingCanvas.getContext('2d', { willReadFrequently: true }).clearRect(0, 0, state.workingCanvas.width, state.workingCanvas.height);
+    state.workingCanvas.getContext('2d', { willReadFrequently: true }).drawImage(state.enhancedCanvas, 0, 0);
+    renderViewports();
+    showToast('Arka plan geri alındı.');
+  });
+
+  $('btnEyedropper').addEventListener('click', () => {
+    state.eyedropperActive = !state.eyedropperActive;
+    $('btnEyedropper').classList.toggle('active', state.eyedropperActive);
+    $('rasterStage').style.cursor = state.eyedropperActive ? 'crosshair' : 'ew-resize';
+    if (state.eyedropperActive) showToast('Silinecek arka plan rengine tıklayın.');
+  });
+
+  $('btnRunTrace').addEventListener('click', () => runVectorTrace(true));
+  $('chkWireframe').addEventListener('change', renderSvgPreview);
+  $('chkShowNodes')?.addEventListener('change', renderSvgPreview);
+  document.querySelectorAll('[data-vbg]').forEach(btn => btn.addEventListener('click', () => {
+    const mode = btn.dataset.vbg;
+    document.querySelectorAll('[data-vbg]').forEach(b => b.classList.toggle('on', b.dataset.vbg === mode));
+    const vs = $('vectorStage');
+    vs.classList.remove('checker-bg', 'bg-light', 'bg-dark');
+    vs.classList.add(mode === 'light' ? 'bg-light' : mode === 'dark' ? 'bg-dark' : 'checker-bg');
+  }));
+
+  $('btnZoomIn').addEventListener('click', () => { state.zoom = state.zoom === 'fit' ? 1.25 : Math.min(4, state.zoom * 1.25); applyZoom(); });
+  $('btnZoomOut').addEventListener('click', () => { state.zoom = state.zoom === 'fit' ? 0.75 : Math.max(0.25, state.zoom * 0.8); applyZoom(); });
+  $('btnZoomFit').addEventListener('click', () => { state.zoom = 'fit'; applyZoom(); });
+
+  let draggingSplit = false;
+  const updateSplitFromPointer = (clientX) => {
+    const r = $('rasterStage').getBoundingClientRect();
+    if (!r.width) return;
+    state.splitPct = Math.max(0, Math.min(100, ((clientX - r.left) / r.width) * 100));
+    updateSplitUI();
+  };
+  $('rasterStage').addEventListener('pointerdown', (e) => {
+    if (state.eyedropperActive) {
+      pushHistory('Damlalık Arka Plan');
+      const rect = afterCanvas.getBoundingClientRect();
+      const px = Math.max(0, Math.min(state.enhancedCanvas.width - 1, Math.floor(((e.clientX - rect.left) / rect.width) * state.enhancedCanvas.width)));
+      const py = Math.max(0, Math.min(state.enhancedCanvas.height - 1, Math.floor(((e.clientY - rect.top) / rect.height) * state.enhancedCanvas.height)));
+      const pix = state.enhancedCanvas.getContext('2d', { willReadFrequently: true }).getImageData(px, py, 1, 1).data;
+      state.bgKeyColor = [pix[0], pix[1], pix[2]];
+      state.eyedropperActive = false;
+      $('btnEyedropper').classList.remove('active');
+      $('rasterStage').style.cursor = 'ew-resize';
+      applyBackgroundRemoval(false);
+      return;
+    }
+    if (state.viewMode === 'compare') { draggingSplit = true; updateSplitFromPointer(e.clientX); }
+  });
+  window.addEventListener('pointermove', e => { if (draggingSplit) updateSplitFromPointer(e.clientX); });
+  window.addEventListener('pointerup', () => { draggingSplit = false; });
+
+  const stage = $('stageContainer');
+  stage.addEventListener('dragover', e => { e.preventDefault(); $('dropOverlay').classList.remove('hidden'); });
+  stage.addEventListener('dragleave', () => { $('dropOverlay').classList.add('hidden'); });
+  stage.addEventListener('drop', e => { e.preventDefault(); $('dropOverlay').classList.add('hidden'); if (e.dataTransfer?.files?.[0]) loadFile(e.dataTransfer.files[0]); });
+
+  $('btnExportRaster').addEventListener('click', () => {
+    const mime = $('selFormat').value, ext = mime === 'image/jpeg' ? 'jpg' : mime === 'image/webp' ? 'webp' : 'png';
+    state.workingCanvas.toBlob(b => { if (b) downloadBlob(`${state.fileName}${$('txtSuffix').value || '_VKT'}.${ext}`, b, mime); }, mime, 0.95);
+  });
+  $('btnExportSvg').addEventListener('click', () => {
+    if (!state.svgText) runVectorTrace(true);
+    if (state.svgText) downloadBlob(`${state.fileName}${$('txtSuffix').value || '_VKT'}.svg`, state.svgText, 'image/svg+xml');
+  });
+  $('btnExportDxf').addEventListener('click', () => {
+    if (!state.dxfText) runVectorTrace(true);
+    if (state.dxfText) downloadBlob(`${state.fileName}${$('txtSuffix').value || '_VKT'}.dxf`, state.dxfText, 'application/dxf');
+  });
+
+  // Bridge to Kutu Harf Stüdyosu (postMessage + clipboard/download fallback)
+  $('btnSendToStudio').addEventListener('click', () => {
+    if (!state.svgText) runVectorTrace(true);
+    const payload = { type: 'SIGNAGE_STUDIO_IMPORT_VECTOR', fileName: state.fileName, svgText: state.svgText, dxfText: state.dxfText };
+    let sent = false;
+    if (window.opener && window.opener !== window) { window.opener.postMessage(payload, '*'); sent = true; }
+    if (window.parent && window.parent !== window) { window.parent.postMessage(payload, '*'); sent = true; }
+    if (sent) showToast('Vektör Kutu Harf Stüdyosuna aktarıldı!');
+    else {
+      downloadBlob(`${state.fileName}_kutu_harf.svg`, state.svgText, 'image/svg+xml');
+      showToast('SVG indirildi — Kutu Harf Stüdyosu Logo İçe Aktar ile yükleyin.');
+    }
+  });
+  $('btnSendToNesting')?.addEventListener('click', () => {
+    if (!state.svgText) runVectorTrace(true);
+    const payload = { type: 'SIGNAGE_STUDIO_IMPORT_NESTING', fileName: state.fileName, svgText: state.svgText, dxfText: state.dxfText };
+    let sent = false;
+    if (window.opener && window.opener !== window) { window.opener.postMessage(payload, '*'); sent = true; }
+    if (window.parent && window.parent !== window) { window.parent.postMessage(payload, '*'); sent = true; }
+    if (sent) showToast('Vektör Nesting sekmesine gönderildi!');
+    else {
+      downloadBlob(`${state.fileName}_nesting.svg`, state.svgText, 'image/svg+xml');
+      showToast('SVG indirildi — Nesting İçe Aktar sekmesinden yükleyin.');
+    }
+  });
+
+  $('btnUndo').addEventListener('click', () => {
+    if (!undoStack.length) return;
+    redoStack.push(captureSnap('Redo'));
+    const prev = undoStack.pop();
+    applySnap(prev);
+    showToast(`Geri alındı: ${prev.label}`);
+  });
+  $('btnRedo').addEventListener('click', () => {
+    if (!redoStack.length) return;
+    undoStack.push(captureSnap('Undo'));
+    const next = redoStack.pop();
+    applySnap(next);
+    showToast('Yinelendi.');
+  });
+  window.addEventListener('keydown', e => {
+    if (e.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); (e.shiftKey ? $('btnRedo') : $('btnUndo')).click(); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); $('btnRedo').click(); }
+    else if (e.key === 'Escape' && state.eyedropperActive) {
+      state.eyedropperActive = false; $('btnEyedropper').classList.remove('active'); $('rasterStage').style.cursor = 'ew-resize';
+    }
+  });
+  window.addEventListener('resize', applyZoom);
+
+  renderPresets();
+  syncScaleButtons();
+  loadSampleImage('logo');
+})();
+</script>
+</body>
+</html>
