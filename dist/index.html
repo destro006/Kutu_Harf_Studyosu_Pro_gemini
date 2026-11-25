@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Kutu Harf Stüdyosu — Profesyonel 3D Tabela CAD/CAM &amp; İmalat Stüdyosu</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Crect x='9' y='7' width='14' height='18' rx='3' fill='%23ffb547'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./src/styles/studio.css?v=qa12">
+  <link rel="stylesheet" href="./src/styles/studio.css?v=qa13">
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -324,6 +324,70 @@
     </div>
   </div>
 
+  <!-- CNC / Laser / Plasma / Plotter 1-Click Direct Upload Modal -->
+  <div id="cncMachineModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="cncMachineModalTitle">
+    <div class="modal-card cnc-modal-card">
+      <div class="modal-head">
+        <h3 id="cncMachineModalTitle">⚡ Makineye Doğrudan Yükleme (42 CNC / Lazer / Plotter)</h3>
+        <button type="button" id="btnCloseCncModal" class="close-btn">✕</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:10px">
+        <div class="corel-status-row">
+          <span id="cncBridgeStatusBadge" class="corel-status-pill">Köprü kontrol ediliyor...</span>
+          <div style="display:flex;gap:6px">
+            <button type="button" id="btnCncCheckStatus" class="sec-btn">Yenile</button>
+            <button type="button" id="btnCncDownloadBat" class="sec-btn">⬇ CNC Köprüsünü İndir (.bat)</button>
+          </div>
+        </div>
+        <div id="cncModalProfileSummary" class="dock-helper" style="margin:0"></div>
+        <div class="corel-step-box" style="display:flex;flex-direction:column;gap:8px">
+          <div class="field-row" style="margin:0">
+            <label for="cncModalTransport">Aktarım Yöntemi</label>
+            <select id="cncModalTransport"></select>
+          </div>
+          <div id="cncModalFolderGroup" class="cnc-field-group">
+            <div class="field-row" style="margin:0">
+              <label for="cncModalFolder">Hedef Klasör / USB / Ağ Yolu</label>
+              <input id="cncModalFolder" type="text" placeholder="Boşsa Masaüstü\KutuHarf_CNC_Isler (ör. E:\Isler veya \\CNC-PC\Jobs)">
+            </div>
+            <div id="cncModalDrives" class="cnc-chip-row"></div>
+            <div class="field-row" style="margin:4px 0 0">
+              <label for="cncModalAutoOpen">Yükledikten sonra makine/CAM programında otomatik aç</label>
+              <input id="cncModalAutoOpen" type="checkbox">
+            </div>
+          </div>
+          <div id="cncModalNetGroup" class="cnc-field-group hidden">
+            <div class="field-row" style="margin:0"><label for="cncModalHost">Makine IP / Adres</label><input id="cncModalHost" type="text" placeholder="192.168.1.100 veya 127.0.0.1"></div>
+            <div class="field-row" style="margin:4px 0 0"><label for="cncModalPort">Port</label><input id="cncModalPort" type="number" min="1" max="65535" placeholder="21 / 19840 / 9100"></div>
+            <div id="cncModalFtpFields">
+              <div class="field-row" style="margin:4px 0 0"><label for="cncModalRemoteDir">Uzak Klasör</label><input id="cncModalRemoteDir" type="text" placeholder="/jobs"></div>
+              <div class="field-row" style="margin:4px 0 0"><label for="cncModalUser">Kullanıcı</label><input id="cncModalUser" type="text" placeholder="anonymous"></div>
+              <div class="field-row" style="margin:4px 0 0"><label for="cncModalPass">Şifre</label><input id="cncModalPass" type="password" placeholder="(isteğe bağlı)"></div>
+            </div>
+          </div>
+          <div id="cncModalSerialGroup" class="cnc-field-group hidden">
+            <div id="cncModalComRow" class="field-row" style="margin:0"><label for="cncModalComPort">COM Port</label><input id="cncModalComPort" type="text" placeholder="COM3"></div>
+            <div id="cncModalComPorts" class="cnc-chip-row"></div>
+            <div class="field-row" style="margin:4px 0 0"><label for="cncModalBaud">Baud Rate</label><input id="cncModalBaud" type="number" step="300" placeholder="115200 veya 9600"></div>
+            <div class="field-row" style="margin:4px 0 0">
+              <label for="cncModalProtocol">Akış Protokolü</label>
+              <select id="cncModalProtocol">
+                <option value="raw">Standart Ham Akış</option>
+                <option value="grbl">GRBL Satır Onaylı (ok/error)</option>
+                <option value="hpgl">Plotter HPGL</option>
+              </select>
+            </div>
+          </div>
+          <div id="cncModalProgress" class="dock-helper hidden" style="margin:4px 0 0;color:#86efac"></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
+          <button type="button" id="btnCncSaveConn" class="sec-btn">💾 Ayarı Kaydet</button>
+          <button type="button" id="btnCncSendNow" class="cnc-send-btn">⚡ Makineye Şimdi Yükle</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="exportDialog" class="export-modal hidden" role="dialog" aria-modal="true" aria-labelledby="exportDialogTitle">
     <div class="export-modal-card">
       <div class="export-modal-head">
@@ -374,6 +438,6 @@
   <div id="quotePreviewModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Teklif önizleme"><div class="quote-preview-shell"><header><strong>Teklif Önizleme</strong><button type="button" id="quoteNewTab" class="tb-btn">Yeni Sekmede Aç</button><button type="button" id="quotePrint" class="tb-btn">Yazdır / PDF</button><button type="button" id="quoteClose" class="tb-btn" aria-label="Kapat">✕</button></header><iframe id="quotePreviewFrame" sandbox="allow-same-origin allow-modals" title="Müşteri teklif önizlemesi"></iframe></div></div>
   <div id="floatingWindowsLayer" class="floating-windows-layer"></div>
   <script defer src="./public/vendor/pdfjs/pdf.min.js"></script>
-  <script type="module" src="./src/main.js?v=20261125-v11"></script>
+  <script type="module" src="./src/main.js?v=20261125-v12"></script>
 </body>
 </html>

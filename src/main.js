@@ -48,6 +48,15 @@ import {
   sendNestingToCorel,
 } from './export/CorelDrawBridge.js';
 import {
+  CNC_TRANSPORT_MODES,
+  loadMachineConnection,
+  saveMachineConnection,
+  buildMachineUploadPayload,
+  generateCncBridgeLauncherBat,
+  checkCncBridgeStatus,
+  uploadToCncMachine,
+} from './export/CncMachineBridge.js';
+import {
   assignMaterialToSelected,
   deleteSelectedLayers,
   duplicateSelectedLayers,
@@ -2964,6 +2973,7 @@ function updateCenterWorkspaces(state) {
           for(const fresh of newCnc.querySelectorAll('input,select')){const el=oldCnc.querySelector('#'+fresh.id);if(!el||el===document.activeElement)continue;if(el.type==='checkbox')el.checked=fresh.checked;else el.value=fresh.value;}
           const oldStatus=oldCnc.querySelector('#nestCncStatus'),newStatus=newCnc.querySelector('#nestCncStatus');if(oldStatus&&newStatus)oldStatus.replaceWith(newStatus);
           const oldBtn=oldCnc.querySelector('#nestCncExport'),newBtn=newCnc.querySelector('#nestCncExport');if(oldBtn&&newBtn){oldBtn.disabled=newBtn.disabled;oldBtn.textContent=newBtn.textContent;}
+          const oldSend=oldCnc.querySelector('#nestCncSendMachine'),newSend=newCnc.querySelector('#nestCncSendMachine');if(oldSend&&newSend){oldSend.disabled=newSend.disabled;}
         }
       } else {
         el.innerHTML = html;
@@ -3422,6 +3432,14 @@ function bindNestedCncPanel(root){
   mutateData('Profil varsayılanları',st=>{st.cnc.kerfMm=p.defaultKerfMm??st.cnc.kerfMm;st.cnc.toolDiameterMm=p.defaultToolDiaMm??st.cnc.toolDiameterMm;});
   studioToast(`${p.label} varsayılan kerf ve takım çapı uygulandı.`);
  });
+ panel.querySelector('#nestCncSendMachine')?.addEventListener('click', () => {
+  const sh = store.get().nesting.sheets?.[activeSheetIdx];
+  triggerSendToCncMachine(sh ? [sh] : []);
+ });
+ panel.querySelector('#nestCncMachineConfig')?.addEventListener('click', () => {
+  const sh = store.get().nesting.sheets?.[activeSheetIdx];
+  openCncMachineModal(sh ? [sh] : []);
+ });
  panel.querySelector('#nestCncExport')?.addEventListener('click',()=>{
   const s=store.get(),sh=s.nesting.sheets?.[activeSheetIdx],profile=getMachineProfile(s.cnc.profile);
   if(!sh||!profile||!validateNestedProduction([sh],s.cnc).valid)return;
@@ -3456,6 +3474,12 @@ function bindCncCenterEvents(root) {
   upd('cncTabs', (c, v) => { c.microTabs = v; }, true);
   upd('cncTol', (c, v) => { c.curveTolMm = Number(v); });
 
+  root.querySelector('#cncBtnSendMachine')?.addEventListener('click', () => {
+    triggerSendToCncMachine(store.get().nesting.sheets || []);
+  });
+  root.querySelector('#cncBtnMachineConfig')?.addEventListener('click', () => {
+    openCncMachineModal(store.get().nesting.sheets || []);
+  });
   root.querySelector('#cncBtnNestNow')?.addEventListener('click', () => runAutoNesting());
   root.querySelector('#cncBtnExportDxf')?.addEventListener('click', () => {
     const s = store.get();
@@ -4259,6 +4283,7 @@ function init() {
   document.getElementById('btnCloseShortcuts').onclick = () => modal.classList.add('hidden');
 
   bindCorelBridgeModal();
+  bindCncMachineModal();
   bindAlignmentRail();
   // Left CAD Rail Tools & Actions
   document.querySelectorAll('.cad-rail [data-tool]').forEach(b => b.onclick = () => activateTool(b.dataset.tool));
@@ -4809,6 +4834,165 @@ function bindCorelBridgeModal() {
     if (!sheets.length) return;
     const payload = buildCorelNestingPayload(sheets, s.nesting?.previewColors, s.projectName);
     downloadBlob(`${s.projectName || 'KutuHarf'}_CorelMakro.bas`, generateCorelVbaMacro(payload), 'text/plain');
+  });
+}
+
+let cncModalTargetSheets = null;
+
+function toggleCncModalFieldGroups(transport) {
+  const folderG = document.getElementById('cncModalFolderGroup');
+  const netG = document.getElementById('cncModalNetGroup');
+  const ftpF = document.getElementById('cncModalFtpFields');
+  const serG = document.getElementById('cncModalSerialGroup');
+  const comRow = document.getElementById('cncModalComRow');
+  const comChips = document.getElementById('cncModalComPorts');
+  folderG?.classList.toggle('hidden', transport !== 'folder' && transport !== 'lightburn');
+  netG?.classList.toggle('hidden', transport !== 'ftp' && transport !== 'tcp' && transport !== 'lightburn');
+  ftpF?.classList.toggle('hidden', transport !== 'ftp');
+  serG?.classList.toggle('hidden', transport !== 'webserial' && transport !== 'serial');
+  comRow?.classList.toggle('hidden', transport !== 'serial');
+  comChips?.classList.toggle('hidden', transport !== 'serial');
+}
+
+function readCncModalConnection() {
+  return {
+    transport: document.getElementById('cncModalTransport')?.value || 'folder',
+    folderPath: document.getElementById('cncModalFolder')?.value || '',
+    autoOpen: Boolean(document.getElementById('cncModalAutoOpen')?.checked),
+    host: document.getElementById('cncModalHost')?.value || '127.0.0.1',
+    port: Number(document.getElementById('cncModalPort')?.value) || 0,
+    remoteDir: document.getElementById('cncModalRemoteDir')?.value || '',
+    user: document.getElementById('cncModalUser')?.value || '',
+    pass: document.getElementById('cncModalPass')?.value || '',
+    comPort: document.getElementById('cncModalComPort')?.value || '',
+    baudRate: Number(document.getElementById('cncModalBaud')?.value) || 115200,
+    protocol: document.getElementById('cncModalProtocol')?.value || 'raw',
+  };
+}
+
+async function refreshCncBridgeStatusUI() {
+  const badge = document.getElementById('cncBridgeStatusBadge');
+  if (!badge) return { online: false, comPorts: [], drives: [] };
+  badge.textContent = 'CNC Köprüsü kontrol ediliyor...';
+  badge.className = 'corel-status-pill';
+  const status = await checkCncBridgeStatus(900);
+  const drivesHost = document.getElementById('cncModalDrives');
+  const comHost = document.getElementById('cncModalComPorts');
+  if (status.online) {
+    badge.textContent = `✓ CNC Köprüsü Aktif (${status.comPorts.length} COM · ${status.drives.length} sürücü)`;
+    badge.className = 'corel-status-pill online';
+    if (drivesHost) {
+      drivesHost.innerHTML = status.drives.map(d => `<button type="button" class="cnc-chip" data-cnc-drive="${escapeAttr(d)}">💾 ${escapeHtml(d)}KutuHarf_CNC</button>`).join('');
+      drivesHost.querySelectorAll('[data-cnc-drive]').forEach(b => {
+        b.onclick = () => { const inp = document.getElementById('cncModalFolder'); if (inp) inp.value = b.dataset.cncDrive + 'KutuHarf_CNC'; };
+      });
+    }
+    if (comHost) {
+      comHost.innerHTML = status.comPorts.map(c => `<button type="button" class="cnc-chip" data-cnc-com="${escapeAttr(c)}">🔌 ${escapeHtml(c)}</button>`).join('');
+      comHost.querySelectorAll('[data-cnc-com]').forEach(b => {
+        b.onclick = () => { const inp = document.getElementById('cncModalComPort'); if (inp) inp.value = b.dataset.cncCom; };
+      });
+    }
+  } else {
+    badge.textContent = '○ Yerel CNC Köprüsü Kapalı (USB/Web Serial kurulumsuz çalışır)';
+    badge.className = 'corel-status-pill offline';
+    if (drivesHost) drivesHost.innerHTML = '';
+    if (comHost) comHost.innerHTML = '';
+  }
+  return status;
+}
+
+function openCncMachineModal(targetSheets = null) {
+  const modal = document.getElementById('cncMachineModal');
+  if (!modal) return;
+  const s = store.get();
+  cncModalTargetSheets = targetSheets && targetSheets.length ? targetSheets : (s.nesting?.sheets || []);
+  const profile = getMachineProfile(s.cnc?.profile);
+  const conn = loadMachineConnection(profile);
+
+  const summary = document.getElementById('cncModalProfileSummary');
+  if (summary) {
+    summary.innerHTML = `Seçili Makine: <b>${escapeHtml(profile.label)}</b> · Çıktı: <code>.${escapeHtml(profile.ext || 'nc')}</code> · Önerilen: ${escapeHtml(conn.hint || '')}`;
+  }
+  const tSel = document.getElementById('cncModalTransport');
+  if (tSel) {
+    if (!tSel.options.length) {
+      tSel.innerHTML = CNC_TRANSPORT_MODES.map(m => `<option value="${m.id}">${escapeHtml(m.label)}</option>`).join('');
+    }
+    tSel.value = conn.transport;
+  }
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
+  setVal('cncModalFolder', conn.folderPath || '');
+  const autoEl = document.getElementById('cncModalAutoOpen');
+  if (autoEl) autoEl.checked = Boolean(conn.autoOpen);
+  setVal('cncModalHost', conn.host || '127.0.0.1');
+  setVal('cncModalPort', conn.port || (conn.transport === 'lightburn' ? 19840 : conn.transport === 'tcp' ? 9100 : 21));
+  setVal('cncModalRemoteDir', conn.remoteDir || '/jobs');
+  setVal('cncModalUser', conn.user || 'anonymous');
+  setVal('cncModalPass', conn.pass || '');
+  setVal('cncModalComPort', conn.comPort || 'COM3');
+  setVal('cncModalBaud', conn.baudRate || 115200);
+  setVal('cncModalProtocol', conn.protocol || 'raw');
+
+  const prog = document.getElementById('cncModalProgress');
+  if (prog) { prog.classList.add('hidden'); prog.textContent = ''; }
+
+  toggleCncModalFieldGroups(conn.transport);
+  modal.classList.remove('hidden');
+  refreshCncBridgeStatusUI();
+}
+
+async function triggerSendToCncMachine(sheets = [], overrideConn = null) {
+  const s = store.get();
+  const activeSheets = (sheets && sheets.length ? sheets : (s.nesting?.sheets || [])).filter(sh => (sh.placements?.length || 0) > 0);
+  const check = buildMachineUploadPayload(activeSheets, s.cnc, s.projectName);
+  if (!check.valid) {
+    studioToast(check.issues[0]?.msg || 'Makineye yüklemek için geçerli yerleşmiş levha gerekir.', true);
+    return;
+  }
+  const prog = document.getElementById('cncModalProgress');
+  try {
+    const res = await uploadToCncMachine(activeSheets, s.cnc, s.projectName, overrideConn, p => {
+      if (prog) {
+        prog.classList.remove('hidden');
+        prog.textContent = `Gönderiliyor: %${p.pct} (${p.sent}/${p.total})`;
+      }
+    });
+    if (res.ok) {
+      document.getElementById('cncMachineModal')?.classList.add('hidden');
+      studioToast(res.message || `✓ ${check.profile.label} makineye yüklendi.`);
+      return;
+    }
+    if (res.bridgeOffline) {
+      openCncMachineModal(activeSheets);
+      studioToast('Yerel CNC köprüsü kapalı — köprüyü başlatın veya kurulumsuz Tarayıcı USB/Klasör yöntemini seçin.');
+      return;
+    }
+    studioToast(res.error || 'Makine yüklemesi başarısız.', true);
+  } catch (err) {
+    if (err?.name !== 'AbortError') studioToast(String(err?.message || err), true);
+  }
+}
+
+function bindCncMachineModal() {
+  const modal = document.getElementById('cncMachineModal');
+  if (!modal) return;
+  document.getElementById('btnCloseCncModal')?.addEventListener('click', () => modal.classList.add('hidden'));
+  document.getElementById('btnCncCheckStatus')?.addEventListener('click', () => refreshCncBridgeStatusUI());
+  document.getElementById('cncModalTransport')?.addEventListener('change', e => toggleCncModalFieldGroups(e.target.value));
+  document.getElementById('btnCncDownloadBat')?.addEventListener('click', () => {
+    downloadBlob('KutuHarf_CNC_Kopru.bat', generateCncBridgeLauncherBat(), 'application/x-bat');
+    studioToast('İndirilen KutuHarf_CNC_Kopru.bat dosyasına çift tıklayıp köprüyü başlatın.');
+  });
+  document.getElementById('btnCncSaveConn')?.addEventListener('click', () => {
+    const profile = getMachineProfile(store.get().cnc?.profile);
+    saveMachineConnection(profile.id, readCncModalConnection());
+    studioToast(`✓ ${profile.label} bağlantı ayarları kaydedildi.`);
+  });
+  document.getElementById('btnCncSendNow')?.addEventListener('click', () => {
+    const profile = getMachineProfile(store.get().cnc?.profile);
+    const conn = saveMachineConnection(profile.id, readCncModalConnection());
+    triggerSendToCncMachine(cncModalTargetSheets || store.get().nesting?.sheets || [], conn);
   });
 }
 

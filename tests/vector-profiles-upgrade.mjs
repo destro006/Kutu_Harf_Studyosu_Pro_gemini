@@ -10,7 +10,13 @@ import {
   generateCorelBridgeLauncherBat,
   getCorelBridgePs1Script,
 } from '../src/export/CorelDrawBridge.js';
-import { renderNestingCenter } from '../src/ui/CentralWorkspaces.js';
+import {
+  getDefaultMachineConnection,
+  buildMachineUploadPayload,
+  generateCncBridgeLauncherBat,
+  getCncBridgePs1Script,
+} from '../src/export/CncMachineBridge.js';
+import { renderNestingCenter, renderCncCenter } from '../src/ui/CentralWorkspaces.js';
 import { createDefaultState } from '../src/core/state.js';
 import { postScriptToPdf } from '../src/manufacturing/PostScriptWasmImport.js';
 import { extractAiOutlineFallback } from '../src/manufacturing/LegacyPostScriptImport.js';
@@ -190,7 +196,7 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v7'));
-assert(rootHtml.includes('./src/main.js?v=20261125-v11'));
+assert(rootHtml.includes('./src/main.js?v=20261125-v12'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -417,3 +423,33 @@ assert(pmOverlaySrc.includes('id="pmEditPerspBtn"') && pmOverlaySrc.includes("si
 assert(mainJs.includes('fitToSign: true') && mainJs.includes('data-pm-layer="true"'));
 assert(!mainJs.includes("state.activeWorkspace==='background'&&state.photomontage.photoUrl"));
 console.log('✓ Photomontage full framing, halo preservation, Katmanlar layer & Enter confirmation verified');
+
+// 13. 1-Click CNC / Laser / Plasma / Waterjet / Plotter Direct Upload Bridge across all 42 profiles
+for (const profile of MACHINE_PROFILES) {
+  const conn = getDefaultMachineConnection(profile);
+  assert(['folder', 'lightburn', 'webserial', 'ftp'].includes(conn.transport), `Unexpected default transport for ${profile.id}: ${conn.transport}`);
+  if (profile.id.includes('lightburn')) assert.equal(conn.transport, 'lightburn');
+  if (profile.id.includes('grbl') || profile.kind === 'plt') assert.equal(conn.transport, 'webserial');
+}
+for (const pid of ['dxf_cypcut', 'svg_lightburn', 'gcode_syntec', 'gcode_grbl_laser', 'plt_roland']) {
+  const up = buildMachineUploadPayload(corelSheets, { profile: pid, kerfMm: 0.2, toolDiameterMm: 3 }, 'Tabela');
+  assert(up.valid && up.content.length > 40, `Expected valid machine payload for ${pid}`);
+  assert(up.fileName.endsWith(`.${up.profile.ext}`), `Expected matching ext for ${pid}`);
+}
+const cncBat = generateCncBridgeLauncherBat();
+const cncB64 = cncBat.match(/::###PS1_B64_START###\r?\n([\s\S]*?)\r?\n::###PS1_B64_END###/)[1].replace(/^::/gm, '').replace(/\s+/g, '');
+const cncPs1 = Buffer.from(cncB64, 'base64').toString('utf8');
+assert.equal(cncPs1, getCncBridgePs1Script());
+assert(cncPs1.includes('127.0.0.1:$listenPort/') && cncPs1.includes('FtpWebRequest') && cncPs1.includes('UdpClient') && cncPs1.includes('SerialPort'));
+if (process.platform === 'win32') {
+  execFileSync('powershell.exe', [
+    '-NoProfile',
+    '-Command',
+    "$code=[Console]::In.ReadToEnd(); $errs=$null; [void][System.Management.Automation.Language.Parser]::ParseInput($code,[ref]$null,[ref]$errs); if($errs.Count -gt 0){$errs | ForEach-Object {Write-Error $_.Message}; exit 1}",
+  ], { input: cncPs1, encoding: 'utf8' });
+}
+const cncHtml = renderCncCenter(cwsState);
+assert(cncHtml.includes('id="cncBtnSendMachine"') && cncHtml.includes('id="cncBtnMachineConfig"'));
+assert(cwsHtml.includes('id="nestCncSendMachine"') && cwsHtml.includes('id="nestCncMachineConfig"'));
+assert(rootHtml.includes('id="cncMachineModal"'));
+console.log(`✓ 1-Click CNC machine bridge verified for all ${MACHINE_PROFILES.length} profiles (Browser USB/Folder + PowerShell COM/FTP/TCP/UDP)`);

@@ -220,6 +220,10 @@ function renderNestedCncPanel(state,activeSheet){
  <div id="nestCncStatus" style="font-size:11px;margin:6px 0;color:var(--muted)">${val.valid?'Konturlar doğrulandı · aktif levha':escapeHtml(val.issues[0]?.msg||'Üretim kontrolü gerekli.')}
  ${profile.kind==='gcode'?'<p>G-code taslağı: hız, güç ve Z değerleri sabittir; telafi, lead-in ve mikro köprüler CAM programında doğrulanıp uygulanmalıdır.</p>':''}</div>
  <button type="button" id="nestCncExport" class="sec-btn" style="width:100%" ${val.valid?'':'disabled'}>Aktif Levha · ${profile.kind==='gcode'?'G-code Taslağı (.'+profile.ext+')':profile.ext.toUpperCase()} İndir</button>
+ <div style="display:flex;gap:6px;margin-top:6px">
+   <button type="button" id="nestCncSendMachine" class="cnc-send-btn" style="flex:1" ${val.valid?'':'disabled'} title="Seçili CNC/Lazer makinesine tek tıkla gönder">⚡ Makineye Yükle (1 Tık)</button>
+   <button type="button" id="nestCncMachineConfig" class="sec-btn" title="Makine bağlantı ayarları (USB / Klasör / LightBurn / FTP / TCP / COM)">⚙</button>
+ </div>
  </div>`;
 }
 
@@ -243,6 +247,10 @@ export function renderCncCenter(state) {
         <div style="margin-bottom:10px;padding:8px;border-radius:7px;background:${val.valid ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.12)'};border:1px solid ${val.valid ? 'var(--ok)' : 'var(--danger)'}">
           <strong>${val.valid ? `✓ Üretime Hazır (${val.totalParts} yerleşmiş parça)` : '⚠ Kritik Üretim Hatası'}</strong>
           ${val.issues.map(i => `<div style="font-size:11.5px;margin-top:4px;color:${i.level === 'critical' ? '#fca5a5' : '#fde047'}">• ${escapeHtml(i.msg)}</div>`).join('')}
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          <button type="button" id="cncBtnSendMachine" class="cnc-send-btn" style="flex:1" ${!val.valid ? 'disabled' : ''}>⚡ ${escapeHtml(activeProfile.label.split('(')[0].trim())} · Makineye Tek Tıkla Yükle</button>
+          <button type="button" id="cncBtnMachineConfig" class="sec-btn">⚙ Bağlantı Ayarları</button>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <button type="button" id="cncBtnNestNow" class="sec-btn">Nesting Hesapla / Yenile</button>
