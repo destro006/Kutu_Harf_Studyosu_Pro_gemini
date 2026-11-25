@@ -1,7 +1,7 @@
 import {normalizeDisplayUnit,formatMmAsUnit,formatDimensions,formatPresetLabel} from '../core/units.js';
 import { renderDetailedCostCenter } from './CostCenterView.js?v=qa8';
 import { ringLength, SHEET_PRESETS } from '../manufacturing/NestingEngine.js';
-import { renderNestingSvg } from './NestingView.js?v=20261126-v29';
+import { renderNestingSvg } from './NestingView.js?v=20261126-v30';
 import { renderNestingSourceTabs, renderNestingImportPane } from './NestingImportView.js?v=units6';
 import { MACHINE_PROFILES, MACHINE_PROFILE_CATEGORIES, getMachineProfile, validateNestedProduction } from '../export/CncGcodeExporter.js';
 import { formatMoney } from '../manufacturing/CostEngine.js';
@@ -55,6 +55,28 @@ export function renderNestingCenter(state, ctx) {
   const partGroups = [...partGroupsMap.values()];
   const activeGroup = (ctx.activePartGroup && partGroupsMap.has(ctx.activePartGroup)) ? ctx.activePartGroup : null;
   const leftCollapsed = Boolean(ctx.leftPanelCollapsed);
+  const rightCollapsed = Boolean(ctx.rightPanelCollapsed);
+  const rightOpenSet = ctx.rightPanels?.open instanceof Set
+    ? ctx.rightPanels.open
+    : new Set(Array.isArray(ctx.rightPanels?.open) ? ctx.rightPanels.open : ['sheet']);
+  const rightFloatingMap = (ctx.rightPanels?.floating && typeof ctx.rightPanels.floating === 'object') ? ctx.rightPanels.floating : {};
+  const anyRightOpen = ['sheet', 'colors', 'cnc', 'export'].some(id => rightOpenSet.has(id));
+  const wrapRightPanel = (id, order, title, bodyHtml) => {
+    const isOpen = rightOpenSet.has(id);
+    const isFloating = Boolean(rightFloatingMap[id]);
+    return `
+      <section class="cws-r-panel ${isOpen ? '' : 'is-collapsed'}" data-nest-panel="${id}" data-nest-panel-order="${order}">
+        <header class="cws-r-panel-head" data-nest-panel-drag="${id}" title="Aç/kapat için tıklayın, serbest taşımak için sürükleyin">
+          <button type="button" class="cws-r-panel-toggle" data-nest-panel-toggle="${id}" aria-expanded="${isOpen}" title="${isOpen ? 'Bölümü küçült' : 'Bölümü aç'}">
+            <span class="cws-r-caret" aria-hidden="true">▸</span>
+            <span class="cws-r-panel-title">${title}</span>
+          </button>
+          <button type="button" class="cws-r-panel-float-btn" data-nest-panel-float="${id}" title="${isFloating ? 'Eski yerine yerleştir' : 'Serbest pencereye ayır (taşı)'}">${isFloating ? '↙' : '↗'}</button>
+        </header>
+        <div class="cws-r-panel-body">${bodyHtml}</div>
+      </section>
+    `;
+  };
   const activeLeftTab = ctx.leftTab === 'fileli' ? 'fileli' : 'parts';
   const fileliObjWidth = (state.objects || []).find(o => (o.constructionType || state.constructionType) === 'fileli')?.fileWidthMm ?? state.fileli?.fileWidthMm ?? 5;
   const acOverlapMm = state.fileli?.acrylicOverlapMm ?? 3;
@@ -84,7 +106,7 @@ export function renderNestingCenter(state, ctx) {
   return `
     <div class="nesting-workspace" data-nesting-tab="${n.activeTabId || 'design'}" data-display-unit="${unit}">
     ${renderNestingSourceTabs(n)}
-    <div class="center-ws-grid ${leftCollapsed ? 'cws-left-collapsed' : ''}">
+    <div class="center-ws-grid ${leftCollapsed ? 'cws-left-collapsed' : ''} ${rightCollapsed ? 'cws-right-collapsed' : ''}">
       <!-- Left: Part List & Fileli Material Settings Tabs (Collapsible) -->
       <div class="cws-side">
         <div class="cws-side-header">
@@ -246,69 +268,78 @@ export function renderNestingCenter(state, ctx) {
         </div>
       </div>
 
-      <!-- Right: Sheet & Optimization Settings -->
+      <!-- Right: Collapsible & Floatable Corel-Style Settings Panels -->
       <div class="cws-side-r">
-        <h3 class="sec-title">Levha &amp; Optimizasyon</h3>
-        <div class="field-row">
-          <label>Plaka Önayarı</label>
-          <select id="cwsNestPreset">
-            ${SHEET_PRESETS.map(p => `<option value="${p.id}" ${presetId === p.id ? 'selected' : ''}>${formatPresetLabel(p,unit)}</option>`).join('')}
-            <option value="custom" ${presetId === 'custom' ? 'selected' : ''}>Özel Ölçü</option>
-          </select>
+        <div class="cws-side-r-header">
+          <h3 class="sec-title">Ayarlar</h3>
+          <button type="button" id="cwsResetRightPanels" class="cws-side-mini-btn" title="Serbest panelleri eski yerine yerleştir">↺</button>
+          <button type="button" id="cwsToggleAllRightPanels" class="cws-side-mini-btn" title="${anyRightOpen ? 'Tüm bölümleri kapat' : 'Tüm bölümleri aç'}">${anyRightOpen ? 'Kapat' : 'Aç'}</button>
+          <button type="button" id="cwsToggleRightPanel" class="cws-side-mini-btn" aria-expanded="${!rightCollapsed}" title="${rightCollapsed ? 'Sağ ayar panelini aç' : 'Sağ ayar panelini daralt'}">${rightCollapsed ? '«' : '»'}</button>
         </div>
-        <div class="field-row"><label>Levha Genişliği (${unit})</label><input id="cwsNestW" type="number" step="any" value="${show(n.sheetWidthMm)}"></div>
-        <div class="field-row"><label>Levha Yüksekliği (${unit})</label><input id="cwsNestH" type="number" step="any" value="${show(n.sheetHeightMm)}"></div>
-        <div class="field-row"><label>Parça Aralığı (${unit})</label><input id="cwsNestSp" type="number" step="any" value="${show(n.clearanceMm??5)}"></div>
-        <div class="field-row"><label>Kenar Payı (${unit})</label><input id="cwsNestMg" type="number" step="any" value="${show(n.marginLeftMm)}"></div>
-        <div class="field-row"><label>Delik İçi Yerleştirme</label><input id="cwsNestHoles" type="checkbox" ${n.allowHoleNesting ? 'checked' : ''}></div>
-        <div class="field-row"><label>Fırça Yönü Kısıtı (0° Sabit)</label><input id="cwsNestGrain" type="checkbox" ${n.enforceGrainDirection ? 'checked' : ''}></div>
-        <details class="nesting-advanced-details" id="cwsNestAdvanced" ${ctx.advancedOpen ? 'open' : ''}>
-          <summary class="nesting-advanced-summary">
-            <span>Gelişmiş Yerleşim Ayarları</span>
-            <small id="cwsNestAdvancedBadge">${n.enforceGrainDirection ? '0° Sabit · Otomatik' : (n.rotationStepDeg === 'auto' || n.rotationStepDeg == null ? 'Otomatik · En İyi Geçirme' : `${n.rotationStepDeg}° Adım`)}</small>
-          </summary>
-          <div class="nesting-advanced-body">
-            <div class="field-row">
-              <label>Dönüş Açısı</label>
-              <select id="cwsNestRot" ${n.enforceGrainDirection ? 'disabled title="Fırça yönü kısıtı açıkken parçalar 0° sabit kalır"' : ''}>
-                <option value="auto" ${(n.rotationStepDeg == null || n.rotationStepDeg === 'auto') ? 'selected' : ''}>Otomatik · En İyi Geçirme</option>
-                <option value="0" ${n.rotationStepDeg === 0 ? 'selected' : ''}>Sabit (0°)</option>
-                <option value="180" ${n.rotationStepDeg === 180 ? 'selected' : ''}>0° / 180°</option>
-                <option value="90" ${n.rotationStepDeg === 90 ? 'selected' : ''}>90° Adımlı</option>
-                <option value="45" ${n.rotationStepDeg === 45 ? 'selected' : ''}>45° Adımlı</option>
-                <option value="30" ${n.rotationStepDeg === 30 ? 'selected' : ''}>30° Adımlı</option>
-                <option value="15" ${n.rotationStepDeg === 15 ? 'selected' : ''}>15° Adımlı</option>
-                <option value="5" ${n.rotationStepDeg === 5 ? 'selected' : ''}>5° Adımlı · detaylı</option>
-              </select>
-            </div>
-            <h3 class="sec-title" style="margin-top:10px">Yerleşim Tercihi</h3>
-            <div class="field-row" id="nestingEngineVersion"><label>Yerleşim motoru</label><strong style="font-size:12px;color:var(--text)">Nesting v3 Pro · Exact NFP</strong></div>
-            <div class="field-row"><label>Optimizasyon yönü</label>
-              <select id="cwsNestStrategy">
-                <option value="auto" ${(!n.placementStrategy || n.placementStrategy === 'auto') ? 'selected' : ''}>Otomatik · Tabakaya En İyi</option>
-                <option value="compact" ${n.placementStrategy === 'compact' ? 'selected' : ''}>Kompakt · daha az fire</option>
-                <option value="vertical" ${n.placementStrategy === 'vertical' ? 'selected' : ''}>Dikey · üst alanı kullan</option>
-                <option value="bottomLeft" ${n.placementStrategy === 'bottomLeft' ? 'selected' : ''}>Alt-sol · klasik</option>
-              </select>
-            </div>
+        ${wrapRightPanel('sheet', 0, 'Levha &amp; Optimizasyon', `
+          <div class="field-row">
+            <label>Plaka Önayarı</label>
+            <select id="cwsNestPreset">
+              ${SHEET_PRESETS.map(p => `<option value="${p.id}" ${presetId === p.id ? 'selected' : ''}>${formatPresetLabel(p,unit)}</option>`).join('')}
+              <option value="custom" ${presetId === 'custom' ? 'selected' : ''}>Özel Ölçü</option>
+            </select>
           </div>
-        </details>
-        <h3 class="sec-title" style="margin-top:14px">Önizleme Renkleri</h3>
-        <div class="nesting-preview-palette">
-          <label class="nesting-palette-option"><span>Dış çizgi rengi (Gövde)</span><input id="cwsNestBodyColor" type="color" value="${/^#[a-f0-9]{6}$/i.test(n.previewColors?.body || '') ? n.previewColors.body : '#c89343'}" title="Tüm harf dış çizgileri için tek renk"></label>
-          <label class="nesting-palette-option"><span>İç boşluk çizgi rengi (A / O / R)</span><input id="cwsNestHoleColor" type="color" value="${/^#[a-f0-9]{6}$/i.test(n.previewColors?.holes || '') ? n.previewColors.holes : '#c89343'}" title="Bütün iç boşluk çizgileri için tek renk"></label>
-          <button type="button" id="cwsNestResetColors" class="sec-btn">Renkleri Sıfırla</button>
-          <small>Bu renkler yalnızca dış ve iç çizgi renkleridir (iç dolgu uygulanmaz); CorelDRAW aktarımında da çizgi rengi olarak gider.</small>
-        </div>
-        ${renderNestedCncPanel(state,activeSheet)}
-        <h3 class="sec-title" style="margin-top:12px">Nesting Dışa Aktar</h3>
-        <div style="display:flex;flex-direction:column;gap:6px">
-          <button type="button" id="cwsExpCorel" class="corel-btn" ${totalParts?'':'disabled'}>✦ CorelDRAW'a Aktar (1 Tık)</button>
-          <button type="button" id="cwsCorelSetup" class="sec-btn">CorelDRAW Köprüsü &amp; Seçenekler</button>
-          <button type="button" id="cwsExpSvg" class="sec-btn" ${activeSheet?.placements?.length?'':'disabled'}>Aktif Levhayı SVG İndir</button>
-          <button type="button" id="cwsExpDxf" class="sec-btn" ${totalParts?'':'disabled'}>Tüm Levhaları DXF (1:1 mm) İndir</button>
-          <button type="button" id="cwsExpCsv" class="sec-btn" ${totalParts?'':'disabled'}>Parça Listesi (CSV) İndir</button>
-        </div>
+          <div class="field-row"><label>Levha Genişliği (${unit})</label><input id="cwsNestW" type="number" step="any" value="${show(n.sheetWidthMm)}"></div>
+          <div class="field-row"><label>Levha Yüksekliği (${unit})</label><input id="cwsNestH" type="number" step="any" value="${show(n.sheetHeightMm)}"></div>
+          <div class="field-row"><label>Parça Aralığı (${unit})</label><input id="cwsNestSp" type="number" step="any" value="${show(n.clearanceMm??5)}"></div>
+          <div class="field-row"><label>Kenar Payı (${unit})</label><input id="cwsNestMg" type="number" step="any" value="${show(n.marginLeftMm)}"></div>
+          <div class="field-row"><label>Delik İçi Yerleştirme</label><input id="cwsNestHoles" type="checkbox" ${n.allowHoleNesting ? 'checked' : ''}></div>
+          <div class="field-row"><label>Fırça Yönü Kısıtı (0° Sabit)</label><input id="cwsNestGrain" type="checkbox" ${n.enforceGrainDirection ? 'checked' : ''}></div>
+          <details class="nesting-advanced-details" id="cwsNestAdvanced" ${ctx.advancedOpen ? 'open' : ''}>
+            <summary class="nesting-advanced-summary">
+              <span>Gelişmiş Yerleşim Ayarları</span>
+              <small id="cwsNestAdvancedBadge">${n.enforceGrainDirection ? '0° Sabit · Otomatik' : (n.rotationStepDeg === 'auto' || n.rotationStepDeg == null ? 'Otomatik · En İyi Geçirme' : `${n.rotationStepDeg}° Adım`)}</small>
+            </summary>
+            <div class="nesting-advanced-body">
+              <div class="field-row">
+                <label>Dönüş Açısı</label>
+                <select id="cwsNestRot" ${n.enforceGrainDirection ? 'disabled title="Fırça yönü kısıtı açıkken parçalar 0° sabit kalır"' : ''}>
+                  <option value="auto" ${(n.rotationStepDeg == null || n.rotationStepDeg === 'auto') ? 'selected' : ''}>Otomatik · En İyi Geçirme</option>
+                  <option value="0" ${n.rotationStepDeg === 0 ? 'selected' : ''}>Sabit (0°)</option>
+                  <option value="180" ${n.rotationStepDeg === 180 ? 'selected' : ''}>0° / 180°</option>
+                  <option value="90" ${n.rotationStepDeg === 90 ? 'selected' : ''}>90° Adımlı</option>
+                  <option value="45" ${n.rotationStepDeg === 45 ? 'selected' : ''}>45° Adımlı</option>
+                  <option value="30" ${n.rotationStepDeg === 30 ? 'selected' : ''}>30° Adımlı</option>
+                  <option value="15" ${n.rotationStepDeg === 15 ? 'selected' : ''}>15° Adımlı</option>
+                  <option value="5" ${n.rotationStepDeg === 5 ? 'selected' : ''}>5° Adımlı · detaylı</option>
+                </select>
+              </div>
+              <h3 class="sec-title" style="margin-top:10px">Yerleşim Tercihi</h3>
+              <div class="field-row" id="nestingEngineVersion"><label>Yerleşim motoru</label><strong style="font-size:12px;color:var(--text)">Nesting v3 Pro · Exact NFP</strong></div>
+              <div class="field-row"><label>Optimizasyon yönü</label>
+                <select id="cwsNestStrategy">
+                  <option value="auto" ${(!n.placementStrategy || n.placementStrategy === 'auto') ? 'selected' : ''}>Otomatik · Tabakaya En İyi</option>
+                  <option value="compact" ${n.placementStrategy === 'compact' ? 'selected' : ''}>Kompakt · daha az fire</option>
+                  <option value="vertical" ${n.placementStrategy === 'vertical' ? 'selected' : ''}>Dikey · üst alanı kullan</option>
+                  <option value="bottomLeft" ${n.placementStrategy === 'bottomLeft' ? 'selected' : ''}>Alt-sol · klasik</option>
+                </select>
+              </div>
+            </div>
+          </details>
+        `)}
+        ${wrapRightPanel('colors', 1, 'Önizleme Renkleri', `
+          <div class="nesting-preview-palette">
+            <label class="nesting-palette-option"><span>Dış çizgi rengi (Gövde)</span><input id="cwsNestBodyColor" type="color" value="${/^#[a-f0-9]{6}$/i.test(n.previewColors?.body || '') ? n.previewColors.body : '#c89343'}" title="Tüm harf dış çizgileri için tek renk"></label>
+            <label class="nesting-palette-option"><span>İç boşluk çizgi rengi (A / O / R)</span><input id="cwsNestHoleColor" type="color" value="${/^#[a-f0-9]{6}$/i.test(n.previewColors?.holes || '') ? n.previewColors.holes : '#c89343'}" title="Bütün iç boşluk çizgileri için tek renk"></label>
+            <button type="button" id="cwsNestResetColors" class="sec-btn">Renkleri Sıfırla</button>
+            <small>Bu renkler yalnızca dış ve iç çizgi renkleridir (iç dolgu uygulanmaz); CorelDRAW aktarımında da çizgi rengi olarak gider.</small>
+          </div>
+        `)}
+        ${wrapRightPanel('cnc', 2, 'CNC Makine ve Ayarları', renderNestedCncPanel(state, activeSheet))}
+        ${wrapRightPanel('export', 3, 'Nesting Dışa Aktar', `
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <button type="button" id="cwsExpCorel" class="corel-btn" ${totalParts?'':'disabled'}>✦ CorelDRAW'a Aktar (1 Tık)</button>
+            <button type="button" id="cwsCorelSetup" class="sec-btn">CorelDRAW Köprüsü &amp; Seçenekler</button>
+            <button type="button" id="cwsExpSvg" class="sec-btn" ${activeSheet?.placements?.length?'':'disabled'}>Aktif Levhayı SVG İndir</button>
+            <button type="button" id="cwsExpDxf" class="sec-btn" ${totalParts?'':'disabled'}>Tüm Levhaları DXF (1:1 mm) İndir</button>
+            <button type="button" id="cwsExpCsv" class="sec-btn" ${totalParts?'':'disabled'}>Parça Listesi (CSV) İndir</button>
+          </div>
+        `)}
       </div>
 
       <!-- Bottom Status Summary -->
@@ -321,6 +352,7 @@ export function renderNestingCenter(state, ctx) {
         ${n.optimizationInfo?.engineVersion==='3.0-pro'?`<span id="nestingLastEngine"><b>Son yerleşim:</b> ${n.optimizationInfo.selectedEngine==='v3-pro'?'v3 Pro':n.optimizationInfo.selectedEngine==='clipper-nfp'?'Clipper NFP (daha iyi doğrulanmış sonuç)':'Hızlı güvenli dizgi'}${n.optimizationInfo.proAttempts?` · Pro: ${n.optimizationInfo.proCompleted??0}/${n.optimizationInfo.proAttempts} tamamlanan deneme`:''} · ${n.optimizationInfo.attempts??0} deneme · ${((n.optimizationInfo.elapsedMs??0)/1000).toFixed(1)} sn</span>`:'<span id="nestingLastEngine">Son yerleşim: v3 Pro sürümünde henüz hesaplanmadı</span>'}
       </div>
     </div>
+    <div id="cwsNestFloatLayer" class="cws-nest-float-layer" aria-label="Serbest Nesting Panelleri"></div>
     </div>
   `;
 }
@@ -369,7 +401,6 @@ function renderNestedCncPanel(state,activeSheet){
  const cnc=state.cnc||{},profile=getMachineProfile(cnc.profile);
  const val=validateNestedProduction(activeSheet?[activeSheet]:[],cnc);
  return `<div id="nestCncPanel">
- <h3 class="sec-title" style="margin-top:14px">CNC Makine ve Ayarları</h3>
  ${renderCncFields(state,'nestCnc')}
  <div id="nestCncStatus" style="font-size:11px;margin:6px 0;color:var(--muted)">${val.valid?'Konturlar doğrulandı · aktif levha':escapeHtml(val.issues[0]?.msg||'Üretim kontrolü gerekli.')}
  ${profile.kind==='gcode'?'<p>G-code taslağı: hız, güç ve Z değerleri sabittir; telafi, lead-in ve mikro köprüler CAM programında doğrulanıp uygulanmalıdır.</p>':''}</div>

@@ -1484,7 +1484,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 #exportDialog .export-modal-body{gap:14px}
 
 /* Independent source documents within Nesting, preserving the selected sheet editor. */
-#nestingCenterWrap .nesting-workspace {height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+#nestingCenterWrap .nesting-workspace {position:relative;height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 #nestingCenterWrap .nesting-workspace > .center-ws-grid {flex:1 1 0;min-height:0}
 #nestingCenterWrap .nesting-source-tabs {display:flex;gap:7px;align-items:center;flex-wrap:nowrap;overflow-x:auto;flex:0 0 auto;min-height:43px;padding:7px 11px;background:#171f2b;border-bottom:1px solid #364251;scrollbar-width:thin}
 #nestingCenterWrap .nesting-source-tabs-label {color:#a7b3c5;font-size:9px;white-space:nowrap;font-weight:700;letter-spacing:1px;margin-right:3px}
@@ -1742,6 +1742,30 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .cws-sheet-transfer-bar select {width:100%;height:26px;font-size:11px;padding:2px 6px;border-radius:5px;border:1px solid var(--line);background:#0f172a;color:var(--text);}
 .cws-transfer-btns {display:grid;grid-template-columns:1fr 1fr;gap:5px;}
 .cws-transfer-btns .sec-btn {padding:4px 6px;font-size:11px;text-align:center;}
+.cws-side-r-header {display:flex;align-items:center;justify-content:space-between;gap:5px;margin-bottom:8px;}
+.cws-side-r-header .sec-title {margin:0;flex:1;min-width:0;}
+.center-ws-grid.cws-right-collapsed {grid-template-columns:260px minmax(0,1fr) 38px;}
+.center-ws-grid.cws-left-collapsed.cws-right-collapsed {grid-template-columns:38px minmax(0,1fr) 38px;}
+.center-ws-grid.cws-right-collapsed .cws-side-r {padding:8px 4px;overflow:hidden;display:flex;flex-direction:column;align-items:center;}
+.center-ws-grid.cws-right-collapsed .cws-side-r > :not(.cws-side-r-header) {display:none;}
+.center-ws-grid.cws-right-collapsed .cws-side-r-header {flex-direction:column;gap:6px;margin:0;}
+.center-ws-grid.cws-right-collapsed .cws-side-r-header .sec-title,.center-ws-grid.cws-right-collapsed #cwsToggleAllRightPanels {display:none;}
+.cws-side-r.cws-dock-hover {outline:2px dashed var(--accent);outline-offset:-3px;background:rgba(255,181,71,.08);}
+.cws-r-panel {border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.02);margin-bottom:8px;overflow:hidden;}
+.cws-r-panel-head {display:flex;align-items:center;gap:4px;padding:5px 7px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.06);cursor:grab;user-select:none;}
+.cws-r-panel-head:active {cursor:grabbing;}
+.cws-r-panel.is-collapsed .cws-r-panel-head {border-bottom-color:transparent;}
+.cws-r-panel-toggle {flex:1;min-width:0;display:flex;align-items:center;gap:6px;padding:1px 0;border:none;background:transparent;color:var(--text);font-size:11.5px;font-weight:600;text-align:left;cursor:pointer;}
+.cws-r-caret {display:inline-block;font-size:11px;color:var(--muted);transition:transform .15s ease;flex:none;transform:rotate(90deg);}
+.cws-r-panel.is-collapsed .cws-r-caret {transform:rotate(0deg);}
+.cws-r-panel-title {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cws-r-panel-float-btn {width:21px;height:20px;padding:0;flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--muted);font-size:11px;cursor:pointer;}
+.cws-r-panel-float-btn:hover {border-color:var(--accent);color:var(--accent);}
+.cws-r-panel-body {padding:8px;}
+.cws-r-panel.is-collapsed > .cws-r-panel-body {display:none;}
+.cws-nest-float-layer {position:absolute;inset:0;pointer-events:none;z-index:45;overflow:hidden;}
+.cws-r-panel.is-floating {position:absolute;width:288px;max-height:calc(100% - 24px);display:flex;flex-direction:column;margin:0;pointer-events:auto;background:#131924;border:1px solid rgba(255,181,71,.48);box-shadow:0 14px 36px rgba(0,0,0,.6);border-radius:9px;}
+.cws-r-panel.is-floating > .cws-r-panel-body {overflow-y:auto;max-height:70vh;}
 
 /* Static file actions aligned with the contextual Ortala property toolbar. */
 .numeric-toolbar-row{display:flex;align-items:stretch;min-width:0;flex-shrink:0;background:#141b25;border-bottom:1px solid #35404c;}

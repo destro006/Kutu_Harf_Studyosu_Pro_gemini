@@ -224,10 +224,10 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v8'));
-assert(rootHtml.includes('./src/main.js?v=20261126-v29'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v29'));
+assert(rootHtml.includes('./src/main.js?v=20261126-v30'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v30'));
 assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
-assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v29'));
+assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v30'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -924,6 +924,20 @@ assert(xferHtml.includes('id="cwsSheetTransferBar"') && xferHtml.includes('id="c
   && xferHtml.includes('id="cwsMoveToSheetBtn"') && xferHtml.includes('id="cwsCopyToSheetBtn"')
   && xferHtml.includes('draggable="true"') && xferHtml.includes('<option value="1">Levha 2'));
 assert(mainJs.includes('function transferNestingParts') === false && mainJs.includes('transferNestingParts'));
-console.log('✓ Nesting CorelDRAW CAD features (Ctrl+A, 2-click rotate gizmo/bar, alignment & cut/copy/paste/duplicate) + collapsible sidebar + cross-sheet transfer verified');
+
+// Right panel collapsible & Corel-style floatable/re-dockable sections
+assert(xferHtml.includes('id="cwsToggleRightPanel"') && xferHtml.includes('id="cwsResetRightPanels"') && xferHtml.includes('id="cwsNestFloatLayer"'));
+for (const pid of ['sheet', 'colors', 'cnc', 'export']) {
+  assert(xferHtml.includes(`data-nest-panel="${pid}"`) && xferHtml.includes(`data-nest-panel-toggle="${pid}"`) && xferHtml.includes(`data-nest-panel-float="${pid}"`));
+}
+const rightCollapsedHtml = renderNestingCenter(xferState, {
+  activeSheetIdx: 0,
+  rightPanelCollapsed: true,
+  rightPanels: { open: new Set(['sheet', 'cnc']), floating: { cnc: { x: 120, y: 80 } } },
+});
+assert(rightCollapsedHtml.includes('cws-right-collapsed'));
+assert(rightCollapsedHtml.includes('data-nest-panel-float="cnc" title="Eski yerine yerleştir">↙'));
+assert(mainJs.includes('applyNestingRightPanelLayout') && mainJs.includes('khs_nesting_panels_v1') && mainJs.includes('cws-dock-hover'));
+console.log('✓ Nesting CorelDRAW CAD features (Ctrl+A, 2-click rotate gizmo/bar, alignment & cut/copy/paste/duplicate) + collapsible sidebar + cross-sheet transfer + Corel-style right panels verified');
 
 function grpSheetStateSafe(st) { return st; }

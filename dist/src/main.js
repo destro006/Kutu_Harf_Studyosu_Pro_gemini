@@ -11,7 +11,7 @@ import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v15';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v29';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v30';
 import {
   nextNestingSelection,
   deleteNestingParts,
@@ -263,6 +263,105 @@ let nestingClipboard = null;
 let nestingLeftCollapsed = false;
 let nestingLeftTab = 'parts';
 const nestingOpenGroups = new Set();
+const NESTING_PANELS_KEY = 'khs_nesting_panels_v1';
+const NESTING_PANEL_IDS = ['sheet', 'colors', 'cnc', 'export'];
+let nestingRightCollapsed = false;
+let nestingRightOpen = new Set(['sheet']);
+let nestingRightFloating = {};
+let nestingFloatTopZ = 2;
+try {
+  const savedNp = JSON.parse(localStorage.getItem(NESTING_PANELS_KEY) || 'null');
+  if (savedNp && typeof savedNp === 'object') {
+    nestingRightCollapsed = Boolean(savedNp.collapsed);
+    if (Array.isArray(savedNp.open)) {
+      nestingRightOpen = new Set(savedNp.open.filter(id => NESTING_PANEL_IDS.includes(id)));
+    }
+    if (savedNp.floating && typeof savedNp.floating === 'object') {
+      nestingRightFloating = {};
+      for (const [k, pos] of Object.entries(savedNp.floating)) {
+        if (NESTING_PANEL_IDS.includes(k) && pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+          nestingRightFloating[k] = { x: pos.x, y: pos.y };
+        }
+      }
+    }
+  }
+} catch {}
+function saveNestingRightLayout() {
+  try {
+    localStorage.setItem(NESTING_PANELS_KEY, JSON.stringify({
+      collapsed: nestingRightCollapsed,
+      open: [...nestingRightOpen],
+      floating: nestingRightFloating,
+    }));
+  } catch {}
+}
+function applyNestingRightPanelLayout(root) {
+  if (!root) return;
+  const grid = root.querySelector('.center-ws-grid');
+  const sideR = root.querySelector('.cws-side-r');
+  const floatLayer = root.querySelector('#cwsNestFloatLayer');
+  const wsEl = root.querySelector('.nesting-workspace');
+  if (grid) {
+    grid.classList.toggle('cws-left-collapsed', nestingLeftCollapsed);
+    grid.classList.toggle('cws-right-collapsed', nestingRightCollapsed);
+  }
+  const rBtn = root.querySelector('#cwsToggleRightPanel');
+  if (rBtn) {
+    rBtn.textContent = nestingRightCollapsed ? '«' : '»';
+    rBtn.setAttribute('aria-expanded', String(!nestingRightCollapsed));
+    rBtn.title = nestingRightCollapsed ? 'Sağ ayar panelini aç' : 'Sağ ayar panelini daralt';
+  }
+  const allBtn = root.querySelector('#cwsToggleAllRightPanels');
+  if (allBtn) {
+    const anyOpen = NESTING_PANEL_IDS.some(id => nestingRightOpen.has(id));
+    allBtn.textContent = anyOpen ? 'Kapat' : 'Aç';
+    allBtn.title = anyOpen ? 'Tüm bölümleri kapat' : 'Tüm bölümleri aç';
+  }
+  const panels = [...root.querySelectorAll('[data-nest-panel]')];
+  if (!panels.length || !sideR) return;
+  const wsRect = wsEl?.getBoundingClientRect?.() || { width: 1200, height: 700 };
+  const maxX = Math.max(40, (wsRect.width || 1200) - 300);
+  const maxY = Math.max(40, (wsRect.height || 700) - 90);
+  panels.sort((a, b) => Number(a.dataset.nestPanelOrder || 0) - Number(b.dataset.nestPanelOrder || 0));
+  for (const panel of panels) {
+    const id = panel.dataset.nestPanel;
+    const isOpen = nestingRightOpen.has(id);
+    panel.classList.toggle('is-collapsed', !isOpen);
+    const tgl = panel.querySelector('[data-nest-panel-toggle]');
+    if (tgl) tgl.setAttribute('aria-expanded', String(isOpen));
+    const flBtn = panel.querySelector('[data-nest-panel-float]');
+    const pos = nestingRightFloating[id];
+    if (pos && floatLayer) {
+      const cx = Math.max(8, Math.min(maxX, Number(pos.x) || 40));
+      const cy = Math.max(8, Math.min(maxY, Number(pos.y) || 40));
+      nestingRightFloating[id] = { x: cx, y: cy };
+      panel.classList.add('is-floating');
+      panel.style.left = `${cx}px`;
+      panel.style.top = `${cy}px`;
+      if (flBtn) {
+        flBtn.textContent = '↙';
+        flBtn.title = 'Eski yerine yerleştir';
+      }
+      if (panel.parentElement !== floatLayer) floatLayer.appendChild(panel);
+    } else {
+      panel.classList.remove('is-floating');
+      panel.style.left = '';
+      panel.style.top = '';
+      panel.style.zIndex = '';
+      if (flBtn) {
+        flBtn.textContent = '↗';
+        flBtn.title = 'Serbest pencereye ayır (taşı)';
+      }
+      if (panel.parentElement !== sideR) sideR.appendChild(panel);
+    }
+  }
+  // Ensure docked panels inside .cws-side-r sit in exact original order
+  for (const panel of panels) {
+    if (!nestingRightFloating[panel.dataset.nestPanel] && panel.parentElement === sideR) {
+      sideR.appendChild(panel);
+    }
+  }
+}
 function copySelectionToClipboard(includeLocked = true) {
   if (store.get().mainWorkspace === 'nesting') {
     const s = store.get();
@@ -3164,12 +3263,13 @@ function updateCenterWorkspaces(state) {
       if(nestingGesture?.active)return;
       syncNestingSelectionScope(state);
       if (!selectedNestingIds.size) nestingRotateMode = false;
-      const html=renderNestingCenter(state,{activeSheetIdx,selectedPlacementId:selectedNestingId,selectedPlacementIds:[...selectedNestingIds],advancedOpen:nestingAdvancedOpen,activePartGroup:activeNestingGroup,rotateMode:nestingRotateMode,leftPanelCollapsed:nestingLeftCollapsed,leftTab:nestingLeftTab,openGroups:nestingOpenGroups});
-      if(el._lastHtml===html)return;
+      const html=renderNestingCenter(state,{activeSheetIdx,selectedPlacementId:selectedNestingId,selectedPlacementIds:[...selectedNestingIds],advancedOpen:nestingAdvancedOpen,activePartGroup:activeNestingGroup,rotateMode:nestingRotateMode,leftPanelCollapsed:nestingLeftCollapsed,leftTab:nestingLeftTab,openGroups:nestingOpenGroups,rightPanelCollapsed:nestingRightCollapsed,rightPanels:{open:nestingRightOpen,floating:nestingRightFloating}});
+      if(el._lastHtml===html){applyNestingRightPanelLayout(el);return;}
       el._lastHtml=html;
-      if (grid && currentTabId === targetTabId && el.querySelector('.nesting-workspace')?.dataset.displayUnit===normalizeDisplayUnit(state.pageLayout?.displayUnit) && grid.querySelector('.cws-side-r')) {
+      if (grid && currentTabId === targetTabId && el.querySelector('.nesting-workspace')?.dataset.displayUnit===normalizeDisplayUnit(state.pageLayout?.displayUnit) && el.querySelector('.cws-side-r')) {
         grid.classList.toggle('cws-left-collapsed', nestingLeftCollapsed);
-        // Replace only changing parts; preserve the exact right-panel DOM node.
+        grid.classList.toggle('cws-right-collapsed', nestingRightCollapsed);
+        // Replace only changing parts; preserve the right-panel & floating panels' live DOM nodes.
         const template = document.createElement('template');
         template.innerHTML = html;
         for (const cls of ['cws-side', 'cws-main', 'cws-bottom']) {
@@ -3180,11 +3280,11 @@ function updateCenterWorkspaces(state) {
         const tabs = el.querySelector('.nesting-source-tabs');
         const nextTabs = template.content.querySelector('.nesting-source-tabs');
         if (tabs && nextTabs) tabs.replaceWith(nextTabs);
-        syncNestingSettingsControls(grid.querySelector('.cws-side-r'), state.nesting,state.pageLayout?.displayUnit);
-        const oldCnc=grid.querySelector('#nestCncPanel'),newCnc=template.content.querySelector('#nestCncPanel');
-        for(const id of ['cwsExpCorel','cwsExpSvg','cwsExpDxf','cwsExpCsv']){const old=grid.querySelector('#'+id),fresh=template.content.querySelector('#'+id);if(old&&fresh)old.disabled=fresh.disabled;}
+        syncNestingSettingsControls(el, state.nesting,state.pageLayout?.displayUnit);
+        const oldCnc=el.querySelector('#nestCncPanel'),newCnc=template.content.querySelector('#nestCncPanel');
+        for(const id of ['cwsExpCorel','cwsExpSvg','cwsExpDxf','cwsExpCsv']){const old=el.querySelector('#'+id),fresh=template.content.querySelector('#'+id);if(old&&fresh)old.disabled=fresh.disabled;}
         if(oldCnc&&newCnc){
-          for(const fresh of newCnc.querySelectorAll('input,select')){const el=oldCnc.querySelector('#'+fresh.id);if(!el||el===document.activeElement)continue;if(el.type==='checkbox')el.checked=fresh.checked;else el.value=fresh.value;}
+          for(const fresh of newCnc.querySelectorAll('input,select')){const inp=oldCnc.querySelector('#'+fresh.id);if(!inp||inp===document.activeElement)continue;if(inp.type==='checkbox')inp.checked=fresh.checked;else inp.value=fresh.value;}
           const oldStatus=oldCnc.querySelector('#nestCncStatus'),newStatus=newCnc.querySelector('#nestCncStatus');if(oldStatus&&newStatus)oldStatus.replaceWith(newStatus);
           const oldBtn=oldCnc.querySelector('#nestCncExport'),newBtn=newCnc.querySelector('#nestCncExport');if(oldBtn&&newBtn){oldBtn.disabled=newBtn.disabled;oldBtn.textContent=newBtn.textContent;}
           const oldSend=oldCnc.querySelector('#nestCncSendMachine'),newSend=newCnc.querySelector('#nestCncSendMachine');if(oldSend&&newSend){oldSend.disabled=newSend.disabled;}
@@ -3192,6 +3292,7 @@ function updateCenterWorkspaces(state) {
       } else {
         el.innerHTML = html;
       }
+      applyNestingRightPanelLayout(el);
       bindNestingCenterEvents(el);
       positionNestingRotateBar(el);
     }
@@ -3976,6 +4077,118 @@ function bindNestingCenterEvents(root) {
   const nestingSettings = root.querySelector('.cws-side-r');
   if (nestingSettings && nestingSettings.dataset.nestingEventsBound !== 'true') {
     nestingSettings.dataset.nestingEventsBound = 'true';
+    root.querySelector('#cwsToggleRightPanel')?.addEventListener('click', () => {
+      nestingRightCollapsed = !nestingRightCollapsed;
+      saveNestingRightLayout();
+      applyNestingRightPanelLayout(root);
+    });
+    root.querySelector('#cwsToggleAllRightPanels')?.addEventListener('click', () => {
+      const anyOpen = NESTING_PANEL_IDS.some(id => nestingRightOpen.has(id));
+      nestingRightOpen = anyOpen ? new Set() : new Set(NESTING_PANEL_IDS);
+      saveNestingRightLayout();
+      applyNestingRightPanelLayout(root);
+    });
+    root.querySelector('#cwsResetRightPanels')?.addEventListener('click', () => {
+      nestingRightFloating = {};
+      nestingRightCollapsed = false;
+      saveNestingRightLayout();
+      applyNestingRightPanelLayout(root);
+      studioToast('Sağ paneller eski yerine yerleştirildi.');
+    });
+    let suppressedPanelClickId = null;
+    root.querySelectorAll('[data-nest-panel]').forEach(panel => {
+      const id = panel.dataset.nestPanel;
+      const head = panel.querySelector('[data-nest-panel-drag]');
+      head?.addEventListener('click', e => {
+        if (suppressedPanelClickId === id) {
+          suppressedPanelClickId = null;
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }, true);
+      panel.querySelector('[data-nest-panel-toggle]')?.addEventListener('click', e => {
+        e.stopPropagation();
+        if (nestingRightOpen.has(id)) nestingRightOpen.delete(id);
+        else nestingRightOpen.add(id);
+        saveNestingRightLayout();
+        applyNestingRightPanelLayout(root);
+      });
+      panel.querySelector('[data-nest-panel-float]')?.addEventListener('click', e => {
+        e.stopPropagation();
+        if (nestingRightFloating[id]) {
+          delete nestingRightFloating[id];
+          nestingRightCollapsed = false;
+        } else {
+          nestingRightOpen.add(id);
+          const wsRect = root.querySelector('.nesting-workspace')?.getBoundingClientRect?.() || { width: 1200, height: 700 };
+          const sideRect = root.querySelector('.cws-side-r')?.getBoundingClientRect?.() || { left: wsRect.width - 290 };
+          const order = Number(panel.dataset.nestPanelOrder || 0);
+          const initX = Math.max(24, Math.min((wsRect.width || 1200) - 310, (sideRect.left - (wsRect.left || 0)) - 310 - order * 18));
+          const initY = Math.max(54, 58 + order * 28);
+          nestingRightFloating[id] = { x: initX, y: initY };
+        }
+        saveNestingRightLayout();
+        applyNestingRightPanelLayout(root);
+        panel.style.zIndex = String(++nestingFloatTopZ);
+      });
+      head?.addEventListener('pointerdown', e => {
+        if (e.button !== 0 || e.target.closest('[data-nest-panel-float]')) return;
+        const wsEl = root.querySelector('.nesting-workspace');
+        const wsRect = wsEl?.getBoundingClientRect?.();
+        if (!wsRect) return;
+        const pRect = panel.getBoundingClientRect();
+        const startX = e.clientX;
+        const startY = e.clientY;
+        let offsetX = e.clientX - pRect.left;
+        let offsetY = e.clientY - pRect.top;
+        let moved = false;
+        const onMove = (mv) => {
+          const dist = Math.hypot(mv.clientX - startX, mv.clientY - startY);
+          if (!moved && dist < 6) return;
+          if (!moved) {
+            moved = true;
+            if (!nestingRightFloating[id]) {
+              nestingRightFloating[id] = {
+                x: Math.max(8, pRect.left - wsRect.left),
+                y: Math.max(8, pRect.top - wsRect.top),
+              };
+              applyNestingRightPanelLayout(root);
+            }
+            panel.style.zIndex = String(++nestingFloatTopZ);
+          }
+          const curWsRect = wsEl.getBoundingClientRect();
+          const x = Math.max(8, Math.min(Math.max(40, curWsRect.width - panel.offsetWidth - 8), mv.clientX - curWsRect.left - offsetX));
+          const y = Math.max(8, Math.min(Math.max(40, curWsRect.height - 60), mv.clientY - curWsRect.top - offsetY));
+          nestingRightFloating[id] = { x, y };
+          panel.style.left = `${x}px`;
+          panel.style.top = `${y}px`;
+          const sideR = root.querySelector('.cws-side-r');
+          const rRect = sideR?.getBoundingClientRect?.();
+          const overDock = rRect && mv.clientX >= Math.min(rRect.left, curWsRect.right - 48) && mv.clientX <= curWsRect.right && mv.clientY >= curWsRect.top && mv.clientY <= curWsRect.bottom;
+          sideR?.classList.toggle('cws-dock-hover', Boolean(overDock));
+        };
+        const onUp = (up) => {
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+          const sideR = root.querySelector('.cws-side-r');
+          sideR?.classList.remove('cws-dock-hover');
+          if (!moved) return;
+          suppressedPanelClickId = id;
+          setTimeout(() => { if (suppressedPanelClickId === id) suppressedPanelClickId = null; }, 120);
+          const curWsRect = wsEl.getBoundingClientRect();
+          const rRect = sideR?.getBoundingClientRect?.();
+          const overDock = rRect && up.clientX >= Math.min(rRect.left, curWsRect.right - 48) && up.clientX <= curWsRect.right && up.clientY >= curWsRect.top && up.clientY <= curWsRect.bottom;
+          if (overDock) {
+            delete nestingRightFloating[id];
+            nestingRightCollapsed = false;
+          }
+          saveNestingRightLayout();
+          applyNestingRightPanelLayout(root);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+      });
+    });
     root.querySelector('#cwsNestPreset')?.addEventListener('change', e => {
       const p = SHEET_PRESETS.find(x => x.id === e.target.value);
       if (p) applyNestingSheetSize(p.w, p.h, p.id);
