@@ -1226,7 +1226,7 @@ export class SignEngine {
   }
   updateWallScale(wallScale=1.0){
     if(this.isDisposed)return;
-    const scale=Math.max(0.25,Math.min(2.5,Number(wallScale)||1.0));
+    const scale=Math.max(0.08,Math.min(2.5,Number(wallScale)||1.0));
     this._wallScale=scale;
     if(!this._wallDims||!this.wallGroup?.children?.length)return;
     const {rx,ry}=computeWallRepeat(this._wallDims.id,this._wallDims.w,this._wallDims.h,scale);
@@ -1241,7 +1241,7 @@ export class SignEngine {
   }
   requestWall(wallId,sizeM=this.lastSizeM,transparent=false,wallScale=this._wallScale){
     if(this.isDisposed||this._paused)return;
-    const sc=Math.max(0.25,Math.min(2.5,Number(wallScale)||1.0));
+    const sc=Math.max(0.08,Math.min(2.5,Number(wallScale)||1.0));
     this._wallScale=sc;
     const id=normalizeWallId(wallId),w=Math.max(16,Math.ceil(sizeM.w*3.5)),h=Math.max(10,Math.ceil(sizeM.h*5));
     const key=transparent?'transparent':id+'|'+w+'|'+h;

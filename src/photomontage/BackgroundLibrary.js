@@ -64,8 +64,8 @@ export function loadWallPixels(wallId,{signal,onProgress=()=>{},workerFactory=()
 }
 export function computeWallRepeat(wallId,widthM,heightM,wallScale=1.0){
  const meta=BACKGROUND_SCENES.find(b=>b.id===normalizeWallId(wallId));
- const scale=Math.max(0.25,Math.min(2.5,Number(wallScale)||1.0));
- const effTile=Math.max(0.2,meta.tileM*scale);
+ const scale=Math.max(0.08,Math.min(2.5,Number(wallScale)||1.0));
+ const effTile=Math.max(0.05,meta.tileM*scale);
  return {rx:Math.max(1,widthM/effTile),ry:Math.max(1,heightM/effTile)};
 }
 export function createWallTextures(wallId,widthM,heightM,pixels,wallScale=1.0){

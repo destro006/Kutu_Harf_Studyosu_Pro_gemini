@@ -449,6 +449,7 @@ function updateStageChrome(state) {
 
   // Wall buttons
   const quickWallSelect=document.getElementById('quickWallSelect');if(quickWallSelect)quickWallSelect.value=state.scene.wallId;
+  syncWallScaleControls(state.scene.wallScale ?? 1.0);
   document.querySelectorAll('#quickWallSeg button').forEach(b => {
     b.classList.toggle('on', b.dataset.wall === state.scene.wallId);
   });
@@ -1683,7 +1684,7 @@ function renderLayersWs(state) {
 
 function renderBackgroundWs(state) {
   const pm = state.photomontage;
-  const wallScale = Math.max(0.25, Math.min(2.5, Number(state.scene.wallScale ?? 1.0) || 1.0));
+  const wallScale = Math.max(0.08, Math.min(2.5, Number(state.scene.wallScale ?? 1.0) || 1.0));
   return `
     <section class="sec">
       <h3 class="sec-title">Hazır Mimari Sahneler</h3>
@@ -1693,9 +1694,9 @@ function renderBackgroundWs(state) {
           <label for="bgWallScaleRange" style="margin:0">Arka Plan Desen Boyutu: <b id="bgWallScaleVal" style="color:var(--accent)">${Math.round(wallScale * 100)}%</b></label>
           <button type="button" id="bgWallScaleReset" class="sec-btn" style="padding:2px 8px;font-size:11px">Sıfırla</button>
         </div>
-        <input id="bgWallScaleRange" type="range" min="0.25" max="2.5" step="0.05" value="${wallScale}" style="width:100%;accent-color:var(--accent)">
+        <input id="bgWallScaleRange" type="range" min="0.08" max="2.5" step="0.02" value="${wallScale}" style="width:100%;accent-color:var(--accent)">
         <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:2px">
-          <span>Küçük (%25)</span>
+          <span>Çok Küçük (%8)</span>
           <span>Normal (%100)</span>
           <span>Büyük (%250)</span>
         </div>
@@ -2241,23 +2242,9 @@ function bindWorkspaceEvents(ws, root) {
     root.querySelector('#btnDupLayer')?.addEventListener('click', () => mutate('Çoğalt', s => duplicateSelectedLayers(s)));
     root.querySelector('#btnDelLayer')?.addEventListener('click', () => mutate('Sil', s => deleteSelectedLayers(s)));
   } else if (ws === 'background') {
-    root.querySelector('#bgWallScaleRange')?.addEventListener('input', e => {
-      const val = Math.max(0.25, Math.min(2.5, Number(e.target.value) || 1.0));
-      const lbl = root.querySelector('#bgWallScaleVal'); if (lbl) lbl.textContent = `${Math.round(val * 100)}%`;
-      store.update(s => { s.scene.wallScale = val; });
-      if (is3DWorkspace(store.get()) && signEngine && !signEngine.isDisposed) signEngine.updateWallScale(val);
-    });
-    root.querySelector('#bgWallScaleRange')?.addEventListener('change', e => {
-      const val = Math.max(0.25, Math.min(2.5, Number(e.target.value) || 1.0));
-      mutate('Arka plan desen boyutu', s => { s.scene.wallScale = val; }, false, false);
-      if (is3DWorkspace(store.get()) && signEngine && !signEngine.isDisposed) signEngine.updateWallScale(val);
-    });
-    root.querySelector('#bgWallScaleReset')?.addEventListener('click', () => {
-      const rangeEl = root.querySelector('#bgWallScaleRange'); if (rangeEl) rangeEl.value = '1';
-      const lbl = root.querySelector('#bgWallScaleVal'); if (lbl) lbl.textContent = '100%';
-      mutate('Arka plan desen boyutu', s => { s.scene.wallScale = 1.0; }, false, false);
-      if (is3DWorkspace(store.get()) && signEngine && !signEngine.isDisposed) signEngine.updateWallScale(1.0);
-    });
+    root.querySelector('#bgWallScaleRange')?.addEventListener('input', e => applyWallScaleChange(e.target.value, false));
+    root.querySelector('#bgWallScaleRange')?.addEventListener('change', e => applyWallScaleChange(e.target.value, true));
+    root.querySelector('#bgWallScaleReset')?.addEventListener('click', () => applyWallScaleChange(1.0, true));
     root.querySelectorAll('[data-bg-wall]').forEach(b => b.onclick = () => {
       selectWall(b.dataset.bgWall);
     });
@@ -2778,6 +2765,25 @@ function renderWallLoading({id,phase,percent=0,message=''}){
   document.getElementById('wallLoadingProgress').value=percent;
   document.getElementById('wallLoadingRetry').classList.toggle('hidden',phase!=='error');
 
+}
+function syncWallScaleControls(val = 1.0) {
+  const sc = Math.max(0.08, Math.min(2.5, Number(val) || 1.0));
+  const pct = `${Math.round(sc * 100)}%`;
+  const stageRng = document.getElementById('stageWallScaleRange');
+  if (stageRng) stageRng.value = String(sc);
+  const stageLbl = document.getElementById('stageWallScaleVal');
+  if (stageLbl) stageLbl.textContent = pct;
+  const bgRng = document.getElementById('bgWallScaleRange');
+  if (bgRng) bgRng.value = String(sc);
+  const bgLbl = document.getElementById('bgWallScaleVal');
+  if (bgLbl) bgLbl.textContent = pct;
+  return sc;
+}
+function applyWallScaleChange(rawVal, commitUndo = false) {
+  const sc = syncWallScaleControls(rawVal);
+  if (commitUndo) mutate('Arka plan desen boyutu', s => { s.scene.wallScale = sc; }, false, false);
+  else store.update(s => { s.scene.wallScale = sc; });
+  if (is3DWorkspace(store.get()) && signEngine && !signEngine.isDisposed) signEngine.updateWallScale(sc);
 }
 function selectWall(id){
   if(!BACKGROUND_SCENES.some(b=>b.id===id))return;
@@ -4102,6 +4108,13 @@ function init() {
 
   const quickWallSelect=document.getElementById('quickWallSelect');
   if(quickWallSelect){quickWallSelect.innerHTML=BACKGROUND_SCENES.map(b=>`<option value="${b.id}">${escapeHtml(b.label)}</option>`).join('');quickWallSelect.value=store.get().scene.wallId;quickWallSelect.onchange=e=>selectWall(e.target.value);}
+  const stageWallScaleRange=document.getElementById('stageWallScaleRange');
+  if(stageWallScaleRange){
+    stageWallScaleRange.addEventListener('input',e=>applyWallScaleChange(e.target.value,false));
+    stageWallScaleRange.addEventListener('change',e=>applyWallScaleChange(e.target.value,true));
+  }
+  document.getElementById('stageWallScaleReset')?.addEventListener('click',()=>applyWallScaleChange(1.0,true));
+  syncWallScaleControls(store.get().scene.wallScale??1.0);
   // Project Name & Quality
   if (document.getElementById('projectNameInput')) document.getElementById('projectNameInput').onchange = (e) => store.update(s => { s.projectName = e.target.value; });
   document.getElementById('qualitySelect').onchange = (e) => {
