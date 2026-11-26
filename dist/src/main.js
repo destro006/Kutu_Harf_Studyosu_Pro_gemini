@@ -54,13 +54,16 @@ import { Dimensions3DOverlayController } from './render/Dimensions3DOverlay.js';
 import {
   DEFAULT_VIDEO_CLIPS,
   VIDEO_ROLES,
+  VIDEO_TRANSITIONS,
   computeSequenceTimeline,
   recordPresentationVideo,
 } from './render/PresentationVideoRecorder.js';
-import { buildSignageMasterPrompt, loadAiConfig, refineMasterPromptWithLlm, runHybridSignageRender, saveAiConfig } from './ai/SignageAiEngine.js';
-import { askAppExpert, showGuideCursor } from './ai/AppExpertAssistant.js';
+import { BUILTIN_AUDIO_TRACKS } from './render/VideoAudioEngine.js';
+import { buildSignageMasterPrompt, estimateSignageCostParams, loadAiConfig, refineMasterPromptWithLlm, runHybridSignageRender, saveAiConfig } from './ai/SignageAiEngine.js';
+import { EXPERT_QUICK_PRESETS, askAppExpert, showGuideCursor } from './ai/AppExpertAssistant.js';
 import { generateQrSvg } from './sales/QrCodeGenerator.js';
 import { buildClientApprovalUrl, buildWhatsAppShareUrl, decodeClientShareState, getClientApproval, recordClientApproval } from './sales/ClientShareApproval.js';
+import { openLiveCameraArOverlay } from './sales/LiveCameraAr.js';
 import { SplitCompareController } from './sales/SplitCompareController.js';
 import { collectSignTriangles, writeGlb, writeUsdz } from './export/Professional3DExport.js';
 import { INDUSTRY_SCENE_PRESETS, applyIndustryScenePreset, renderKioskPanel } from './ui/KioskAndPresets.js';
@@ -80,7 +83,7 @@ import {
   getHiddenDefaultCount,
   restoreDefaultFacades,
 } from './photomontage/FacadeLibrary.js';
-import { renderAiStudioWorkspace } from './ui/AiStudioView.js';
+import { mountAiStudioParticles, renderAiStudioWorkspace } from './ui/AiStudioView.js';
 import { renderNestingSvg } from './ui/NestingView.js?v=20261126-v23';
 import { applySurfaceMaterialPreset, getDisplayedSurfaceMaterial } from './core/MaterialActions.js';
 import { getExportSelection } from './export/ExportScope.js';
@@ -278,6 +281,7 @@ function flushPendingTracerImage() {
 let lastAiCompositeUrl = null;
 let lastAiResultUrl = null;
 let activeFacadeCat = 'all';
+let stopAiParticles = null;
 let aiStudioState = {
   compositeUrl: '',
   resultUrl: '',
@@ -285,6 +289,7 @@ let aiStudioState = {
   masterPrompt: '',
   comparePct: 50,
   statusText: '',
+  costEstimate: null,
   expertCollapsed: false,
   expertMessages: [{ role: 'bot', text: 'Merhaba! Tüm sekme, cephe havuzu, video ve büküm araçlarını doğrudan yönetebilirim.' }],
 };
@@ -3590,6 +3595,7 @@ function setMainWorkspace(ws) {
   document.getElementById('cncCenterWrap')?.classList.toggle('hidden', ws !== 'cnc');
   document.getElementById('costCenterWrap')?.classList.toggle('hidden', ws !== 'cost');
   document.getElementById('aiStudioCenterWrap')?.classList.toggle('hidden', ws !== 'aistudio');
+  if (ws !== 'aistudio') { stopAiParticles?.(); stopAiParticles = null; }
   if(is3D){const engine=ensureSignEngine();engine?.setActive?.(true);if(previous!==ws)scheduleRebuild(true);}
   else signEngine?.setActive?.(false);
   if (typeof dims3DController !== 'undefined' && dims3DController) {
@@ -3776,15 +3782,22 @@ function updateCenterWorkspaces(state) {
   } else if (ws === 'aistudio') {
     const el = document.getElementById('aiStudioCenterWrap');
     if (el) {
+      stopAiParticles?.();
+      stopAiParticles = null;
       el.innerHTML = renderAiStudioWorkspace({
         ...aiStudioState,
+        state,
         facades: getActiveFacades(),
         config: loadAiConfig(),
       });
+      const pCanvas = el.querySelector('#aiStudioParticleCanvas');
+      if (pCanvas) stopAiParticles = mountAiStudioParticles(pCanvas);
+
       el.querySelector('#aiStudioPull3D')?.addEventListener('click', async () => {
         const comp = await window.__buildAiComposite?.();
         if (comp) {
           aiStudioState.compositeUrl = comp;
+          aiStudioState.costEstimate = estimateSignageCostParams(store.get(), { brief: aiStudioState.brief });
           if (!aiStudioState.masterPrompt) aiStudioState.masterPrompt = buildSignageMasterPrompt(aiStudioState.brief, window.__getAiContext?.() || {});
           updateCenterWorkspaces(store.get());
         }
@@ -3794,29 +3807,41 @@ function updateCenterWorkspaces(state) {
         e.target.value = '';
         if (!f) return;
         handlePhotomontagePhotoFile(f);
+        aiStudioState.resultUrl = '';
+        aiStudioState.costEstimate = estimateSignageCostParams(store.get(), { fileName: f.name, brief: aiStudioState.brief });
         setTimeout(async () => {
           const comp = await window.__buildAiComposite?.();
           if (comp) aiStudioState.compositeUrl = comp;
           updateCenterWorkspaces(store.get());
-        }, 220);
+        }, 260);
       });
       el.querySelector('#aiStudioFacadeSelect')?.addEventListener('change', async e => {
         const f = getActiveFacades().find(x => x.id === e.target.value);
         if (!f) return;
+        aiStudioState.resultUrl = '';
+        aiStudioState.costEstimate = estimateSignageCostParams(store.get(), { fileName: f.label, brief: aiStudioState.brief || f.label });
+        aiStudioState.statusText = `✓ "${f.label}" cephesine 3D logo hizalandı.`;
         mutate(`Cephe: ${f.label}`, s => {
           s.photomontage.photoUrl = f.src;
           s.photomontage.photoName = f.label;
           s.photomontage.visible = true;
           s.photomontage.confirmed = false;
+          s.photomontage.cornersNorm = [
+            { x: 0.22, y: 0.28 },
+            { x: 0.78, y: 0.28 },
+            { x: 0.78, y: 0.62 },
+            { x: 0.22, y: 0.62 },
+          ];
         });
         setTimeout(async () => {
           const comp = await window.__buildAiComposite?.();
           if (comp) aiStudioState.compositeUrl = comp;
           updateCenterWorkspaces(store.get());
-        }, 220);
+        }, 260);
       });
       el.querySelectorAll('[data-aistudio-preset]').forEach(btn => btn.addEventListener('click', () => {
         aiStudioState.brief = btn.dataset.aistudioPreset || '';
+        aiStudioState.costEstimate = estimateSignageCostParams(store.get(), { brief: aiStudioState.brief });
         aiStudioState.masterPrompt = buildSignageMasterPrompt(aiStudioState.brief, window.__getAiContext?.() || {});
         updateCenterWorkspaces(store.get());
       }));
@@ -3847,6 +3872,7 @@ function updateCenterWorkspaces(state) {
         if (!aiStudioState.compositeUrl) aiStudioState.compositeUrl = (await window.__buildAiComposite?.()) || '';
         const mp = aiStudioState.masterPrompt?.trim() || buildSignageMasterPrompt(aiStudioState.brief, window.__getAiContext?.() || {});
         aiStudioState.masterPrompt = mp;
+        aiStudioState.costEstimate = estimateSignageCostParams(store.get(), { brief: aiStudioState.brief });
         aiStudioState.statusText = 'Fotorealistik görsel işleniyor...';
         updateCenterWorkspaces(store.get());
         try {
@@ -3862,12 +3888,39 @@ function updateCenterWorkspaces(state) {
         aiStudioState.comparePct = Number(e.target.value) || 50;
         const clip = el.querySelector('#aiStudioAfterClip');
         const div = el.querySelector('#aiStudioDivider');
-        if (clip) clip.style.clipPath = `inset(0 ${100 - aiStudioState.comparePct}% 0 0)`;
+        if (clip) clip.style.clipPath = `inset(0 0 0 ${aiStudioState.comparePct}%)`;
         if (div) div.style.left = `${aiStudioState.comparePct}%`;
       });
       el.querySelector('#aiStudioDownloadBtn')?.addEventListener('click', () => {
-        const url = aiStudioState.resultUrl || aiStudioState.compositeUrl;
-        if (url) downloadDataUrl(`${store.get().projectName || 'ai_studio'}.png`, url);
+        if (!aiStudioState.resultUrl) {
+          studioToast('Önce "2. Görsel Oluştur" ile net sonucu oluşturun.', true);
+          return;
+        }
+        downloadDataUrl(`${store.get().projectName || 'ai_studio'}_render.png`, aiStudioState.resultUrl);
+      });
+      el.querySelector('#aiStudioSyncCostBtn')?.addEventListener('click', () => {
+        const est = aiStudioState.costEstimate || estimateSignageCostParams(store.get(), { brief: aiStudioState.brief });
+        mutate('AI Maliyet Analizi Aktarımı', s => {
+          s.constructionType = est.constructionType;
+          s.dimensions.heightMm = est.heightMm;
+          s.dimensions.depthMm = est.depthMm;
+          if (est.faceMaterial && MATERIAL_PRESETS[est.faceMaterial]) {
+            s.materials.faceId = est.faceMaterial;
+            if (s.materials.sideFollowsFace) s.materials.sideId = est.faceMaterial;
+          }
+          s.lighting.enabled = est.lightingMode !== 'none';
+          s.lighting.mode = est.lightingMode;
+          for (const o of s.objects) {
+            if (o.locked) continue;
+            o.constructionType = est.constructionType;
+            o.depthMm = est.depthMm;
+            if (o.kind === 'text') o.heightMm = est.heightMm;
+            if (est.faceMaterial) o.faceMaterial = est.faceMaterial;
+            o.lightingMode = est.lightingMode;
+          }
+        });
+        setMainWorkspace('cost');
+        studioToast(`₺ Maliyet ve Teklif parametreleri aktarıldı (${est.summaryLabel}).`);
       });
       el.querySelector('#aiStudioSendToSceneBtn')?.addEventListener('click', () => {
         const url = aiStudioState.resultUrl || aiStudioState.compositeUrl;
@@ -5850,18 +5903,60 @@ function init() {
   let videoRecController = null;
   let lastVideoBlobUrl = null;
   let videoClips = DEFAULT_VIDEO_CLIPS.map(c => ({ ...c }));
+  let videoMode = 'multi';
+  let videoAudioConfig = { trackId: 'luxury_ambient', customAudioBuffer: null, customFileName: '', trimStartSec: 0, volume: 0.7 };
   const videoModal = document.getElementById('presentationVideoModal');
+
+  const syncVideoStudioStaticControls = () => {
+    const roleSel = document.getElementById('vidRole');
+    if (roleSel && roleSel.options.length !== VIDEO_ROLES.length) {
+      roleSel.innerHTML = VIDEO_ROLES.map(r => `<option value="${r.id}">${escapeHtml(r.label)}</option>`).join('');
+    }
+    const cardsBox = document.getElementById('vidScenarioCards');
+    if (cardsBox) {
+      const curRole = roleSel?.value || 'luxury_arch';
+      cardsBox.innerHTML = VIDEO_ROLES.map((r, i) => `
+        <button type="button" class="vid-scenario-item ${r.id === curRole ? 'on' : ''}" data-vid-card="${r.id}" title="${escapeAttr(r.desc)}">
+          <span><b>${i + 1}.</b> ${escapeHtml(r.label)}</span>
+          <small style="opacity:.7">${r.aspect}</small>
+        </button>`).join('');
+      cardsBox.querySelectorAll('[data-vid-card]').forEach(btn => {
+        btn.onclick = () => {
+          if (roleSel) roleSel.value = btn.dataset.vidCard;
+          cardsBox.querySelectorAll('.vid-scenario-item').forEach(b => b.classList.toggle('on', b === btn));
+          if (videoMode === 'single') renderVideoTimeline();
+        };
+      });
+    }
+    const audioSel = document.getElementById('vidAudioTrackSel');
+    if (audioSel && audioSel.options.length !== BUILTIN_AUDIO_TRACKS.length) {
+      audioSel.innerHTML = BUILTIN_AUDIO_TRACKS.map(t => `<option value="${t.id}">${escapeHtml(t.label)}</option>`).join('');
+      audioSel.value = videoAudioConfig.trackId;
+    }
+    const audioBar = document.getElementById('vidAudioTrackBar');
+    if (audioBar) {
+      const lbl = videoAudioConfig.customAudioBuffer
+        ? `Özel Müzik: ${videoAudioConfig.customFileName} (Başlangıç: ${videoAudioConfig.trimStartSec} sn · Ses %${Math.round(videoAudioConfig.volume * 100)})`
+        : `${BUILTIN_AUDIO_TRACKS.find(t => t.id === videoAudioConfig.trackId)?.label || 'Sessiz'} (Ses %${Math.round(videoAudioConfig.volume * 100)})`;
+      audioBar.textContent = lbl;
+    }
+  };
+
   const renderVideoTimeline = () => {
+    syncVideoStudioStaticControls();
     const list = document.getElementById('vidTimelineList');
     const meta = document.getElementById('vidTimelineMeta');
-    const tl = computeSequenceTimeline(videoClips);
-    if (meta) meta.textContent = `${videoClips.length} klip · Toplam ${tl.totalDurationSec} sn`;
+    const activeClips = videoMode === 'single'
+      ? [{ id: 'single_mode', role: document.getElementById('vidRole')?.value || 'luxury_arch', durationSec: Math.max(2, Math.min(20, Math.round(Number(document.getElementById('vidDuration')?.value) || 6))), transition: 'cut' }]
+      : videoClips;
+    const tl = computeSequenceTimeline(activeClips);
+    if (meta) meta.textContent = `${activeClips.length} klip · Toplam ${tl.totalDurationSec} sn · ${videoMode === 'single' ? 'Tek Senaryo' : 'Çoklu Kurgu'}`;
     if (!list) return;
-    list.innerHTML = videoClips.map((c, idx) => `
-      <div class="vid-clip-card" draggable="true" data-clip-id="${escapeAttr(c.id)}">
+    list.innerHTML = activeClips.map((c, idx) => `
+      <div class="vid-clip-card" draggable="${videoMode === 'multi' ? 'true' : 'false'}" data-clip-id="${escapeAttr(c.id)}">
         <div class="vid-clip-head">
           <span>#${idx + 1} Klip</span>
-          <button type="button" class="vid-clip-del" data-clip-del="${escapeAttr(c.id)}" title="Klibi Sil" ${videoClips.length <= 1 ? 'disabled' : ''}>✕</button>
+          <button type="button" class="vid-clip-del" data-clip-del="${escapeAttr(c.id)}" title="Klibi Sil" ${activeClips.length <= 1 || videoMode === 'single' ? 'disabled' : ''}>✕</button>
         </div>
         <select class="vid-clip-role" data-clip-role="${escapeAttr(c.id)}">
           ${VIDEO_ROLES.map(r => `<option value="${r.id}" ${r.id === c.role ? 'selected' : ''}>${escapeHtml(r.label)}</option>`).join('')}
@@ -5869,7 +5964,9 @@ function init() {
         <div class="vid-clip-foot">
           <input type="number" class="vid-clip-dur" data-clip-dur="${escapeAttr(c.id)}" min="2" max="20" step="1" value="${c.durationSec}">
           <span style="font-size:11px;color:var(--muted)">sn</span>
-          <button type="button" class="vid-clip-trans" data-clip-trans="${escapeAttr(c.id)}">${c.transition === 'cut' ? 'Kesme' : 'Fade'}</button>
+          <select class="vid-clip-trans" data-clip-trans="${escapeAttr(c.id)}" ${videoMode === 'single' ? 'disabled' : ''}>
+            ${VIDEO_TRANSITIONS.map(t => `<option value="${t.id}" ${(c.transition === 'fade' ? 'crossfade' : c.transition) === t.id ? 'selected' : ''}>${escapeHtml(t.label)}</option>`).join('')}
+          </select>
         </div>
       </div>`).join('');
 
@@ -5877,6 +5974,7 @@ function init() {
     const clearDrag = () => list.querySelectorAll('.vid-clip-card').forEach(x => x.classList.remove('tab-dragging', 'tab-drag-over-before', 'tab-drag-over-after'));
     list.querySelectorAll('.vid-clip-card').forEach(card => {
       card.ondragstart = e => {
+        if (videoMode === 'single') return;
         dragId = card.dataset.clipId;
         card.classList.add('tab-dragging');
         if (e.dataTransfer) e.dataTransfer.setData('text/plain', dragId);
@@ -5902,16 +6000,29 @@ function init() {
       };
     });
     list.querySelectorAll('[data-clip-role]').forEach(sel => sel.onchange = () => {
+      if (videoMode === 'single') {
+        const mainRole = document.getElementById('vidRole');
+        if (mainRole) mainRole.value = sel.value;
+        renderVideoTimeline();
+        return;
+      }
       const item = videoClips.find(x => x.id === sel.dataset.clipRole);
       if (item) { item.role = sel.value; renderVideoTimeline(); }
     });
     list.querySelectorAll('[data-clip-dur]').forEach(inp => inp.onchange = () => {
+      const durVal = Math.max(2, Math.min(20, Math.round(Number(inp.value) || 4)));
+      if (videoMode === 'single') {
+        const dIn = document.getElementById('vidDuration');
+        if (dIn) dIn.value = durVal;
+        renderVideoTimeline();
+        return;
+      }
       const item = videoClips.find(x => x.id === inp.dataset.clipDur);
-      if (item) { item.durationSec = Math.max(2, Math.min(20, Math.round(Number(inp.value) || 4))); renderVideoTimeline(); }
+      if (item) { item.durationSec = durVal; renderVideoTimeline(); }
     });
-    list.querySelectorAll('[data-clip-trans]').forEach(btn => btn.onclick = () => {
-      const item = videoClips.find(x => x.id === btn.dataset.clipTrans);
-      if (item) { item.transition = item.transition === 'cut' ? 'fade' : 'cut'; renderVideoTimeline(); }
+    list.querySelectorAll('[data-clip-trans]').forEach(sel => sel.onchange = () => {
+      const item = videoClips.find(x => x.id === sel.dataset.clipTrans);
+      if (item) { item.transition = sel.value; renderVideoTimeline(); }
     });
     list.querySelectorAll('[data-clip-del]').forEach(btn => btn.onclick = () => {
       if (videoClips.length <= 1) return;
@@ -5919,10 +6030,61 @@ function init() {
       renderVideoTimeline();
     });
   };
+
+  document.getElementById('vidModeSingle')?.addEventListener('click', () => {
+    videoMode = 'single';
+    document.getElementById('vidModeSingle')?.classList.replace('sec-btn', 'cta-btn');
+    document.getElementById('vidModeMulti')?.classList.replace('cta-btn', 'sec-btn');
+    renderVideoTimeline();
+  });
+  document.getElementById('vidModeMulti')?.addEventListener('click', () => {
+    videoMode = 'multi';
+    document.getElementById('vidModeMulti')?.classList.replace('sec-btn', 'cta-btn');
+    document.getElementById('vidModeSingle')?.classList.replace('cta-btn', 'sec-btn');
+    renderVideoTimeline();
+  });
+  document.getElementById('vidAudioTrackSel')?.addEventListener('change', e => {
+    videoAudioConfig.trackId = e.target.value;
+    videoAudioConfig.customAudioBuffer = null;
+    const lbl = document.getElementById('vidAudioFileName');
+    if (lbl) lbl.textContent = e.target.selectedOptions?.[0]?.textContent || 'Hazır müzik seçildi';
+    syncVideoStudioStaticControls();
+  });
+  document.getElementById('vidAudioUpload')?.addEventListener('change', async e => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      const ac = new Ctx();
+      const buf = await ac.decodeAudioData(await f.arrayBuffer());
+      await ac.close().catch(() => {});
+      videoAudioConfig.customAudioBuffer = buf;
+      videoAudioConfig.customFileName = f.name;
+      const lbl = document.getElementById('vidAudioFileName');
+      if (lbl) lbl.textContent = `🎵 Yüklendi: ${f.name} (${Math.round(buf.duration)} sn)`;
+      syncVideoStudioStaticControls();
+    } catch {
+      studioToast('Ses dosyası çözümlenemedi (.mp3 / .wav).', true);
+    }
+  });
+  document.getElementById('vidAudioTrim')?.addEventListener('input', e => {
+    videoAudioConfig.trimStartSec = Math.max(0, Number(e.target.value) || 0);
+    syncVideoStudioStaticControls();
+  });
+  document.getElementById('vidAudioVolume')?.addEventListener('input', e => {
+    videoAudioConfig.volume = Math.max(0, Math.min(1, (Number(e.target.value) || 0) / 100));
+    syncVideoStudioStaticControls();
+  });
   document.getElementById('btnAddVideoClip')?.addEventListener('click', () => {
+    if (videoMode === 'single') {
+      videoMode = 'multi';
+      document.getElementById('vidModeMulti')?.classList.replace('sec-btn', 'cta-btn');
+      document.getElementById('vidModeSingle')?.classList.replace('cta-btn', 'sec-btn');
+    }
     const role = document.getElementById('vidRole')?.value || 'luxury_arch';
     const dur = Math.max(2, Math.min(20, Math.round(Number(document.getElementById('vidDuration')?.value) || 4)));
-    const transition = document.getElementById('vidTransition')?.value === 'cut' ? 'cut' : 'fade';
+    const transition = document.getElementById('vidTransition')?.value || 'crossfade';
     videoClips.push({ id: `clip_${Date.now().toString(36)}_${videoClips.length}`, role, durationSec: dur, transition });
     renderVideoTimeline();
   });
@@ -5949,9 +6111,13 @@ function init() {
     const pctEl = document.getElementById('vidPctLabel');
     const barEl = document.getElementById('vidProgressBar');
     const previewEl = document.getElementById('vidPreviewEl');
+    const emptyEl = document.getElementById('vidPreviewEmpty');
+    const runClips = videoMode === 'single'
+      ? [{ id: 'single_clip', role: document.getElementById('vidRole')?.value || 'luxury_arch', durationSec: Math.max(2, Math.min(20, Math.round(Number(document.getElementById('vidDuration')?.value) || 6))), transition: 'cut' }]
+      : videoClips;
     let [w, h] = String(document.getElementById('vidResolution')?.value || '1920x1080').split('x').map(Number);
     const fps = Number(document.getElementById('vidFps')?.value || 60);
-    const onlyReels = videoClips.length === 1 && videoClips[0].role === 'reels_vertical';
+    const onlyReels = runClips.length === 1 && runClips[0].role === 'reels_vertical';
     if (onlyReels && w > h) { const tmp = w; w = h; h = tmp; }
     const showDims = Boolean(document.getElementById('vidShowDims')?.checked);
     const ctrl = new AbortController();
@@ -5961,17 +6127,19 @@ function init() {
     dlBtn?.classList.add('hidden');
     progWrap?.classList.remove('hidden');
     previewEl?.classList.add('hidden');
+    emptyEl?.classList.remove('hidden');
     try {
       const res = await recordPresentationVideo({
         signEngine: ensureSignEngine(),
         state: store.get(),
         fontMap,
         metrics: lastMetrics,
-        clips: videoClips,
+        clips: runClips,
         width: w || 1920,
         height: h || 1080,
         fps,
         showDimensions: showDims,
+        audioConfig: videoAudioConfig,
         signal: ctrl.signal,
         onProgress: ({ percent, stageLabel }) => {
           if (stageEl) stageEl.textContent = stageLabel;
@@ -5984,6 +6152,7 @@ function init() {
       if (previewEl) {
         previewEl.src = res.url;
         previewEl.classList.remove('hidden');
+        emptyEl?.classList.add('hidden');
       }
       if (dlBtn) {
         dlBtn.classList.remove('hidden');
@@ -5994,7 +6163,7 @@ function init() {
           a.click();
         };
       }
-      studioToast('🎬 Çoklu klip stüdyo sunum videosu hazır!');
+      studioToast('🎬 Video Stüdyosu sunum videosu hazır!');
     } catch (err) {
       if (err?.name !== 'AbortError') studioToast(err?.message || 'Video oluşturulamadı.', true);
     } finally {
@@ -6240,6 +6409,10 @@ function init() {
     document.getElementById('expertApiBox')?.classList.add('hidden');
     studioToast('Asistan API ayarı kaydedildi.');
   });
+  const drawerChipsEl = expertDrawer?.querySelector('.ai-expert-chips');
+  if (drawerChipsEl) {
+    drawerChipsEl.innerHTML = EXPERT_QUICK_PRESETS.map(p => `<button type="button" data-expert-q="${escapeAttr(p.q)}" title="${escapeAttr(p.cat)}">${escapeHtml(p.label)}</button>`).join('');
+  }
   document.querySelectorAll('[data-expert-q]').forEach(b => b.addEventListener('click', () => submitExpertQuestion(b.dataset.expertQ)));
   document.getElementById('expertForm')?.addEventListener('submit', e => {
     e.preventDefault();
@@ -6278,7 +6451,7 @@ function init() {
     if (!eng.signGroup?.children?.length) eng.updateScene(store.get(), fontMap);
     return collectSignTriangles(eng.signGroup);
   };
-  const launchMobileAr = () => {
+  const openAdvancedArModal = () => {
     try {
       const groups = buildRealScaleArGroups();
       if (activeArGlbUrl) URL.revokeObjectURL(activeArGlbUrl);
@@ -6295,19 +6468,53 @@ function init() {
           <model-viewer class="ar-model-viewer" src="${activeArGlbUrl}" ios-src="${activeArUsdzUrl}" ar ar-modes="webxr scene-viewer quick-look" camera-controls auto-rotate shadow-intensity="1" alt="3D Kutu Harf AR">
             <button slot="ar-button" class="cta-btn" style="position:absolute;right:12px;bottom:12px">📱 Kamerada Aç (AR)</button>
           </model-viewer>
-          <p style="margin:0;font-size:12px;color:var(--muted)">1:1 gerçek metre ölçeği (1 birim = 1 m). iPhone/iPad için Quick Look, Android için Scene Viewer / WebXR ile mağaza cephenizde görüntüleyin.</p>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <a rel="ar" href="${activeArUsdzUrl}" download="${escapeAttr((store.get().projectName || 'tabela') + '_ar.usdz')}" class="cta-btn" style="text-decoration:none">🍎 iOS AR Quick Look Başlat</a>
-            <a href="${activeArGlbUrl}" download="${escapeAttr((store.get().projectName || 'tabela') + '_ar.glb')}" class="sec-btn" style="text-decoration:none">🤖 Android .GLB İndir</a>
-          </div>`;
+          <p style="margin:0;font-size:12px;color:var(--muted)">1:1 gerçek metre ölçeği (1 birim = 1 m). iPhone/iPad için Quick Look, Android için Scene Viewer / WebXR üzerinden görüntüleyin.</p>`;
+        if (typeof history !== 'undefined' && history.pushState) {
+          try { history.pushState({ khsArModal: true }, ''); } catch {}
+        }
         modal.classList.remove('hidden');
       }
     } catch (err) {
-      studioToast(err?.message || 'AR önizlemesi hazırlanamadı.', true);
+      studioToast(err?.message || 'Gelişmiş 3D AR hazırlanamadı.', true);
     }
   };
-  document.getElementById('btnCloseArViewer')?.addEventListener('click', () => document.getElementById('arViewerModal')?.classList.add('hidden'));
-  document.getElementById('arViewerModal')?.addEventListener('click', e => { if (e.target.id === 'arViewerModal') e.target.classList.add('hidden'); });
+  const closeArViewerModal = () => {
+    const modal = document.getElementById('arViewerModal');
+    if (modal && !modal.classList.contains('hidden')) modal.classList.add('hidden');
+  };
+  window.addEventListener('popstate', () => {
+    closeArViewerModal();
+  });
+  const launchMobileAr = () => {
+    const eng = ensureSignEngine();
+    openLiveCameraArOverlay({
+      captureTransparentPng: () => {
+        if (!eng || eng.isDisposed) return '';
+        if (!eng.signGroup?.children?.length) eng.updateScene(store.get(), fontMap);
+        return eng.capturePng(1200, 560, { transparent: true, fitToSign: true, haloMode: 'include' });
+      },
+      isNightInitial: store.get().scene?.night !== false,
+      onToggleDayNight: night => mutate('Ortam', s => { s.scene.night = night; }),
+      onOpenAdvancedAr: openAdvancedArModal,
+      onClose: () => {},
+    });
+  };
+  document.getElementById('btnCloseArViewer')?.addEventListener('click', () => {
+    if (typeof history !== 'undefined' && history.state?.khsArModal) {
+      try { history.back(); } catch { closeArViewerModal(); }
+    } else {
+      closeArViewerModal();
+    }
+  });
+  document.getElementById('arViewerModal')?.addEventListener('click', e => {
+    if (e.target.id === 'arViewerModal') {
+      if (typeof history !== 'undefined' && history.state?.khsArModal) {
+        try { history.back(); } catch { closeArViewerModal(); }
+      } else {
+        closeArViewerModal();
+      }
+    }
+  });
 
   const showClientApprovalBanner = (projectKey, projectName, fullClientMode = false) => {
     const app = document.getElementById('app');
@@ -7139,7 +7346,9 @@ function init() {
   renderActiveWorkspace();
   if (clientPreviewBoot) {
     const eng = ensureSignEngine();
-    eng?.setClientModePerformance?.(true);
+    eng?.setClientModePerformance?.(true, { mobile: true });
+    unmountBendingCanvas?.();
+    unmountBendingCanvas = null;
     eng?._resize?.(true);
     showClientApprovalBanner(clientPreviewBoot.key, clientPreviewBoot.name, true);
     setTimeout(() => {

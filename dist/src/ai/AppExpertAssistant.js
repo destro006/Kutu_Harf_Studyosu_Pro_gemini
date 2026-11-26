@@ -7,6 +7,25 @@ import { loadAiConfig } from './SignageAiEngine.js';
  * - Animated guide cursor pointing directly to any exact UI control
  */
 
+export const EXPERT_QUICK_PRESETS = Object.freeze([
+  { cat: 'Malzeme', label: '✨ Ayna Altın', q: 'Ayna altın yap' },
+  { cat: 'Malzeme', label: '🪩 Ayna Krom', q: 'Ayna krom yap' },
+  { cat: 'Malzeme', label: '🖤 Mat Siyah', q: 'Mat siyah yap' },
+  { cat: 'Malzeme', label: '🔩 Fileli Yapı', q: 'Fileli kutu harf yap' },
+  { cat: 'Aydınlatma', label: '☀ Gündüz Modu', q: 'Gündüz moduna geç' },
+  { cat: 'Aydınlatma', label: '🌙 Gece Halo LED', q: 'Gece moduna geç ve arkadan halo yap' },
+  { cat: 'Aydınlatma', label: '📏 Ölçüleri Göster', q: 'Ölçüleri göster' },
+  { cat: 'Aydınlatma', label: '🚫 Ölçüleri Kapat', q: 'Ölçüleri kapat' },
+  { cat: 'Cephe', label: '🏨 Otel Girişi Cephe', q: 'Cepheyi otel girişi yap' },
+  { cat: 'Cephe', label: '☕ Kafe / Restoran', q: 'Cepheyi restoran teras yap' },
+  { cat: 'Cephe', label: '🏢 Showroom Cephe', q: 'Cepheyi otomobil showroom yap' },
+  { cat: 'Nesting', label: '📐 Nesting Çalıştır', q: 'Nesting çalıştır' },
+  { cat: 'Nesting', label: '🎨 Corel Nerede?', q: 'Corel aktar nerede?' },
+  { cat: 'Büküm', label: '⚙ Büküm SS 0.8mm', q: 'Büküm simülatörünü aç ve paslanmaz 0.8mm seç' },
+  { cat: 'Video', label: '🎬 Video +360° Tur', q: 'Videoya 360 tur ekle' },
+  { cat: 'Maliyet', label: '₺ Maliyet Sekmesi', q: 'Maliyet ve teklif sekmesini aç' },
+]);
+
 export const APP_UI_MAP = Object.freeze({
   tabs: {
     design2d: { label: '2D Tasarım', selector: '[data-main-ws="design2d"]' },

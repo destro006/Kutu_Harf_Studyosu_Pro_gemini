@@ -56,8 +56,8 @@ assert.equal(glb[0], 0x67); // 'g' from glTF magic
 const usdz = writeUsdz(tris);
 assert.equal(usdz[0], 0x50); // 'P' from PK zip
 
-// Module 3: Exact Wall-Clock Video Duration & 6 Smooth Roles
-assert.equal(VIDEO_ROLES.length, 6);
+// Module 3 (upgraded in Module 6): Exact Wall-Clock Video Duration & 15 Smooth Roles
+assert.equal(VIDEO_ROLES.length, 15);
 for (const role of VIDEO_ROLES) {
   const kf0 = sampleChoreographyKeyframe(0, { role: role.id });
   const kf5 = sampleChoreographyKeyframe(0.5, { role: role.id });

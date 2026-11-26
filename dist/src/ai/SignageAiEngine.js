@@ -200,3 +200,51 @@ export async function runHybridSignageRender({ compositeDataUrl, masterPrompt, c
       : 'Ücretsiz yerel Three.js + atmosferik harmanlama uygulandı (API anahtarı girilirse bulut AI render çalışır).',
   };
 }
+
+/**
+ * Estimates signage manufacturing & pricing parameters from an uploaded storefront/facade photo
+ * or active AI brief so users can transfer parameters to Cost & Quote in 1 click.
+ */
+export function estimateSignageCostParams(state = {}, imageMeta = {}) {
+  const hint = `${imageMeta.fileName || ''} ${imageMeta.brief || ''} ${state.projectName || ''}`.toLowerCase();
+  const activeObj = (state.objects || [])[0] || {};
+  const textVal = String(activeObj.text || '').trim();
+  const detectedChars = textVal ? textVal.replace(/\s+/g, '').length : 8;
+  const letterCount = Math.max(2, Math.min(28, Number(imageMeta.letterCount) || detectedChars));
+
+  let constructionType = activeObj.constructionType || state.constructionType || 'metal';
+  if (/fileli|alüminyum\s*file|trim/.test(hint)) constructionType = 'fileli';
+  else if (/pleksi|akrilik|ışıklı/.test(hint)) constructionType = 'pleksi';
+  else if (/halo|arkadan/.test(hint)) constructionType = 'halo';
+  else if (/ışıksız|kompozit/.test(hint)) constructionType = 'isiksiz';
+
+  let faceMaterial = activeObj.faceMaterial || state.materials?.faceId || 'aynaAltin';
+  if (/krom|gümüş|inox|paslanmaz/.test(hint)) faceMaterial = 'aynaKrom';
+  else if (/siyah|black|mat/.test(hint)) faceMaterial = 'matSiyah';
+  else if (/altın|gold|pirinç/.test(hint)) faceMaterial = 'aynaAltin';
+
+  let lightingMode = activeObj.lightingMode || state.lighting?.mode || 'halo';
+  if (/ön\s*ışık|front|pleksi/.test(hint)) lightingMode = 'front';
+  else if (/çift|both|hem/.test(hint)) lightingMode = 'both';
+  else if (/ışıksız/.test(hint)) lightingMode = 'none';
+  else if (/halo|gece|3000k/.test(hint)) lightingMode = 'halo';
+
+  const aspect = (imageMeta.width && imageMeta.height) ? imageMeta.width / Math.max(1, imageMeta.height) : 1.78;
+  const heightMm = Math.max(200, Math.min(1200, Math.round((activeObj.heightMm || state.dimensions?.heightMm || (aspect > 1.6 ? 400 : 350)) / 10) * 10));
+  const estWidthMm = Math.max(400, Math.round(letterCount * heightMm * 0.62));
+  const depthMm = Math.max(30, Math.min(160, Math.round(activeObj.depthMm || state.dimensions?.depthMm || 80)));
+
+  const cLabels = { fileli: 'Fileli Kutu Harf', pleksi: 'Pleksi Kutu Harf', metal: 'Paslanmaz Metal', halo: 'Arkadan Halo', isiksiz: 'Işıksız Metal' };
+  const lLabels = { front: 'Önden LED', halo: 'Arkadan Halo LED', both: 'Çift Yönlü LED', none: 'Işıksız' };
+
+  return {
+    letterCount,
+    widthMm: estWidthMm,
+    heightMm,
+    depthMm,
+    constructionType,
+    faceMaterial,
+    lightingMode,
+    summaryLabel: `${letterCount} harf · ~${estWidthMm}×${heightMm}×${depthMm} mm · ${cLabels[constructionType] || constructionType} · ${lLabels[lightingMode] || lightingMode}`,
+  };
+}

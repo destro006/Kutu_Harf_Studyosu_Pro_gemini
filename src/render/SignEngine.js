@@ -447,10 +447,15 @@ export class SignEngine {
   }
 
   invalidate(shadows=false){this._renderDirty=true;if(shadows&&this.renderer)this.renderer.shadowMap.needsUpdate=true;}
-  setClientModePerformance(enabled) {
+  setClientModePerformance(enabled, options = {}) {
     const next = Boolean(enabled);
-    if (this._clientModePerf === next) return;
+    const mobile = Boolean(options.mobile);
+    if (this._clientModePerf === next && this._clientModeMobile === mobile) return;
     this._clientModePerf = next;
+    this._clientModeMobile = next && mobile;
+    this._bypassPostProcess = Boolean(next && mobile);
+    this._clientShadowSize = (next && mobile) ? 512 : null;
+    this._lightsKey = null;
     this._resize(true);
   }
 
@@ -458,7 +463,7 @@ export class SignEngine {
     if(!this.container.clientWidth||!this.container.clientHeight)return;
     const w=Math.max(100,this.container.clientWidth),h=Math.max(100,this.container.clientHeight);
     let dpr=computeQualityPixelRatio(this.quality,window.devicePixelRatio||1,w,h);
-    if (this._clientModePerf) dpr = Math.min(dpr, 1.5);
+    if (this._clientModePerf) dpr = this._clientModeMobile ? Math.min(dpr, 1.25) : Math.min(dpr, 1.5);
     const key=w+'x'+h+'@'+dpr;
     if(!force&&this._sizeKey===key)return;
     this._sizeKey=key;this.renderer.setPixelRatio(dpr);this.invalidate();
@@ -627,12 +632,13 @@ export class SignEngine {
     if (this.isDisposed) return false;
     const { prof, night } = this._applyEnvironmentAndPost(state);
     const sizeM = this.lastSizeM || { w: 2.0, h: 0.4 };
-    const lightsKey = [night, Math.round(sizeM.w * 10), Math.round(sizeM.h * 10), prof.shadowSize].join('|');
+    const shadowSz = this._clientShadowSize || prof.shadowSize;
+    const lightsKey = [night, Math.round(sizeM.w * 10), Math.round(sizeM.h * 10), shadowSz].join('|');
     if (this._lightsKey !== lightsKey) {
       this._clearGroup(this.lightsGroup);
       const lights = buildSceneLights(night, sizeM);
       lights.traverse(light => {
-        if (light.shadow?.mapSize) light.shadow.mapSize.set(prof.shadowSize, prof.shadowSize);
+        if (light.shadow?.mapSize) light.shadow.mapSize.set(shadowSz, shadowSz);
       });
       this.lightsGroup.add(lights);
       this._lightsKey = lightsKey;
@@ -1470,7 +1476,7 @@ export class SignEngine {
       this.camera.position.set(o.target.x+o.radius*Math.sin(o.polar)*Math.sin(o.azimuth),o.target.y+o.radius*Math.cos(o.polar),o.target.z+o.radius*Math.sin(o.polar)*Math.cos(o.azimuth));
       this.camera.lookAt(o.target);
       this._renderDirty=false;
-      if(this.postProcessor)this.postProcessor.render(this.scene,this.camera);
+      if(this.postProcessor && !this._bypassPostProcess)this.postProcessor.render(this.scene,this.camera);
       else this.renderer.render(this.scene,this.camera);
       this.callbacks.onFrame?.();
     };

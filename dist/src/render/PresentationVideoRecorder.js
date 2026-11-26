@@ -1,24 +1,42 @@
 import { computeSignageDimensionData, renderDimensions2DOverlay } from './Dimensions3DOverlay.js';
+import { createVideoAudioMuxer } from './VideoAudioEngine.js';
 
 /**
- * Local Zero-API-Cost Studio Video Sequencer & Recorder
+ * CapCut-Style Full-Screen 15-Scenario Studio Video Sequencer & Recorder
+ * - 15 cinematic camera choreographies on smooth Catmull-Rom splines
  * - Exact wall-clock timing via performance.now()
- * - Multi-clip timeline sequencer with Drag reorder & Fade / Cut transitions
- * - Automatically hides selection boxes / helpers / gizmos during recording
- * - High studio bitrate (12-15 Mbps), 60fps default, min(DPR, 2) crisp output
+ * - Multi-clip timeline sequencer with Cross-Dissolve, Dip-to-Black, Smooth Spline Blend, & Cut transitions
+ * - Live Web Audio music track + custom MP3/WAV muxing via MediaStreamDestination
+ * - Automatically hides selection boxes, gizmos, and page borders during export
  */
 export const VIDEO_ROLES = [
-  { id: 'luxury_arch', label: 'Lüks Mimari Sunum', desc: 'Geniş açılış, yörünge taraması ve gündüzden geceye halo geçişi', aspect: '16:9' },
+  { id: 'luxury_arch', label: 'Lüks Mimari Süzülüş', desc: 'Geniş mimari açılış, akıcı süzülüş ve akşam geçişi', aspect: '16:9' },
   { id: 'night_led', label: 'Gece & LED Şovu', desc: 'Karanlık cephede parlak ön ve arkadan halo ışık şovu', aspect: '16:9' },
-  { id: 'tech_dims', label: 'Teknik & Ölçülü Onay', desc: 'Önden net görünüm ile genişlik, yükseklik ve derinlik ölçüleri', aspect: '16:9' },
-  { id: 'detail_closeup', label: 'Detay & Malzeme Yakın Çekim', desc: 'Pah, fırça dokusu, krom yansıma ve yan bant derinlik taraması', aspect: '16:9' },
+  { id: 'tech_dims', label: 'Teknik & Ölçülü Onay', desc: 'Önden net geçiş ile genişlik, yükseklik ve derinlik ölçüleri', aspect: '16:9' },
+  { id: 'detail_closeup', label: 'Makro Pah & Metal Parıltısı', desc: 'Pah, fırça dokusu ve krom yansımalarda makro geçiş', aspect: '16:9' },
   { id: 'orbit_360', label: '360° Ürün Turu', desc: 'Tabela ekseni etrafında kesintisiz 360 derece ürün dönüşü', aspect: '16:9' },
-  { id: 'reels_vertical', label: 'Sosyal Medya / Reels 9:16', desc: 'Instagram / TikTok dikey formatında dinamik yakın çekim akışı', aspect: '9:16' },
+  { id: 'reels_vertical', label: 'Sosyal Medya / Reels (9:16)', desc: 'Instagram / TikTok dikey formatında dinamik yakın çekim akışı', aspect: '9:16' },
+  { id: 'drone_approach', label: 'Drone Cephe Yaklaşımı', desc: 'Yüksek açıdan mağaza cephesine alçalan sinematik yaklaşım', aspect: '16:9' },
+  { id: 'hero_low_angle', label: 'Dramatik Alt Açı (Hero Low-Angle)', desc: 'Aşağıdan yukarı heybetli yükseliş ve kontrast sunum', aspect: '16:9' },
+  { id: 'day_to_night_timelapse', label: 'Gündüzden Geceye Zaman Geçişi', desc: 'Gündüz doğal gölgesinden gece halo parlamasına akıcı geçiş', aspect: '16:9' },
+  { id: 'dolly_track', label: 'Yatay Raylı Kamera (Dolly Track)', desc: 'Soldan sağa pürüzsüz raylı tarama ve harf derinliği', aspect: '16:9' },
+  { id: 'halo_pulse', label: 'Halo Işık Nabız & Parlama', desc: 'Gece modunda kademeli arka halo ışık kreşendosu', aspect: '16:9' },
+  { id: 'sidewall_depth', label: 'Derinlik & Yan Bant İncelemesi', desc: 'Yan profil 3D sac derinliği ve montaj yüzeyi vurgusu', aspect: '16:9' },
+  { id: 'corner_perspective', label: 'Köşe Perspektif Sürüşü', desc: '45° cephe köşesinden tam ön hizaya sinematik dönüş', aspect: '16:9' },
+  { id: 'commercial_cuts', label: 'Hızlı Ticari Reklam Kurgusu', desc: 'Çok açılı enerjik ticari vitrin ve marka finali', aspect: '16:9' },
+  { id: 'studio_outro', label: 'Minimalist Stüdyo Kapanış', desc: 'Yavaş geriye çekilen dengeli prestij kapanışı', aspect: '16:9' },
 ];
 
+export const VIDEO_TRANSITIONS = Object.freeze([
+  { id: 'crossfade', label: 'Yumuşak Geçiş' },
+  { id: 'dip_black', label: 'Kararma (Dip-to-Black)' },
+  { id: 'spline_blend', label: 'Kesintisiz Kamera' },
+  { id: 'cut', label: 'Ani Kesme' },
+]);
+
 export const DEFAULT_VIDEO_CLIPS = [
-  { id: 'clip_1', role: 'detail_closeup', durationSec: 4, transition: 'fade' },
-  { id: 'clip_2', role: 'night_led', durationSec: 5, transition: 'fade' },
+  { id: 'clip_1', role: 'detail_closeup', durationSec: 4, transition: 'crossfade' },
+  { id: 'clip_2', role: 'night_led', durationSec: 5, transition: 'spline_blend' },
   { id: 'clip_3', role: 'tech_dims', durationSec: 4, transition: 'cut' },
 ];
 
@@ -104,6 +122,60 @@ const ROLE_TRACKS = {
     { az: 0.42, pol: 1.49, rad: 0.92, tx: -0.04 },
     { az: 0.10, pol: 1.52, rad: 1.14, tx: 0 },
   ],
+  drone_approach: [
+    { az: -0.35, pol: 1.08, rad: 1.75, tx: -0.10, ty: 0.20 },
+    { az: -0.18, pol: 1.24, rad: 1.38, tx: 0.04, ty: 0.10 },
+    { az: 0.12, pol: 1.44, rad: 1.08, tx: 0.0, ty: 0.02 },
+    { az: 0.0, pol: 1.54, rad: 0.98, tx: 0.0, ty: 0.0 },
+  ],
+  hero_low_angle: [
+    { az: -0.58, pol: 1.82, rad: 0.92, tx: -0.12, ty: -0.08 },
+    { az: -0.22, pol: 1.78, rad: 0.84, tx: 0.0, ty: -0.04 },
+    { az: 0.24, pol: 1.72, rad: 0.88, tx: 0.06, ty: -0.02 },
+    { az: 0.08, pol: 1.62, rad: 1.02, tx: 0.0, ty: 0.0 },
+  ],
+  day_to_night_timelapse: [
+    { az: -0.62, pol: 1.45, rad: 1.10, tx: -0.08 },
+    { az: -0.20, pol: 1.48, rad: 1.04, tx: 0.0 },
+    { az: 0.25, pol: 1.50, rad: 1.02, tx: 0.04 },
+    { az: 0.0, pol: 1.53, rad: 1.06, tx: 0.0 },
+  ],
+  dolly_track: [
+    { az: -0.38, pol: 1.54, rad: 0.86, tx: -0.34, ty: 0.0 },
+    { az: -0.12, pol: 1.53, rad: 0.86, tx: -0.10, ty: 0.0 },
+    { az: 0.12, pol: 1.53, rad: 0.86, tx: 0.14, ty: 0.0 },
+    { az: 0.34, pol: 1.54, rad: 0.92, tx: 0.30, ty: 0.0 },
+  ],
+  halo_pulse: [
+    { az: -0.35, pol: 1.54, rad: 0.90, tx: 0.0 },
+    { az: 0.0, pol: 1.56, rad: 0.82, tx: 0.0 },
+    { az: 0.32, pol: 1.54, rad: 0.92, tx: 0.0 },
+    { az: 0.0, pol: 1.55, rad: 1.04, tx: 0.0 },
+  ],
+  sidewall_depth: [
+    { az: -1.18, pol: 1.54, rad: 0.72, tx: -0.12 },
+    { az: -0.92, pol: 1.48, rad: 0.70, tx: 0.0 },
+    { az: 0.92, pol: 1.48, rad: 0.70, tx: 0.0 },
+    { az: 1.18, pol: 1.54, rad: 0.76, tx: 0.10 },
+  ],
+  corner_perspective: [
+    { az: 0.88, pol: 1.46, rad: 0.88, tx: 0.16 },
+    { az: 0.56, pol: 1.48, rad: 0.92, tx: 0.08 },
+    { az: 0.24, pol: 1.52, rad: 0.98, tx: 0.02 },
+    { az: 0.0, pol: 1.56, rad: 1.06, tx: 0.0 },
+  ],
+  commercial_cuts: [
+    { az: -0.82, pol: 1.42, rad: 0.66, tx: -0.22 },
+    { az: 0.64, pol: 1.62, rad: 0.74, tx: 0.18 },
+    { az: -0.28, pol: 1.46, rad: 0.82, tx: -0.06 },
+    { az: 0.0, pol: 1.55, rad: 1.02, tx: 0.0 },
+  ],
+  studio_outro: [
+    { az: 0.24, pol: 1.50, rad: 0.76, tx: 0.0 },
+    { az: 0.14, pol: 1.52, rad: 0.94, tx: 0.0 },
+    { az: 0.06, pol: 1.54, rad: 1.15, tx: 0.0 },
+    { az: 0.0, pol: 1.56, rad: 1.32, tx: 0.0 },
+  ],
 };
 
 export function sampleChoreographyKeyframe(tNorm, options = {}) {
@@ -119,7 +191,7 @@ export function sampleChoreographyKeyframe(tNorm, options = {}) {
   let lightingEnabled = true;
   let dimsOpacity = 0;
 
-  if (role === 'night_led') {
+  if (role === 'night_led' || role === 'halo_pulse') {
     night = true;
     lightingEnabled = t >= 0.08;
     dimsOpacity = showDimensions && t >= 0.75 ? Math.min(1, (t - 0.75) / 0.18) : 0;
@@ -127,6 +199,14 @@ export function sampleChoreographyKeyframe(tNorm, options = {}) {
     night = false;
     lightingEnabled = false;
     dimsOpacity = showDimensions ? Math.min(1, t * 2.4) : 0;
+  } else if (role === 'day_to_night_timelapse') {
+    night = t >= 0.45;
+    lightingEnabled = t >= 0.42;
+    dimsOpacity = showDimensions && t >= 0.82 ? Math.min(1, (t - 0.82) / 0.15) : 0;
+  } else if (role === 'studio_outro') {
+    night = true;
+    lightingEnabled = true;
+    dimsOpacity = showDimensions ? Math.max(0, 1 - t * 1.4) : 0;
   } else {
     const switchAt = role === 'detail_closeup' ? 0.65 : 0.62;
     night = t >= switchAt;
@@ -148,6 +228,13 @@ export function sampleChoreographyKeyframe(tNorm, options = {}) {
   };
 }
 
+export function normalizeTransition(val) {
+  if (val === 'cut') return 'cut';
+  if (val === 'dip_black') return 'dip_black';
+  if (val === 'spline_blend') return 'spline_blend';
+  return 'crossfade';
+}
+
 export function computeSequenceTimeline(clips = []) {
   const list = Array.isArray(clips) && clips.length ? clips : DEFAULT_VIDEO_CLIPS;
   let cursor = 0;
@@ -160,7 +247,7 @@ export function computeSequenceTimeline(clips = []) {
       role: roleMeta.id,
       roleLabel: roleMeta.label,
       durationSec: dur,
-      transition: c?.transition === 'cut' ? 'cut' : 'fade',
+      transition: normalizeTransition(c?.transition),
       startSec: cursor,
       endSec: cursor + dur,
     };
@@ -172,17 +259,46 @@ export function computeSequenceTimeline(clips = []) {
 
 export function sampleSequenceKeyframe(elapsedSec, timeline, options = {}) {
   const segs = timeline?.segments || [];
-  if (!segs.length) return { ...sampleChoreographyKeyframe(0, options), clipIndex: 0, clipLabel: 'Klip 1', crossFadeAlpha: 1 };
+  if (!segs.length) return { ...sampleChoreographyKeyframe(0, options), clipIndex: 0, clipLabel: 'Klip 1', crossFadeAlpha: 1, dipBlackAlpha: 0 };
   const clamped = Math.max(0, Math.min(timeline.totalDurationSec, Number(elapsedSec) || 0));
   const seg = segs.find(s => clamped <= s.endSec) || segs[segs.length - 1];
   const localElapsed = clamped - seg.startSec;
   const localNorm = Math.max(0, Math.min(1, localElapsed / Math.max(0.1, seg.durationSec)));
-  const kf = sampleChoreographyKeyframe(localNorm, { role: seg.role, showDimensions: options.showDimensions });
+  let kf = sampleChoreographyKeyframe(localNorm, { role: seg.role, showDimensions: options.showDimensions });
   const prevSeg = seg.index > 0 ? segs[seg.index - 1] : null;
-  const fadeDur = 0.35;
-  const crossFadeAlpha = prevSeg && prevSeg.transition === 'fade' && localElapsed < fadeDur
-    ? easeInOutCubic(localElapsed / fadeDur)
-    : 1;
+  const nextSeg = seg.index < segs.length - 1 ? segs[seg.index + 1] : null;
+  const transMode = prevSeg ? prevSeg.transition : 'cut';
+
+  let crossFadeAlpha = 1;
+  let dipBlackAlpha = 0;
+
+  if (prevSeg && transMode === 'crossfade') {
+    const fadeDur = 0.55;
+    if (localElapsed < fadeDur) crossFadeAlpha = easeInOutCubic(localElapsed / fadeDur);
+  } else if (prevSeg && transMode === 'spline_blend') {
+    const blendDur = 0.60;
+    if (localElapsed < blendDur) {
+      const prevEnd = sampleChoreographyKeyframe(1.0, { role: prevSeg.role, showDimensions: options.showDimensions });
+      const b = easeInOutCubic(localElapsed / blendDur);
+      const lerp = (a, c) => a + (c - a) * b;
+      kf = {
+        ...kf,
+        azimuth: lerp(prevEnd.azimuth, kf.azimuth),
+        polar: lerp(prevEnd.polar, kf.polar),
+        radiusMult: lerp(prevEnd.radiusMult, kf.radiusMult),
+        targetOffsetX: lerp(prevEnd.targetOffsetX, kf.targetOffsetX),
+        targetOffsetY: lerp(prevEnd.targetOffsetY, kf.targetOffsetY),
+      };
+    }
+  } else if (prevSeg && transMode === 'dip_black') {
+    if (localElapsed < 0.35) dipBlackAlpha = Math.max(0, 1 - easeInOutCubic(localElapsed / 0.35));
+  }
+
+  if (nextSeg && seg.transition === 'dip_black') {
+    const rem = seg.endSec - clamped;
+    if (rem < 0.35) dipBlackAlpha = Math.max(dipBlackAlpha, 1 - easeInOutCubic(rem / 0.35));
+  }
+
   return {
     ...kf,
     clipIndex: seg.index,
@@ -190,6 +306,7 @@ export function sampleSequenceKeyframe(elapsedSec, timeline, options = {}) {
     clipRole: seg.role,
     transition: seg.transition,
     crossFadeAlpha,
+    dipBlackAlpha,
   };
 }
 
@@ -222,6 +339,7 @@ export async function recordPresentationVideo({
   fps = 60,
   role = 'luxury_arch',
   showDimensions = true,
+  audioConfig = null,
   onProgress = () => {},
   signal = null,
 }) {
@@ -249,10 +367,27 @@ export async function recordPresentationVideo({
 
   const targetFps = Math.max(24, Math.min(60, Number(fps) || 60));
   const bitrate = (width >= 1920 || height >= 1920) ? 15_000_000 : 12_000_000;
-  const stream = outCanvas.captureStream(targetFps);
-  const recorder = picked.mimeType
-    ? new MediaRecorder(stream, { mimeType: picked.mimeType, videoBitsPerSecond: bitrate })
-    : new MediaRecorder(stream, { videoBitsPerSecond: bitrate });
+  const videoStream = outCanvas.captureStream(targetFps);
+
+  const audioMuxer = audioConfig && (audioConfig.trackId !== 'none' || audioConfig.customAudioBuffer)
+    ? await createVideoAudioMuxer({ ...audioConfig, durationSec: timeline.totalDurationSec }).catch(() => null)
+    : null;
+  const combinedTracks = [
+    ...videoStream.getVideoTracks(),
+    ...(audioMuxer?.audioTracks || []),
+  ];
+  const stream = typeof MediaStream !== 'undefined' ? new MediaStream(combinedTracks) : videoStream;
+
+  let recorder;
+  try {
+    recorder = picked.mimeType
+      ? new MediaRecorder(stream, { mimeType: picked.mimeType, videoBitsPerSecond: bitrate })
+      : new MediaRecorder(stream, { videoBitsPerSecond: bitrate });
+  } catch {
+    recorder = picked.mimeType
+      ? new MediaRecorder(videoStream, { mimeType: picked.mimeType, videoBitsPerSecond: bitrate })
+      : new MediaRecorder(videoStream, { videoBitsPerSecond: bitrate });
+  }
   const chunks = [];
   recorder.ondataavailable = e => { if (e.data?.size) chunks.push(e.data); };
   const stoppedPromise = new Promise((resolve, reject) => {
@@ -360,6 +495,13 @@ export async function recordPresentationVideo({
         ctx.restore();
       }
 
+      if (kf.dipBlackAlpha > 0.01) {
+        ctx.save();
+        ctx.fillStyle = `rgba(0,0,0,${Math.min(1, kf.dipBlackAlpha).toFixed(3)})`;
+        ctx.fillRect(0, 0, width, height);
+        ctx.restore();
+      }
+
       if (kf.dimsOpacity > 0.01) {
         const dimData = computeSignageDimensionData(signEngine, state, metrics);
         renderDimensions2DOverlay(ctx, width, height, signEngine.camera, dimData, {
@@ -388,6 +530,7 @@ export async function recordPresentationVideo({
     };
   } finally {
     try { if (recorder.state !== 'inactive') recorder.stop(); } catch {}
+    await audioMuxer?.dispose?.();
     if (signEngine.selectionGroup) signEngine.selectionGroup.visible = origSelectionVis;
     if (signEngine.pageGroup) signEngine.pageGroup.visible = origPageVis;
     if (hudEl && !origHudHidden) hudEl.classList.remove('hidden');
