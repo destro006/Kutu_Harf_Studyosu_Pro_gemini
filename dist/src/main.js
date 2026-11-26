@@ -11,7 +11,8 @@ import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v15';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v35';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v36';
+import { attachTabDragReorder, reorderTabIds } from './ui/TabReorderManager.js';
 import {
   buildBendingJob,
   buildBendingJobSheetHtml,
@@ -50,7 +51,12 @@ import { FontManager } from './geometry/FontManager.js?v=20261126-v21';
 import { evaluateRasterFileQuality, extractSvgPhysicalHeightMm, generateCutoutPreview, importedVectorToLogoData, parseSvgLogo, traceRasterLogo } from './geometry/LogoTracer.js';
 import { SignEngine, QUALITY_PROFILES } from './render/SignEngine.js?v=20261126-v22';
 import { Dimensions3DOverlayController } from './render/Dimensions3DOverlay.js';
-import { recordPresentationVideo } from './render/PresentationVideoRecorder.js';
+import {
+  DEFAULT_VIDEO_CLIPS,
+  VIDEO_ROLES,
+  computeSequenceTimeline,
+  recordPresentationVideo,
+} from './render/PresentationVideoRecorder.js';
 import { buildSignageMasterPrompt, loadAiConfig, refineMasterPromptWithLlm, runHybridSignageRender, saveAiConfig } from './ai/SignageAiEngine.js';
 import { askAppExpert, showGuideCursor } from './ai/AppExpertAssistant.js';
 import { generateQrSvg } from './sales/QrCodeGenerator.js';
@@ -3360,6 +3366,17 @@ function renderDocumentTabs() {
     scheduleRebuild(true);
     renderActiveWorkspace();
   });
+
+  attachTabDragReorder({
+    container: list,
+    itemSelector: '.doc-tab[data-doc-id]',
+    getKey: el => el.dataset.docId,
+    groupKey: 'doc_tabs',
+    onReorder: ids => {
+      const rank = new Map(ids.map((id, i) => [id, i]));
+      docManager.documents.sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999));
+    },
+  });
 }
 
 function renderPageTabs() {
@@ -4028,6 +4045,23 @@ function bindNestingGestures(root){
 function bindNestingCenterEvents(root) {
   bindNestingGestures(root);
   bindNestedCncPanel(root);
+  const nestTabsWrap = root.querySelector('.nesting-source-tabs');
+  if (nestTabsWrap) {
+    attachTabDragReorder({
+      container: nestTabsWrap,
+      itemSelector: '.nesting-source-filetab',
+      getKey: el => el.querySelector('[data-nest-tab]')?.dataset.nestTab,
+      groupKey: 'nesting_file_tabs',
+      onReorder: ids => {
+        const rank = new Map(ids.map((id, i) => [id, i]));
+        store.updateScoped(['nesting'], s => {
+          if (Array.isArray(s.nesting?.importedTabs)) {
+            s.nesting.importedTabs.sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999));
+          }
+        });
+      },
+    });
+  }
   root.querySelectorAll('[data-nest-tab]').forEach(b => b.onclick = () => {
     nestingRepackController?.abort();currentNestingImportController?.abort();
     activeNestingGroup = null;
@@ -4704,6 +4738,15 @@ function bindCncCenterEvents(root, bendingJob = null) {
       updateCenterWorkspaces(store.get());
     });
   });
+  const cncTabsWrap = root.querySelector('.cnc-subtabs');
+  if (cncTabsWrap) {
+    attachTabDragReorder({
+      container: cncTabsWrap,
+      itemSelector: '.cnc-subtab-btn[data-cnc-subtab]',
+      getKey: el => el.dataset.cncSubtab,
+      groupKey: 'cnc_subtabs',
+    });
+  }
 
   if (activeCncSubTab === 'workshop') {
     root.querySelector('#wsExportStudDxf')?.addEventListener('click', () => {
@@ -5467,13 +5510,90 @@ function init() {
   });
   let videoRecController = null;
   let lastVideoBlobUrl = null;
+  let videoClips = DEFAULT_VIDEO_CLIPS.map(c => ({ ...c }));
   const videoModal = document.getElementById('presentationVideoModal');
+  const renderVideoTimeline = () => {
+    const list = document.getElementById('vidTimelineList');
+    const meta = document.getElementById('vidTimelineMeta');
+    const tl = computeSequenceTimeline(videoClips);
+    if (meta) meta.textContent = `${videoClips.length} klip · Toplam ${tl.totalDurationSec} sn`;
+    if (!list) return;
+    list.innerHTML = videoClips.map((c, idx) => `
+      <div class="vid-clip-card" draggable="true" data-clip-id="${escapeAttr(c.id)}">
+        <div class="vid-clip-head">
+          <span>#${idx + 1} Klip</span>
+          <button type="button" class="vid-clip-del" data-clip-del="${escapeAttr(c.id)}" title="Klibi Sil" ${videoClips.length <= 1 ? 'disabled' : ''}>✕</button>
+        </div>
+        <select class="vid-clip-role" data-clip-role="${escapeAttr(c.id)}">
+          ${VIDEO_ROLES.map(r => `<option value="${r.id}" ${r.id === c.role ? 'selected' : ''}>${escapeHtml(r.label)}</option>`).join('')}
+        </select>
+        <div class="vid-clip-foot">
+          <input type="number" class="vid-clip-dur" data-clip-dur="${escapeAttr(c.id)}" min="2" max="20" step="1" value="${c.durationSec}">
+          <span style="font-size:11px;color:var(--muted)">sn</span>
+          <button type="button" class="vid-clip-trans" data-clip-trans="${escapeAttr(c.id)}">${c.transition === 'cut' ? 'Kesme' : 'Fade'}</button>
+        </div>
+      </div>`).join('');
+
+    let dragId = null;
+    const clearDrag = () => list.querySelectorAll('.vid-clip-card').forEach(x => x.classList.remove('tab-dragging', 'tab-drag-over-before', 'tab-drag-over-after'));
+    list.querySelectorAll('.vid-clip-card').forEach(card => {
+      card.ondragstart = e => {
+        dragId = card.dataset.clipId;
+        card.classList.add('tab-dragging');
+        if (e.dataTransfer) e.dataTransfer.setData('text/plain', dragId);
+      };
+      card.ondragend = () => { dragId = null; clearDrag(); };
+      card.ondragover = e => {
+        if (!dragId || dragId === card.dataset.clipId) return;
+        e.preventDefault();
+        const r = card.getBoundingClientRect();
+        clearDrag();
+        card.classList.add(e.clientX > r.left + r.width * 0.5 ? 'tab-drag-over-after' : 'tab-drag-over-before');
+      };
+      card.ondrop = e => {
+        e.preventDefault();
+        const targetId = card.dataset.clipId;
+        if (!dragId || dragId === targetId) return clearDrag();
+        const r = card.getBoundingClientRect();
+        const after = e.clientX > r.left + r.width * 0.5;
+        const nextOrder = reorderTabIds(videoClips.map(x => x.id), dragId, targetId, after);
+        const byId = new Map(videoClips.map(x => [x.id, x]));
+        videoClips = nextOrder.map(id => byId.get(id)).filter(Boolean);
+        renderVideoTimeline();
+      };
+    });
+    list.querySelectorAll('[data-clip-role]').forEach(sel => sel.onchange = () => {
+      const item = videoClips.find(x => x.id === sel.dataset.clipRole);
+      if (item) { item.role = sel.value; renderVideoTimeline(); }
+    });
+    list.querySelectorAll('[data-clip-dur]').forEach(inp => inp.onchange = () => {
+      const item = videoClips.find(x => x.id === inp.dataset.clipDur);
+      if (item) { item.durationSec = Math.max(2, Math.min(20, Math.round(Number(inp.value) || 4))); renderVideoTimeline(); }
+    });
+    list.querySelectorAll('[data-clip-trans]').forEach(btn => btn.onclick = () => {
+      const item = videoClips.find(x => x.id === btn.dataset.clipTrans);
+      if (item) { item.transition = item.transition === 'cut' ? 'fade' : 'cut'; renderVideoTimeline(); }
+    });
+    list.querySelectorAll('[data-clip-del]').forEach(btn => btn.onclick = () => {
+      if (videoClips.length <= 1) return;
+      videoClips = videoClips.filter(x => x.id !== btn.dataset.clipDel);
+      renderVideoTimeline();
+    });
+  };
+  document.getElementById('btnAddVideoClip')?.addEventListener('click', () => {
+    const role = document.getElementById('vidRole')?.value || 'luxury_arch';
+    const dur = Math.max(2, Math.min(20, Math.round(Number(document.getElementById('vidDuration')?.value) || 4)));
+    const transition = document.getElementById('vidTransition')?.value === 'cut' ? 'cut' : 'fade';
+    videoClips.push({ id: `clip_${Date.now().toString(36)}_${videoClips.length}`, role, durationSec: dur, transition });
+    renderVideoTimeline();
+  });
   const closeVideoModal = () => {
     videoRecController?.abort();
     videoRecController = null;
     videoModal?.classList.add('hidden');
   };
   document.getElementById('btnOpenVideoModal')?.addEventListener('click', () => {
+    renderVideoTimeline();
     videoModal?.classList.remove('hidden');
   });
   document.getElementById('btnCloseVideoModal')?.addEventListener('click', closeVideoModal);
@@ -5490,10 +5610,10 @@ function init() {
     const pctEl = document.getElementById('vidPctLabel');
     const barEl = document.getElementById('vidProgressBar');
     const previewEl = document.getElementById('vidPreviewEl');
-    let [w, h] = String(document.getElementById('vidResolution')?.value || '1280x720').split('x').map(Number);
-    const dur = Number(document.getElementById('vidDuration')?.value || 8);
-    const role = document.getElementById('vidRole')?.value || 'luxury_arch';
-    if (role === 'reels_vertical' && w > h) { const tmp = w; w = h; h = tmp; }
+    let [w, h] = String(document.getElementById('vidResolution')?.value || '1920x1080').split('x').map(Number);
+    const fps = Number(document.getElementById('vidFps')?.value || 60);
+    const onlyReels = videoClips.length === 1 && videoClips[0].role === 'reels_vertical';
+    if (onlyReels && w > h) { const tmp = w; w = h; h = tmp; }
     const showDims = Boolean(document.getElementById('vidShowDims')?.checked);
     const ctrl = new AbortController();
     videoRecController = ctrl;
@@ -5508,10 +5628,10 @@ function init() {
         state: store.get(),
         fontMap,
         metrics: lastMetrics,
-        width: w || 1280,
-        height: h || 720,
-        durationSec: dur || 8,
-        role,
+        clips: videoClips,
+        width: w || 1920,
+        height: h || 1080,
+        fps,
         showDimensions: showDims,
         signal: ctrl.signal,
         onProgress: ({ percent, stageLabel }) => {
@@ -5535,7 +5655,7 @@ function init() {
           a.click();
         };
       }
-      studioToast('🎬 Sinematik sunum videosu hazır!');
+      studioToast('🎬 Çoklu klip stüdyo sunum videosu hazır!');
     } catch (err) {
       if (err?.name !== 'AbortError') studioToast(err?.message || 'Video oluşturulamadı.', true);
     } finally {
@@ -5965,7 +6085,7 @@ function init() {
       syncKioskLiveSummary();
     });
     host.querySelector('#kioskVideoBtn')?.addEventListener('click', () => {
-      document.getElementById('presentationVideoModal')?.classList.remove('hidden');
+      document.getElementById('btnOpenVideoModal')?.click();
     });
     host.querySelector('#kioskShareBtn')?.addEventListener('click', openShareArModal);
   };
@@ -6556,6 +6676,15 @@ function init() {
     }
   });
   document.querySelectorAll('#mainWorkspaceTabs button').forEach(b => b.onclick = () => setMainWorkspace(b.dataset.mainWs));
+  const mainWsTabsWrap = document.getElementById('mainWorkspaceTabs');
+  if (mainWsTabsWrap) {
+    attachTabDragReorder({
+      container: mainWsTabsWrap,
+      itemSelector: 'button[data-main-ws]',
+      getKey: el => el.dataset.mainWs,
+      groupKey: 'main_ws',
+    });
+  }
 
   document.getElementById('btnToggleMobileInspector')?.addEventListener('click', () => {
     document.getElementById('inspectorCol')?.classList.toggle('mobile-open');

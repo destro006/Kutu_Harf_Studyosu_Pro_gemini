@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Kutu Harf Stüdyosu — Profesyonel 3D Tabela CAD/CAM &amp; İmalat Stüdyosu</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Crect x='9' y='7' width='14' height='18' rx='3' fill='%23ffb547'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./src/styles/studio.css?v=20261126-v35">
+  <link rel="stylesheet" href="./src/styles/studio.css?v=20261126-v36">
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -451,43 +451,62 @@
   <div id="quotePreviewModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Teklif önizleme"><div class="quote-preview-shell"><header><strong>Teklif Önizleme</strong><button type="button" id="quoteNewTab" class="tb-btn">Yeni Sekmede Aç</button><button type="button" id="quotePrint" class="tb-btn">Yazdır / PDF</button><button type="button" id="quoteClose" class="tb-btn" aria-label="Kapat">✕</button></header><iframe id="quotePreviewFrame" sandbox="allow-same-origin allow-modals" title="Müşteri teklif önizlemesi"></iframe></div></div>
   <div id="floatingWindowsLayer" class="floating-windows-layer"></div>
 
-  <!-- Sinematik Sunum Videosu Oluşturucu Modalı -->
+  <!-- Video Stüdyosu (Çoklu Klip Editörü) Modalı -->
   <div id="presentationVideoModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="presVideoTitle">
-    <div class="modal-card" style="max-width:560px">
+    <div class="modal-card" style="max-width:740px">
       <div class="modal-head">
-        <h3 id="presVideoTitle">🎬 Sinematik Müşteri Sunum Videosu</h3>
+        <h3 id="presVideoTitle">🎬 Video Stüdyosu — Çoklu Klip Editörü</h3>
         <button type="button" id="btnCloseVideoModal" class="close-btn" aria-label="Kapat">✕</button>
       </div>
       <div class="modal-body" style="display:flex;flex-direction:column;gap:10px">
-        <p style="margin:0;font-size:12.5px;color:var(--muted)">API maliyeti olmadan yerel 3D kamera hareketiyle otomatik stüdyo videosu üretir: 1) Pah &amp; derinlik taraması → 2) Metalik yansıma turu → 3) Gündüzden geceye LED açılışı → 4) Ölçülü merkez sunum.</p>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div class="field-row" style="margin:0"><label for="vidResolution">Çözünürlük</label><select id="vidResolution"><option value="1280x720" selected>HD · 1280 × 720</option><option value="1920x1080">Full HD · 1920 × 1080</option></select></div>
-          <div class="field-row" style="margin:0"><label for="vidDuration">Süre</label><select id="vidDuration"><option value="8" selected>8 saniye (Hızlı)</option><option value="12">12 saniye (Sinematik)</option></select></div>
+        <p style="margin:0;font-size:12px;color:var(--muted)">Birden fazla kamera senaryosunu zaman çizelgesinde sıralayın, geçişleri seçin ve yüksek bit hızlı (12–15 Mbps) tek sunum videosu olarak birleştirin. Kayıt sırasında seçim çerçeveleri otomatik gizlenir.</p>
+        <div style="display:grid;grid-template-columns:1.2fr 0.8fr 1fr;gap:8px;align-items:end">
+          <div class="field-row" style="margin:0"><label for="vidResolution">Çözünürlük</label><select id="vidResolution"><option value="1280x720">HD · 1280 × 720</option><option value="1920x1080" selected>Full HD · 1920 × 1080</option><option value="1080x1920">Dikey Reels · 1080 × 1920</option></select></div>
+          <div class="field-row" style="margin:0"><label for="vidFps">Kare Hızı</label><select id="vidFps"><option value="60" selected>60 FPS (Akıcı)</option><option value="30">30 FPS (Standart)</option></select></div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding-bottom:6px">
+            <input type="checkbox" id="vidShowDims" checked>
+            <span>Ölçüleri Göster</span>
+          </label>
         </div>
-        <div class="field-row" style="margin:0">
-          <label for="vidRole">Kamera Senaryosu / Rol</label>
-          <select id="vidRole">
-            <option value="luxury_arch" selected>Lüks Mimari Sunum</option>
-            <option value="night_led">Gece &amp; LED Şovu</option>
-            <option value="tech_dims">Teknik &amp; Ölçülü Onay</option>
-            <option value="detail_closeup">Detay &amp; Malzeme Yakın Çekim</option>
-            <option value="orbit_360">360° Ürün Turu</option>
-            <option value="reels_vertical">Sosyal Medya / Reels 9:16</option>
-          </select>
+
+        <div class="vid-builder-bar">
+          <div class="field-row" style="margin:0;flex:1.5;min-width:170px">
+            <label for="vidRole">Kamera Senaryosu</label>
+            <select id="vidRole">
+              <option value="luxury_arch" selected>Lüks Mimari Sunum</option>
+              <option value="night_led">Gece &amp; LED Şovu</option>
+              <option value="tech_dims">Teknik &amp; Ölçülü Onay</option>
+              <option value="detail_closeup">Detay &amp; Malzeme Yakın Çekim</option>
+              <option value="orbit_360">360° Ürün Turu</option>
+              <option value="reels_vertical">Sosyal Medya / Reels 9:16</option>
+            </select>
+          </div>
+          <div class="field-row" style="margin:0;width:82px">
+            <label for="vidDuration">Süre (sn)</label>
+            <input type="number" id="vidDuration" min="2" max="20" step="1" value="4">
+          </div>
+          <div class="field-row" style="margin:0;width:130px">
+            <label for="vidTransition">Geçiş</label>
+            <select id="vidTransition"><option value="fade" selected>Yumuşak (Fade)</option><option value="cut">Kesme (Cut)</option></select>
+          </div>
+          <button type="button" id="btnAddVideoClip" class="sec-btn" style="height:34px;white-space:nowrap">＋ Klip Ekle</button>
         </div>
-        <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer">
-          <input type="checkbox" id="vidShowDims" checked>
-          <span>Videoda Detaylı Ölçüleri Göster (Genişlik, Yükseklik, Derinlik)</span>
-        </label>
+
+        <div class="vid-timeline-head">
+          <strong>Zaman Çizelgesi (Sürükleyip Sırala)</strong>
+          <span id="vidTimelineMeta" style="font-size:12px;color:var(--accent)">3 klip · Toplam 13 sn</span>
+        </div>
+        <div id="vidTimelineList" class="vid-timeline-list"></div>
+
         <div id="vidProgressWrap" class="hidden" style="padding:8px;border-radius:7px;background:rgba(255,255,255,0.04);border:1px solid var(--line)">
           <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span id="vidStageLabel">Hazırlanıyor...</span><strong id="vidPctLabel">0%</strong></div>
           <progress id="vidProgressBar" max="100" value="0" style="width:100%"></progress>
         </div>
-        <video id="vidPreviewEl" class="hidden" controls style="width:100%;max-height:260px;border-radius:8px;background:#000"></video>
+        <video id="vidPreviewEl" class="hidden" controls style="width:100%;max-height:240px;border-radius:8px;background:#000"></video>
         <div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
           <button type="button" id="btnCancelVideoRec" class="sec-btn hidden">İptal Et</button>
           <button type="button" id="btnDownloadVideo" class="sec-btn hidden">⬇ Videoyu İndir</button>
-          <button type="button" id="btnStartVideoRec" class="cta-btn">▶ Kaydı Başlat</button>
+          <button type="button" id="btnStartVideoRec" class="cta-btn">▶ Birleştir ve Videoyu İndir</button>
         </div>
       </div>
     </div>
@@ -622,6 +641,6 @@
   </aside>
 
   <script defer src="./public/vendor/pdfjs/pdf.min.js"></script>
-  <script type="module" src="./src/main.js?v=20261126-v35"></script>
+  <script type="module" src="./src/main.js?v=20261126-v36"></script>
 </body>
 </html>

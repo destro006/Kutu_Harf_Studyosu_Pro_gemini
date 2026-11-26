@@ -1,9 +1,11 @@
 import { computeSignageDimensionData, renderDimensions2DOverlay } from './Dimensions3DOverlay.js';
 
 /**
- * Local Zero-API-Cost Cinematic Client Presentation Video Recorder
- * - Exact wall-clock timing via performance.now() (12s selection => exact 12.0s video)
- * - Smooth Catmull-Rom spline camera trajectories across 6 Turkish cinematography roles
+ * Local Zero-API-Cost Studio Video Sequencer & Recorder
+ * - Exact wall-clock timing via performance.now()
+ * - Multi-clip timeline sequencer with Drag reorder & Fade / Cut transitions
+ * - Automatically hides selection boxes / helpers / gizmos during recording
+ * - High studio bitrate (12-15 Mbps), 60fps default, min(DPR, 2) crisp output
  */
 export const VIDEO_ROLES = [
   { id: 'luxury_arch', label: 'Lüks Mimari Sunum', desc: 'Geniş açılış, yörünge taraması ve gündüzden geceye halo geçişi', aspect: '16:9' },
@@ -12,6 +14,12 @@ export const VIDEO_ROLES = [
   { id: 'detail_closeup', label: 'Detay & Malzeme Yakın Çekim', desc: 'Pah, fırça dokusu, krom yansıma ve yan bant derinlik taraması', aspect: '16:9' },
   { id: 'orbit_360', label: '360° Ürün Turu', desc: 'Tabela ekseni etrafında kesintisiz 360 derece ürün dönüşü', aspect: '16:9' },
   { id: 'reels_vertical', label: 'Sosyal Medya / Reels 9:16', desc: 'Instagram / TikTok dikey formatında dinamik yakın çekim akışı', aspect: '9:16' },
+];
+
+export const DEFAULT_VIDEO_CLIPS = [
+  { id: 'clip_1', role: 'detail_closeup', durationSec: 4, transition: 'fade' },
+  { id: 'clip_2', role: 'night_led', durationSec: 5, transition: 'fade' },
+  { id: 'clip_3', role: 'tech_dims', durationSec: 4, transition: 'cut' },
 ];
 
 export const CHOREOGRAPHY_STAGES = [
@@ -105,7 +113,6 @@ export function sampleChoreographyKeyframe(tNorm, options = {}) {
   const track = ROLE_TRACKS[role] || ROLE_TRACKS.luxury_arch;
   const easedT = easeInOutCubic(t) * 0.65 + t * 0.35;
   const pos = sampleSplineTrack(track, easedT);
-
   const stage = CHOREOGRAPHY_STAGES.find(s => t >= s.start && t <= s.end) || CHOREOGRAPHY_STAGES[3];
 
   let night = true;
@@ -141,6 +148,51 @@ export function sampleChoreographyKeyframe(tNorm, options = {}) {
   };
 }
 
+export function computeSequenceTimeline(clips = []) {
+  const list = Array.isArray(clips) && clips.length ? clips : DEFAULT_VIDEO_CLIPS;
+  let cursor = 0;
+  const segments = list.map((c, index) => {
+    const dur = Math.max(2, Math.min(30, Number(c?.durationSec) || 4));
+    const roleMeta = VIDEO_ROLES.find(r => r.id === c?.role) || VIDEO_ROLES[0];
+    const seg = {
+      id: c?.id || `clip_${index + 1}`,
+      index,
+      role: roleMeta.id,
+      roleLabel: roleMeta.label,
+      durationSec: dur,
+      transition: c?.transition === 'cut' ? 'cut' : 'fade',
+      startSec: cursor,
+      endSec: cursor + dur,
+    };
+    cursor += dur;
+    return seg;
+  });
+  return { totalDurationSec: cursor, segments };
+}
+
+export function sampleSequenceKeyframe(elapsedSec, timeline, options = {}) {
+  const segs = timeline?.segments || [];
+  if (!segs.length) return { ...sampleChoreographyKeyframe(0, options), clipIndex: 0, clipLabel: 'Klip 1', crossFadeAlpha: 1 };
+  const clamped = Math.max(0, Math.min(timeline.totalDurationSec, Number(elapsedSec) || 0));
+  const seg = segs.find(s => clamped <= s.endSec) || segs[segs.length - 1];
+  const localElapsed = clamped - seg.startSec;
+  const localNorm = Math.max(0, Math.min(1, localElapsed / Math.max(0.1, seg.durationSec)));
+  const kf = sampleChoreographyKeyframe(localNorm, { role: seg.role, showDimensions: options.showDimensions });
+  const prevSeg = seg.index > 0 ? segs[seg.index - 1] : null;
+  const fadeDur = 0.35;
+  const crossFadeAlpha = prevSeg && prevSeg.transition === 'fade' && localElapsed < fadeDur
+    ? easeInOutCubic(localElapsed / fadeDur)
+    : 1;
+  return {
+    ...kf,
+    clipIndex: seg.index,
+    clipLabel: `${seg.index + 1}/${segs.length}: ${seg.roleLabel}`,
+    clipRole: seg.role,
+    transition: seg.transition,
+    crossFadeAlpha,
+  };
+}
+
 export function pickSupportedVideoMimeType() {
   if (typeof MediaRecorder === 'undefined') return null;
   const candidates = [
@@ -163,10 +215,11 @@ export async function recordPresentationVideo({
   state,
   fontMap,
   metrics,
+  clips = null,
   width = 1280,
   height = 720,
   durationSec = 8,
-  fps = 30,
+  fps = 60,
   role = 'luxury_arch',
   showDimensions = true,
   onProgress = () => {},
@@ -180,15 +233,26 @@ export async function recordPresentationVideo({
     throw new Error('Tarayıcı MediaRecorder video kaydını desteklemiyor.');
   }
 
+  const timeline = computeSequenceTimeline(
+    Array.isArray(clips) && clips.length ? clips : [{ id: 'single', role, durationSec, transition: 'cut' }]
+  );
+
   const outCanvas = document.createElement('canvas');
   outCanvas.width = width;
   outCanvas.height = height;
   const ctx = outCanvas.getContext('2d');
 
-  const stream = outCanvas.captureStream(fps);
+  const prevClipCanvas = document.createElement('canvas');
+  prevClipCanvas.width = width;
+  prevClipCanvas.height = height;
+  const prevClipCtx = prevClipCanvas.getContext('2d');
+
+  const targetFps = Math.max(24, Math.min(60, Number(fps) || 60));
+  const bitrate = (width >= 1920 || height >= 1920) ? 15_000_000 : 12_000_000;
+  const stream = outCanvas.captureStream(targetFps);
   const recorder = picked.mimeType
-    ? new MediaRecorder(stream, { mimeType: picked.mimeType, videoBitsPerSecond: 6_000_000 })
-    : new MediaRecorder(stream, { videoBitsPerSecond: 6_000_000 });
+    ? new MediaRecorder(stream, { mimeType: picked.mimeType, videoBitsPerSecond: bitrate })
+    : new MediaRecorder(stream, { videoBitsPerSecond: bitrate });
   const chunks = [];
   recorder.ondataavailable = e => { if (e.data?.size) chunks.push(e.data); };
   const stoppedPromise = new Promise((resolve, reject) => {
@@ -208,6 +272,16 @@ export async function recordPresentationVideo({
   const origNight = state.scene?.night ?? true;
   const origLit = state.lighting?.enabled ?? true;
   const prevPaused = signEngine._paused;
+  const origSelectionVis = signEngine.selectionGroup ? signEngine.selectionGroup.visible : true;
+  const origPageVis = signEngine.pageGroup ? signEngine.pageGroup.visible : true;
+  const hudEl = typeof document !== 'undefined' ? document.getElementById('canvasTransformHud') : null;
+  const origHudHidden = hudEl ? hudEl.classList.contains('hidden') : true;
+
+  const hideStudioSelectionHelpers = () => {
+    if (signEngine.selectionGroup) signEngine.selectionGroup.visible = false;
+    if (signEngine.pageGroup) signEngine.pageGroup.visible = false;
+    if (hudEl) hudEl.classList.add('hidden');
+  };
 
   const applySceneLightingState = (night, lit) => {
     const tempState = {
@@ -216,6 +290,7 @@ export async function recordPresentationVideo({
       lighting: { ...state.lighting, enabled: lit },
     };
     signEngine.updateScene(tempState, fontMap);
+    hideStudioSelectionHelpers();
   };
 
   let curNight = null;
@@ -223,33 +298,43 @@ export async function recordPresentationVideo({
 
   try {
     signEngine.setActive(false);
-    signEngine.renderer.setPixelRatio(1);
+    hideStudioSelectionHelpers();
+    const recDpr = Math.min(typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1, 2);
+    signEngine.renderer.setPixelRatio(recDpr);
     signEngine.renderer.setSize(width, height, false);
-    signEngine.postProcessor?.setSize(width, height);
+    signEngine.postProcessor?.setSize(Math.round(width * recDpr), Math.round(height * recDpr));
     signEngine.camera.aspect = width / height;
     signEngine.camera.updateProjectionMatrix();
 
     const baseRadius = signEngine.orbit.fitRadius || signEngine.orbit.radius || 3.5;
-    const totalMs = Math.max(2000, Number(durationSec) * 1000);
-    const frameIntervalMs = 1000 / Math.max(15, fps);
+    const totalMs = Math.max(2000, timeline.totalDurationSec * 1000);
+    const frameIntervalMs = 1000 / targetFps;
     recorder.start(250);
 
-    // Strictly synchronized to real wall-clock elapsed time so selected 12s outputs exact 12.0s video.
     const startTime = performance.now();
     let frameIndex = 0;
+    let lastClipIdx = 0;
 
     while (true) {
       if (signal?.aborted) throw new DOMException('Video kaydı iptal edildi.', 'AbortError');
       const now = performance.now();
       const elapsedMs = now - startTime;
+      const elapsedSec = Math.min(elapsedMs / 1000, timeline.totalDurationSec);
       const progress = Math.min(elapsedMs / totalMs, 1);
-      const kf = sampleChoreographyKeyframe(progress, { showDimensions, role });
+      const kf = sampleSequenceKeyframe(elapsedSec, timeline, { showDimensions });
+
+      if (kf.clipIndex !== lastClipIdx) {
+        prevClipCtx.clearRect(0, 0, width, height);
+        prevClipCtx.drawImage(outCanvas, 0, 0, width, height);
+        lastClipIdx = kf.clipIndex;
+      }
 
       if (kf.night !== curNight || kf.lightingEnabled !== curLit) {
         curNight = kf.night;
         curLit = kf.lightingEnabled;
         applySceneLightingState(curNight, curLit);
       }
+      hideStudioSelectionHelpers();
 
       const r = baseRadius * kf.radiusMult;
       const tx = kf.targetOffsetX * Math.max(0.5, signEngine.lastSizeM?.w || 1.5);
@@ -268,6 +353,13 @@ export async function recordPresentationVideo({
       ctx.clearRect(0, 0, width, height);
       ctx.drawImage(signEngine.renderer.domElement, 0, 0, width, height);
 
+      if (kf.crossFadeAlpha < 0.99 && kf.clipIndex > 0) {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, 1 - kf.crossFadeAlpha);
+        ctx.drawImage(prevClipCanvas, 0, 0, width, height);
+        ctx.restore();
+      }
+
       if (kf.dimsOpacity > 0.01) {
         const dimData = computeSignageDimensionData(signEngine, state, metrics);
         renderDimensions2DOverlay(ctx, width, height, signEngine.camera, dimData, {
@@ -276,7 +368,7 @@ export async function recordPresentationVideo({
         });
       }
 
-      onProgress({ percent: Math.round(progress * 100), stageLabel: kf.stage.label });
+      onProgress({ percent: Math.round(progress * 100), stageLabel: `${kf.clipLabel} · ${kf.stage.label}` });
       if (progress >= 1) break;
 
       frameIndex++;
@@ -296,6 +388,9 @@ export async function recordPresentationVideo({
     };
   } finally {
     try { if (recorder.state !== 'inactive') recorder.stop(); } catch {}
+    if (signEngine.selectionGroup) signEngine.selectionGroup.visible = origSelectionVis;
+    if (signEngine.pageGroup) signEngine.pageGroup.visible = origPageVis;
+    if (hudEl && !origHudHidden) hudEl.classList.remove('hidden');
     signEngine.orbit.azimuth = origOrbit.az;
     signEngine.orbit.polar = origOrbit.pol;
     signEngine.orbit.radius = origOrbit.rad;
