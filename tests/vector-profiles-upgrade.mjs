@@ -223,12 +223,12 @@ assert(traceStudioHtml.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && traceStudioHt
 assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes("if (state.viewMode === 'vector')"));
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
-assert(mainJs.includes('./public/trace-studio/index.html?v=20261126-v9'));
-assert(rootHtml.includes('./src/main.js?v=20261126-v37'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v37'));
+assert(mainJs.includes('./public/trace-studio/index.html?v=20261126-v10'));
+assert(rootHtml.includes('./src/main.js?v=20261126-v38'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v38'));
 assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
-assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v37'));
-console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
+assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v38'));
+console.log('✓ Image Studio tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
 const scriptMatch = traceStudioHtml.match(/<script>([\s\S]*)<\/script>\s*<\/body>/);
@@ -262,7 +262,8 @@ const sandbox = {
 sandbox.ImageData = class ImageData { constructor(d, w, h) { this.data = d; this.width = w; this.height = h; } };
 vm.runInNewContext(scriptMatch[1], sandbox);
 const engine = sandbox.window.__TRACE_ENHANCE_ENGINE__;
-assert(engine && Array.isArray(engine.PRESETS) && engine.PRESETS.length === 8, 'Expected 8 presets in Image Tracer engine');
+assert(engine && Array.isArray(engine.PRESETS) && engine.PRESETS.length === 5, 'Expected 5 pro presets in Image Studio engine');
+assert(!engine.PRESETS.some(p => p.id === 'photo_3d_nr' || p.id === 'photo_3d_soft'), 'Legacy Photo 3D presets must be removed');
 
 // Build a synthetic 96x64 RGBA test image covering:
 // - top-left (x<48, y<32): flat muted warm badge with dark text-like stripes
@@ -368,14 +369,13 @@ const strokeMinLum = (buf) => {
   return m;
 };
 
-assert(avgChroma(outputs.get('digital_art')) > avgChroma(outputs.get('photo_3d_soft')) + 8, 'digital_art must boost chroma saturation');
-assert(edgeEnergy(outputs.get('photo_sharp')) > edgeEnergy(outputs.get('photo_3d_soft')) + 15, 'photo_sharp must have crisper edges than photo_3d_soft');
-assert(edgeEnergy(outputs.get('diffusion_razor')) > edgeEnergy(outputs.get('photo_3d_nr')) + 10, 'diffusion_razor must have crisper edges than photo_3d_nr');
-assert(noiseDiff(outputs.get('photo_3d_soft')) < noiseDiff(outputs.get('photo_sharp')), 'photo_3d_soft must reduce noise vs photo_sharp');
-assert(noiseDiff(outputs.get('photo_3d_nr')) < noiseDiff(srcBuf), 'photo_3d_nr must reduce input noise');
-assert(strokeMinLum(outputs.get('photo_text')) < strokeMinLum(outputs.get('photo_3d_soft')), 'photo_text must deepen ink strokes vs photo_3d_soft');
-assert(strokeMinLum(outputs.get('pixel_line')) < strokeMinLum(outputs.get('photo_3d_soft')), 'pixel_line must deepen ink strokes vs photo_3d_soft');
-console.log('✓ All 8 Image Tracer enhancement presets verified as visually & mathematically distinct');
+assert(avgChroma(outputs.get('facade_hdr')) > avgChroma(outputs.get('arch_denoise')) + 6, 'facade_hdr must boost color vibrance & local clarity');
+assert(edgeEnergy(outputs.get('super_res_4k')) > edgeEnergy(outputs.get('arch_denoise')) + 12, 'super_res_4k must have crisper edges than arch_denoise');
+assert(edgeEnergy(outputs.get('ultra_logo_clean')) > edgeEnergy(outputs.get('arch_denoise')) + 10, 'ultra_logo_clean must have crisper edges than arch_denoise');
+assert(noiseDiff(outputs.get('arch_denoise')) < noiseDiff(outputs.get('super_res_4k')), 'arch_denoise must reduce noise vs super_res_4k');
+assert(noiseDiff(outputs.get('arch_denoise')) < noiseDiff(srcBuf), 'arch_denoise must reduce input noise');
+assert(strokeMinLum(outputs.get('laser_cnc_contrast')) < strokeMinLum(outputs.get('arch_denoise')), 'laser_cnc_contrast must deepen ink strokes vs arch_denoise');
+console.log('✓ All 5 pro Image Studio enhancement presets verified as visually & mathematically distinct');
 
 // 11. 1-Click CorelDRAW Nesting Integration (sheets, plate dims, selected body/hole colors, VBA & PS1 syntax)
 const corelSheets = [{

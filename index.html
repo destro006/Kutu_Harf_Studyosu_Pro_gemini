@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Kutu Harf Stüdyosu — Profesyonel 3D Tabela CAD/CAM &amp; İmalat Stüdyosu</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Crect x='9' y='7' width='14' height='18' rx='3' fill='%23ffb547'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./src/styles/studio.css?v=20261126-v37">
+  <link rel="stylesheet" href="./src/styles/studio.css?v=20261126-v38">
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -52,7 +52,7 @@
         <button type="button" data-main-ws="design2d">✎ 2D Tasarım</button>
         <button type="button" data-main-ws="model3d" class="on">⬡ 3D Kutu Harf</button>
         <button type="button" data-main-ws="materials">◈ Malzeme ve Aydınlatma</button>
-        <button type="button" data-main-ws="tracer">✦ Image Tracer</button>
+        <button type="button" data-main-ws="tracer">✦ Image Studio</button>
         <button type="button" data-main-ws="nesting">▦ Nesting</button>
         <button type="button" data-main-ws="aistudio">✦ AI Stüdyo</button>
         <button type="button" data-main-ws="cnc">⚙ Üretim / CNC</button>
@@ -83,6 +83,7 @@
           <button class="tool-btn" data-tool="scale" title="Ölçekle (S)">⤢<span>Ölçek</span><kbd class="rail-kbd">S</kbd></button>
           <button class="tool-btn" data-tool="rotate" title="3D Döndür (Alt+F8)">↻<span>Döndür</span><kbd class="rail-kbd">A+F8</kbd></button>
           <button type="button" class="tool-btn" id="btnAlignmentRail" title="Hizalama ve Dağıtma" aria-expanded="false" aria-controls="alignmentFlyout"><i class="align-rail-icon"></i><span>Hizala ▸</span></button>
+          <button class="tool-btn" data-tool="perspective" title="Cephe 4 Köşe Perspektif & Ölçekleme Aracı">⤢<span>Perspektif</span></button>
           <button class="tool-btn" data-tool="node" title="Düğüm / Şekil Düzenleme (F10)">◈<span>Düğüm</span><kbd class="rail-kbd">F10</kbd></button>
         </div>
         <div class="rail-sep"></div>
@@ -281,11 +282,45 @@
     </div>
   </div>
 
-  <dialog id="textEditDialog" class="text-edit-dialog" aria-labelledby="textEditTitle">
+  <dialog id="textEditDialog" class="text-edit-dialog text-edit-dialog--pro" aria-labelledby="textEditTitle">
     <form id="textEditForm">
-      <h2 id="textEditTitle">Metni Düzenle</h2>
+      <h2 id="textEditTitle">Metni ve Tipografiyi Düzenle</h2>
+      <div class="te-font-row">
+        <div class="te-field" style="flex:1;min-width:0">
+          <label for="textEditFont">Yazı Tipi (Font)</label>
+          <select id="textEditFont" class="bend-select"></select>
+        </div>
+        <label class="sec-btn" style="height:34px;display:inline-flex;align-items:center;cursor:pointer;white-space:nowrap">
+          ＋ Özel Font (.ttf/.otf)
+          <input id="textEditFontUpload" type="file" accept=".ttf,.otf,.woff" class="hidden">
+        </label>
+      </div>
+      <div class="te-format-bar">
+        <button type="button" id="textEditBold" class="te-fmt-btn" title="Kalın"><b>B</b></button>
+        <button type="button" id="textEditItalic" class="te-fmt-btn" title="İtalik"><i>I</i></button>
+        <button type="button" id="textEditCase" class="te-fmt-btn" title="BÜYÜK / küçük harf dönüştür">Aa</button>
+        <span class="te-sep"></span>
+        <button type="button" class="te-fmt-btn" data-te-align="left" title="Sola Hizala">⫦</button>
+        <button type="button" class="te-fmt-btn" data-te-align="center" title="Ortala">≡</button>
+        <button type="button" class="te-fmt-btn" data-te-align="right" title="Sağa Hizala">⫥</button>
+      </div>
+      <div class="te-num-grid">
+        <div class="te-field">
+          <label for="textEditSize">Yazı Yüksekliği (mm)</label>
+          <input id="textEditSize" type="number" min="20" max="3000" step="10" value="400">
+        </div>
+        <div class="te-field">
+          <label for="textEditSpacing">Harf Aralığı (mm)</label>
+          <input id="textEditSpacing" type="number" min="-50" max="200" step="1" value="8">
+        </div>
+        <div class="te-field">
+          <label for="textEditLineHeight">Satır Yüksekliği (×)</label>
+          <input id="textEditLineHeight" type="number" min="0.8" max="3.0" step="0.05" value="1.25">
+        </div>
+      </div>
       <label for="textEditInput">Tabela yazısı</label>
-      <textarea id="textEditInput" rows="4" required spellcheck="false"></textarea>
+      <textarea id="textEditInput" rows="3" required spellcheck="false"></textarea>
+      <div id="textEditLivePreview" class="te-live-preview"></div>
       <p>Enter: Uygula · Shift + Enter: Yeni satır · Esc: İptal</p>
       <div class="text-edit-actions"><button type="button" id="textEditCancel" class="sec-btn">İptal</button><button type="submit" class="cta-btn">Uygula</button></div>
     </form>
@@ -644,6 +679,6 @@
   </aside>
 
   <script defer src="./public/vendor/pdfjs/pdf.min.js"></script>
-  <script type="module" src="./src/main.js?v=20261126-v37"></script>
+  <script type="module" src="./src/main.js?v=20261126-v38"></script>
 </body>
 </html>

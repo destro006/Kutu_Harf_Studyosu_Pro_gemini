@@ -245,13 +245,15 @@ export function analyzeRasterLogoQuality(rgba, width, height, meta = {}) {
   score = Math.max(0, Math.min(100, Math.round(score)));
   const isLowQuality = score < 70 || reasons.length >= 2 || minSide < 200 || maxSide < 380;
 
-  let recommendedPreset = 'art_vector';
+  let recommendedPreset = 'ultra_logo_clean';
   if ((minSide < 220 || maxSide < 380) && colorCount <= 8 && borderStd <= 20) {
-    recommendedPreset = 'pixel_line';
+    recommendedPreset = 'laser_cnc_contrast';
   } else if (borderStd > 24 || colorCount > 18) {
-    recommendedPreset = 'photo_text';
+    recommendedPreset = 'facade_hdr';
   } else if (hasJpegNoise || bgNoise > 4.5) {
-    recommendedPreset = 'photo_3d_nr';
+    recommendedPreset = 'arch_denoise';
+  } else if (maxSide < 900) {
+    recommendedPreset = 'super_res_4k';
   }
 
   return {

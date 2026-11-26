@@ -50,15 +50,24 @@ export class PhotomontageOverlay {
           ${!confirmed ? '<svg id="pmHandlesSvg" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none"></svg><div id="pmHandlesLayer" style="position:absolute;inset:0"></div>' : ''}
           ${!confirmed ? `
             <div class="pm-action-bar pm-action-bar--top-right" id="pmActionBar">
-              <button type="button" id="pmConfirmBtn" class="cta-btn" title="Perspektifi onayla ve Image Tracer'a gönder (Enter)">✓ Onayla</button>
+              <button type="button" id="pmConfirmBtn" class="cta-btn" title="Cephe yerleşimini 3D sahneye uygula (Enter)">✓ Onayla</button>
               <button type="button" id="pmResetCornersBtn" class="sec-btn" title="4 köşeyi varsayılan konuma döndür">↺ Sıfırla</button>
               <button type="button" id="pmCloseBtn" class="sec-btn pm-close-btn" title="Fotomontaj ekranından çık ve 3D sahneye dön (Esc)">✕ Çıkış</button>
             </div>
-            <div class="pm-hint-pill">4 sarı köşeyi sürükleyin · Enter veya sağ üstten Onayla · Esc çıkış</div>
+            <div class="pm-resize-dock" id="pmResizeDock">
+              <button type="button" id="pmModeToggle" class="sec-btn" data-mode="${this.resizeUniform ? 'scale' : 'perspective'}">${this.resizeUniform ? '⤢ Mod: Orantılı Ölçek' : '⬡ Mod: 4 Köşe Perspektif'}</button>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11.5px">Ölçek
+                <input id="pmScaleRange" type="range" min="35" max="200" step="5" value="100" style="width:105px;accent-color:var(--accent)">
+                <b id="pmScaleVal">100%</b>
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px">G (mm)<input id="pmSignW" type="number" min="100" max="10000" step="20" value="${Math.round(this.signWidthMm || 1500)}" style="width:66px"></label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px">Y (mm)<input id="pmSignH" type="number" min="40" max="4000" step="10" value="${Math.round(this.signHeightMm || 400)}" style="width:62px"></label>
+            </div>
+            <div class="pm-hint-pill">Alınlığa tıklayın veya 4 sarı köşeyi sürükleyin · Enter: Uygula · Esc: Çıkış</div>
           ` : `
             <div class="pm-confirmed-bar" id="pmConfirmedBar">
-              <button type="button" id="pmSendTracerBtn" class="cta-btn" title="Perspektifli görüntüyü Image Tracer'a gönder">✦ Image Tracer'a Gönder</button>
-              <button type="button" id="pmEditPerspBtn" class="sec-btn" title="4 köşe perspektif tutamaçlarını tekrar aç">⤢ Perspektifi Düzenle</button>
+              <button type="button" id="pmSendTracerBtn" class="cta-btn" title="Perspektifli görüntüyü Image Studio'ya gönder">✦ Image Studio'ya Gönder</button>
+              <button type="button" id="pmEditPerspBtn" class="sec-btn" title="4 köşe perspektif ve boyut tutamaçlarını tekrar aç">⤢ Perspektifi Düzenle</button>
               <button type="button" id="pmQuickExportBtn" class="sec-btn" title="Cephe sunum PNG indir">⬇ Sunum PNG</button>
               <button type="button" id="pmCloseBtn" class="sec-btn pm-close-btn" title="Fotomontaj ekranından çık ve 3D sahneye dön (Esc)">✕ Çıkış</button>
             </div>
@@ -138,6 +147,37 @@ export class PhotomontageOverlay {
     this.container.querySelector('#pmEditPerspBtn')?.addEventListener('click', () => this.callbacks.onEdit?.());
     this.container.querySelector('#pmQuickExportBtn')?.addEventListener('click', () => this.callbacks.onExport?.());
     this.container.querySelector('#pmCloseBtn')?.addEventListener('click', () => this.callbacks.onClose?.());
+    this.container.querySelector('#pmModeToggle')?.addEventListener('click', e => {
+      this.resizeUniform = !this.resizeUniform;
+      e.currentTarget.dataset.mode = this.resizeUniform ? 'scale' : 'perspective';
+      e.currentTarget.textContent = this.resizeUniform ? '⤢ Mod: Orantılı Ölçek' : '⬡ Mod: 4 Köşe Perspektif';
+      this.callbacks.onModeChange?.(this.resizeUniform ? 'scale' : 'perspective');
+    });
+    const baseQuad = pm.cornersNorm.map(c => ({ x: c.x, y: c.y }));
+    this.container.querySelector('#pmScaleRange')?.addEventListener('input', e => {
+      const pct = Math.max(35, Math.min(200, Number(e.target.value) || 100));
+      const lbl = this.container.querySelector('#pmScaleVal');
+      if (lbl) lbl.textContent = `${pct}%`;
+      const s = pct / 100;
+      const cx = baseQuad.reduce((a, p) => a + p.x, 0) / 4;
+      const cy = baseQuad.reduce((a, p) => a + p.y, 0) / 4;
+      pm.cornersNorm = baseQuad.map(p => ({
+        x: Math.max(0.02, Math.min(0.98, cx + (p.x - cx) * s)),
+        y: Math.max(0.02, Math.min(0.98, cy + (p.y - cy) * s)),
+      }));
+      updateTransform();
+    });
+    this.container.querySelector('#pmScaleRange')?.addEventListener('change', () => {
+      this.callbacks.onCornersChange?.(pm.cornersNorm);
+    });
+    this.container.querySelector('#pmSignW')?.addEventListener('change', e => {
+      const v = Number(e.target.value);
+      if (Number.isFinite(v) && v >= 50) this.callbacks.onResizeSignMm?.('w', v);
+    });
+    this.container.querySelector('#pmSignH')?.addEventListener('change', e => {
+      const v = Number(e.target.value);
+      if (Number.isFinite(v) && v >= 20) this.callbacks.onResizeSignMm?.('h', v);
+    });
 
     const onEsc = (e) => {
       if (e.key !== 'Escape') return;
@@ -153,7 +193,7 @@ export class PhotomontageOverlay {
       // Smart Click-to-Place: clicking directly on blank facade area centers an aspect-locked fascia quad
       const frameEl = this.container.querySelector('.pm-frame');
       frameEl?.addEventListener('pointerdown', (e) => {
-        if (this.dragIdx >= 0 || e.target.closest('button') || e.target.closest('[title^="Köşe"]')) return;
+        if (this.dragIdx >= 0 || e.target.closest('button, input, select, label, .pm-resize-dock, .pm-action-bar, .pm-confirmed-bar') || e.target.closest('[title^="Köşe"]')) return;
         const rect = bgImg.getBoundingClientRect();
         if (!rect.width || !rect.height) return;
         const nx = Math.max(0.18, Math.min(0.82, (e.clientX - rect.left) / rect.width));
@@ -177,7 +217,20 @@ export class PhotomontageOverlay {
         const rect = bgImg.getBoundingClientRect();
         const nx = Math.max(0.02, Math.min(0.98, (e.clientX - rect.left) / Math.max(1, rect.width)));
         const ny = Math.max(0.02, Math.min(0.98, (e.clientY - rect.top) / Math.max(1, rect.height)));
-        pm.cornersNorm[this.dragIdx] = { x: nx, y: ny };
+        if (this.resizeUniform) {
+          const cx = pm.cornersNorm.reduce((a, p) => a + p.x, 0) / 4;
+          const cy = pm.cornersNorm.reduce((a, p) => a + p.y, 0) / 4;
+          const oldP = pm.cornersNorm[this.dragIdx];
+          const oldDist = Math.max(0.02, Math.hypot(oldP.x - cx, oldP.y - cy));
+          const newDist = Math.max(0.04, Math.hypot(nx - cx, ny - cy));
+          const factor = Math.max(0.3, Math.min(2.5, newDist / oldDist));
+          pm.cornersNorm = pm.cornersNorm.map(p => ({
+            x: Math.max(0.02, Math.min(0.98, cx + (p.x - cx) * factor)),
+            y: Math.max(0.02, Math.min(0.98, cy + (p.y - cy) * factor)),
+          }));
+        } else {
+          pm.cornersNorm[this.dragIdx] = { x: nx, y: ny };
+        }
         updateTransform();
       };
       const onUp = () => {

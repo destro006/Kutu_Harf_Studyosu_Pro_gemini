@@ -130,13 +130,14 @@ export function renderNestingCenter(state, ctx) {
             </div>
             <div class="cws-fileli-card">
               <div class="cws-fileli-card-head"><i class="nest-part-dot" style="background:#38bdf8"></i><span>Pleksi (Akrilik) Kesim</span></div>
+              <div class="field-row"><label for="cwsFileliAcrylicInset">Pleksi / Akrilik İçe Küçültme (${unit})</label><input id="cwsFileliAcrylicInset" type="number" min="0" max="${show(25)}" step="${show(0.5)}" value="${state.fileli?.acrylicCutInsetMm != null ? show(state.fileli.acrylicCutInsetMm) : ''}" placeholder="${show(2)} (Otomatik)"></div>
               <div class="field-row"><label for="cwsFileliAcrylicOverlap">Pleksi Binme Payı (${unit})</label><input id="cwsFileliAcrylicOverlap" type="number" min="0" max="${show(25)}" step="${show(0.5)}" value="${show(acOverlapMm)}"></div>
-              <small class="nest-overlap-hint">Filenin iç boşluğundan her kenarda kaç ${unit} büyük kesileceği (önerilen: min. 3 mm).</small>
+              <small class="nest-overlap-hint">İçe küçültme girilirse harf dışından doğrudan küçültür; boşsa file içine +binme payı uygulanır.</small>
               <div class="field-row"><label for="cwsFileliAcrylicThick">Pleksi Kalınlığı (${unit})</label><input id="cwsFileliAcrylicThick" type="number" min="${show(1)}" max="${show(20)}" step="${show(0.5)}" value="${show(state.fileli?.acrylicThicknessMm ?? 3)}"></div>
             </div>
             <div class="cws-fileli-card">
-              <div class="cws-fileli-card-head"><i class="nest-part-dot" style="background:#34d399"></i><span>Arka Dekota Kesim</span></div>
-              <div class="field-row"><label for="cwsFileliDekotaInset">Dekota İçe Küçültme (${unit})</label><input id="cwsFileliDekotaInset" type="number" min="0" max="${show(25)}" step="${show(0.5)}" value="${show(dekInsetMm)}"></div>
+              <div class="cws-fileli-card-head"><i class="nest-part-dot" style="background:#34d399"></i><span>Arka Dekota / Foreks Kesim</span></div>
+              <div class="field-row"><label for="cwsFileliDekotaInset">Dekota / Foreks İçe Küçültme (${unit})</label><input id="cwsFileliDekotaInset" type="number" min="0" max="${show(25)}" step="${show(0.5)}" value="${show(dekInsetMm)}"></div>
               <small class="nest-overlap-hint">Harf dış hattından her kenarda kaç ${unit} içe doğru küçük kesileceği (yanak içine oturması için).</small>
               <div class="field-row"><label for="cwsFileliDekotaThick">Dekota Kalınlığı (${unit})</label><input id="cwsFileliDekotaThick" type="number" min="${show(1)}" max="${show(30)}" step="${show(0.5)}" value="${show(dekThickMm)}"></div>
             </div>

@@ -236,6 +236,8 @@ export function extractNestingItems(metricsList, state) {
         const acThick = state.fileli?.acrylicThicknessMm || 3;
         const dekThick = state.fileli?.dekotaThicknessMm || 5;
         const overlapMm = Math.max(0, Number(state.fileli?.acrylicOverlapMm ?? 3));
+        const hasDirectAcrylicInset = Number.isFinite(Number(state.fileli?.acrylicCutInsetMm)) && state.fileli?.acrylicCutInsetMm !== null;
+        const acrylicCutInsetMm = hasDirectAcrylicInset ? Math.max(0, Number(state.fileli.acrylicCutInsetMm)) : null;
         const dekotaInsetMm = Math.max(0, Number(state.fileli?.dekotaInsetMm ?? 2));
         const fmtNum = v => Number.isInteger(v) ? String(v) : v.toFixed(1).replace(/\.0$/, '');
         const overlapLabel = fmtNum(overlapMm);
@@ -245,9 +247,9 @@ export function extractNestingItems(metricsList, state) {
         const fileWidthChanged = m.fileWidthMm != null && Math.abs(targetFileW - m.fileWidthMm) > 1e-4;
 
         const fileGroupName = `File Çerçeve · ${fileThick} mm`;
-        const acrylicGroupName = overlapMm > 0.01
-          ? `Pleksi (+${overlapLabel} mm Pay) · ${acThick} mm`
-          : `Pleksi (Akrilik) · ${acThick} mm`;
+        const acrylicGroupName = acrylicCutInsetMm !== null
+          ? `Pleksi (-${fmtNum(acrylicCutInsetMm)} mm İçe) · ${acThick} mm`
+          : (overlapMm > 0.01 ? `Pleksi (+${overlapLabel} mm Pay) · ${acThick} mm` : `Pleksi (Akrilik) · ${acThick} mm`);
         const dekotaGroupName = dekotaInsetMm > 0.01
           ? `Arka Dekota (-${dekotaInsetLabel} mm) · ${dekThick} mm`
           : `Arka Dekota · ${dekThick} mm`;
@@ -275,7 +277,12 @@ export function extractNestingItems(metricsList, state) {
         }
         if (targetPart === 'all' || targetPart === 'acrylic') {
           let acrylicCutPolys = [];
-          if (!fileWidthChanged && m.exportContours?.acrylicCut?.length && Math.abs((m.exportContours.acrylicOverlapMm ?? overlapMm) - overlapMm) < 1e-4) {
+          if (acrylicCutInsetMm !== null && m.polygonsMm?.length) {
+            for (const poly of m.polygonsMm) {
+              const directRes = computeFileliContours(poly.outer, poly.holes, acrylicCutInsetMm);
+              if (directRes.ok && directRes.acrylicPolys?.length) acrylicCutPolys.push(...directRes.acrylicPolys);
+            }
+          } else if (!fileWidthChanged && m.exportContours?.acrylicCut?.length && Math.abs((m.exportContours.acrylicOverlapMm ?? overlapMm) - overlapMm) < 1e-4) {
             acrylicCutPolys = m.exportContours.acrylicCut;
           } else if (m.fileWidthMm != null && m.polygonsMm?.length) {
             for (const poly of m.polygonsMm) {

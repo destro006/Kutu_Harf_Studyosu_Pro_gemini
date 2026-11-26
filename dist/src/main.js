@@ -11,7 +11,7 @@ import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v15';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v37';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v38';
 import { attachTabDragReorder, reorderTabIds } from './ui/TabReorderManager.js';
 import {
   buildBendingJob,
@@ -70,7 +70,7 @@ import { ENVIRONMENT_PRESETS } from './render/EnvironmentManager.js';
 import { LIGHT_COLOR_PRESETS, LIGHTING_MODES } from './render/LightingSystem.js';
 import {detectVectorFormat} from './manufacturing/VectorFormatDetect.js';
 import { BACKGROUND_SCENES } from './photomontage/BackgroundLibrary.js';
-import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js?v=20261126-v37';
+import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js?v=20261126-v38';
 import {
   FACADE_CATEGORIES,
   addCustomFacade,
@@ -332,7 +332,7 @@ async function sendPhotomontageToTracer() {
   pendingTracerImage = { dataUrl, fileName };
   setMainWorkspace('tracer');
   flushPendingTracerImage();
-  studioToast('✓ Perspektif onaylandı ve görüntü Image Tracer sekmesine gönderildi!');
+  studioToast('✓ Perspektif onaylandı ve görüntü Image Studio sekmesine gönderildi!');
   return true;
 }
 let lastSceneResult = { sizeM: { w: 2, h: 0.4 }, metricsList: [], warnings: [] };
@@ -818,6 +818,11 @@ function updateStageChrome(state) {
 
   // Photomontage preview sync (visible across all 3D tabs when photo is loaded and visible)
   if (is3DWorkspace(state) && state.photomontage?.photoUrl && state.photomontage.visible !== false && signEngine && !signEngine.isDisposed) {
+    if (photomontageOverlay) {
+      const sz = objectPhysicalSize(selObj);
+      photomontageOverlay.signWidthMm = sz?.widthMm || lastMetrics?.totalWidthMm || 1500;
+      photomontageOverlay.signHeightMm = sz?.heightMm || lastMetrics?.totalHeightMm || 400;
+    }
     const pmKey = pmRenderKey(state);
     if (!dragBeforeState && (lastPhotomontageScene !== pmKey || !lastPhotomontageUrl)) {
       const cap = capturePhotomontageSign(state);
@@ -826,6 +831,10 @@ function updateStageChrome(state) {
       lastPhotomontageScene = pmKey;
     }
     if (lastPhotomontageUrl) photomontageOverlay?.render(state, lastPhotomontageUrl, lastPhotomontageHaloUrl);
+    if (!state.photomontage.confirmed) {
+      const pmTool = photomontageOverlay?.resizeUniform ? 'scale' : 'perspective';
+      document.querySelectorAll('.cad-rail [data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === pmTool));
+    }
   } else {
     photomontageOverlay?.render({ photomontage: { photoUrl: null } }, null, null);
   }
@@ -3024,10 +3033,11 @@ function readFileAsDataUrl(file) {
 
 function promptLowQualityTracerChoice(fileName, quality) {
   const presetLabels = {
-    art_vector: 'Art & Vector Graphics',
-    pixel_line: 'Pixel & Line Art',
-    photo_text: 'Photo LN + Text',
-    photo_3d_nr: 'Photo, 3D + NR',
+    ultra_logo_clean: 'Ultra Logo Clean AI',
+    super_res_4k: 'Super-Res Logo 4K',
+    facade_hdr: 'Tabela & Cephe HDR',
+    arch_denoise: 'Mimari Photo Denoise',
+    laser_cnc_contrast: 'Lazer / CNC Net Kontur',
   };
   return new Promise(resolve => {
     const existing = document.getElementById('lowQualityTracerModal');
@@ -3038,7 +3048,7 @@ function promptLowQualityTracerChoice(fileName, quality) {
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
     const reasonsHtml = (quality.reasons || []).map(r => `<li>${escapeHtml(r)}</li>`).join('');
-    const presetName = presetLabels[quality.recommendedPreset] || 'Art & Vector Graphics';
+    const presetName = presetLabels[quality.recommendedPreset] || 'Ultra Logo Clean AI';
     modal.innerHTML = `
       <div class="modal-card" style="max-width:460px">
         <div class="modal-head">
@@ -3046,7 +3056,7 @@ function promptLowQualityTracerChoice(fileName, quality) {
           <button type="button" class="close-btn" data-lq-choice="cancel" aria-label="Kapat">✕</button>
         </div>
         <div class="modal-body" style="display:flex;flex-direction:column;gap:10px;font-size:13px">
-          <p style="margin:0;font-weight:600;color:#fff">Bu görsel düşük kaliteli, Image Tracer'da iyileştirip vektöre çevirelim mi?</p>
+          <p style="margin:0;font-weight:600;color:#fff">Bu görsel düşük kaliteli, Image Studio'da iyileştirip vektöre çevirelim mi?</p>
           <div style="font-size:12px;color:var(--muted)">
             <div>Dosya: <b>${escapeHtml(fileName || 'görsel')}</b> · Kalite puanı: <b>%${quality.score}</b></div>
             ${reasonsHtml ? `<ul style="margin:6px 0 6px 18px;padding:0">${reasonsHtml}</ul>` : ''}
@@ -3055,7 +3065,7 @@ function promptLowQualityTracerChoice(fileName, quality) {
           <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:4px">
             <button type="button" class="sec-btn" data-lq-choice="cancel">İptal</button>
             <button type="button" class="sec-btn" data-lq-choice="direct">Doğrudan 3D'ye Çevir</button>
-            <button type="button" class="cta-btn" data-lq-choice="tracer">Image Tracer'da İyileştir</button>
+            <button type="button" class="cta-btn" data-lq-choice="tracer">Image Studio'da İyileştir</button>
           </div>
         </div>
       </div>`;
@@ -3157,8 +3167,8 @@ async function handleLogoUpload(file, opts = {}) {
               };
               setMainWorkspace('tracer');
               flushPendingTracerImage();
-              studioToast('Görsel önerilen ayar ile Image Tracer sekmesine aktarıldı.');
-              if (statusEl) statusEl.textContent = 'Görsel iyileştirme için Image Tracer sekmesine gönderildi.';
+              studioToast('Görsel önerilen ayar ile Image Studio sekmesine aktarıldı.');
+              if (statusEl) statusEl.textContent = 'Görsel iyileştirme için Image Studio sekmesine gönderildi.';
               return;
             }
           }
@@ -3563,7 +3573,7 @@ function setMainWorkspace(ws) {
   if (ws === 'tracer' && tracerWrap) {
     if (!tracerWrap.querySelector('#traceStudioFrame')) {
       traceStudioReady = false;
-      tracerWrap.innerHTML = '<iframe id="traceStudioFrame" class="tracer-iframe" src="./public/trace-studio/index.html?v=20261126-v9" title="Image Tracer Stüdyosu"></iframe>';
+      tracerWrap.innerHTML = '<iframe id="traceStudioFrame" class="tracer-iframe" src="./public/trace-studio/index.html?v=20261126-v10" title="Image Studio"></iframe>';
       tracerWrap.querySelector('#traceStudioFrame')?.addEventListener('load', () => {
         setTimeout(() => {
           if (pendingTracerImage) {
@@ -4362,6 +4372,18 @@ function bindNestingCenterEvents(root) {
   });
   bindFileliLeftInput('cwsFileliThick', 'File metal kalınlığı', 0.5, 10, (s, v) => { s.fileli.fileThicknessMm = v; });
   bindFileliLeftInput('cwsFileliWallThick', 'Yanak sac kalınlığı', 0.2, 3, (s, v) => { s.fileli.metalThicknessMm = v; });
+  root.querySelector('#cwsFileliAcrylicInset')?.addEventListener('change', e => {
+    const raw = String(e.target.value || '').trim();
+    const parsed = raw === '' ? null : displayToMm(raw, store.get().pageLayout?.displayUnit);
+    if (parsed !== null && !Number.isFinite(parsed)) return;
+    const nextVal = parsed === null ? null : Math.max(0, Math.min(25, parsed));
+    mutateData('Pleksi içe küçültme', s => {
+      s.fileli ||= {};
+      s.fileli.acrylicCutInsetMm = nextVal;
+    }, false);
+    sceneDataKey = null;
+    repackNestingSettings('Pleksi içe küçültme', () => {}, false);
+  });
   bindFileliLeftInput('cwsFileliAcrylicOverlap', 'Pleksi binme payı', 0, 25, (s, v) => { s.fileli.acrylicOverlapMm = v; });
   bindFileliLeftInput('cwsFileliAcrylicThick', 'Pleksi kalınlığı', 1, 20, (s, v) => { s.fileli.acrylicThicknessMm = v; });
   bindFileliLeftInput('cwsFileliDekotaInset', 'Dekota içe küçültme', 0, 25, (s, v) => { s.fileli.dekotaInsetMm = v; });
@@ -5366,6 +5388,55 @@ function bindCostCenterEvents(root) {
 }
 
 let textEditTarget=null;
+function syncTextEditDialogControls(state,obj){
+ const metas=fontManager.getAllFontMetas();
+ const fontSel=document.getElementById('textEditFont');
+ if(fontSel){
+   fontSel.innerHTML='';
+   for(const f of metas){
+     const opt=document.createElement('option');
+     opt.value=f.id;
+     opt.textContent=f.isCustom?`${f.label} (Özel)`:f.label;
+     opt.style.fontFamily=f.family;
+     fontSel.appendChild(opt);
+   }
+   fontSel.value=obj.fontId||'cinzel';
+ }
+ const boldBtn=document.getElementById('textEditBold');
+ const italicBtn=document.getElementById('textEditItalic');
+ const sizeIn=document.getElementById('textEditSize');
+ const spacingIn=document.getElementById('textEditSpacing');
+ const lineIn=document.getElementById('textEditLineHeight');
+ const align=obj.textAlign||'center';
+ if(boldBtn)boldBtn.classList.toggle('is-on',(obj.fontWeight||'normal')==='bold');
+ if(italicBtn)italicBtn.classList.toggle('is-on',Boolean(obj.fontItalic));
+ document.querySelectorAll('#textEditDialog [data-te-align]').forEach(b=>b.classList.toggle('is-on',b.dataset.teAlign===align));
+ if(sizeIn)sizeIn.value=Math.round(obj.heightMm??state.dimensions?.heightMm??400);
+ if(spacingIn)spacingIn.value=obj.letterSpacingMm??state.dimensions?.letterSpacingMm??8;
+ if(lineIn)lineIn.value=obj.lineSpacingMult??1.25;
+ updateTextEditLivePreview();
+}
+function updateTextEditLivePreview(){
+ const prev=document.getElementById('textEditLivePreview');
+ const input=document.getElementById('textEditInput');
+ const fontSel=document.getElementById('textEditFont');
+ const boldBtn=document.getElementById('textEditBold');
+ const italicBtn=document.getElementById('textEditItalic');
+ const spacingIn=document.getElementById('textEditSpacing');
+ const lineIn=document.getElementById('textEditLineHeight');
+ if(!prev||!input)return;
+ const meta=fontManager.getAllFontMetas().find(f=>f.id===fontSel?.value);
+ const activeAlign=document.querySelector('#textEditDialog [data-te-align].is-on')?.dataset?.teAlign||'center';
+ prev.textContent=input.value||'Önizleme';
+ prev.style.fontFamily=meta?.family||"'Cinzel', serif";
+ prev.style.fontWeight=boldBtn?.classList.contains('is-on')?'700':String(meta?.weight||500);
+ prev.style.fontStyle=italicBtn?.classList.contains('is-on')?'italic':'normal';
+ prev.style.textAlign=activeAlign;
+ prev.style.justifyContent=activeAlign==='left'?'flex-start':activeAlign==='right'?'flex-end':'center';
+ prev.style.letterSpacing=`${Math.max(-3,Math.min(18,Number(spacingIn?.value||0)*0.22)).toFixed(1)}px`;
+ prev.style.lineHeight=String(Math.max(0.85,Math.min(2.6,Number(lineIn?.value||1.25))));
+ prev.style.fontSize='22px';
+}
 function openTextEditor(id){
  const state=store.get(),obj=editableTextObject(state,id);
  const dialog=document.getElementById('textEditDialog'),input=document.getElementById('textEditInput');
@@ -5376,6 +5447,7 @@ function openTextEditor(id){
  if(is3DWorkspace(state))signEngine?.updateSelectionBox(store.get());
  updateNumericBar(store.get());
  input.value=obj.text||'';
+ syncTextEditDialogControls(state,obj);
  dialog.showModal();input.focus();input.select();return true;
 }
 function bindTextEditor(){
@@ -5383,6 +5455,35 @@ function bindTextEditor(){
  if(!dialog||!input||!form)return;
  const close=()=>{textEditTarget=null;dialog.close();};
  document.getElementById('textEditCancel').onclick=close;
+ document.getElementById('textEditFont')?.addEventListener('change',updateTextEditLivePreview);
+ document.getElementById('textEditSize')?.addEventListener('input',updateTextEditLivePreview);
+ document.getElementById('textEditSpacing')?.addEventListener('input',updateTextEditLivePreview);
+ document.getElementById('textEditLineHeight')?.addEventListener('input',updateTextEditLivePreview);
+ document.getElementById('textEditBold')?.addEventListener('click',e=>{e.currentTarget.classList.toggle('is-on');updateTextEditLivePreview();});
+ document.getElementById('textEditItalic')?.addEventListener('click',e=>{e.currentTarget.classList.toggle('is-on');updateTextEditLivePreview();});
+ document.getElementById('textEditCase')?.addEventListener('click',()=>{
+   const v=input.value||'';
+   const upper=v.toLocaleUpperCase('tr-TR');
+   const lower=v.toLocaleLowerCase('tr-TR');
+   if(v!==upper)input.value=upper;
+   else input.value=lower;
+   updateTextEditLivePreview();
+ });
+ dialog.querySelectorAll('[data-te-align]').forEach(btn=>btn.addEventListener('click',()=>{
+   dialog.querySelectorAll('[data-te-align]').forEach(b=>b.classList.toggle('is-on',b===btn));
+   updateTextEditLivePreview();
+ }));
+ document.getElementById('textEditFontUpload')?.addEventListener('change',async e=>{
+   const f=e.target.files?.[0];e.target.value='';
+   if(!f)return;
+   try{
+     const entry=await fontManager.uploadCustomFont(f);
+     fontMap.set(entry.id,await fontManager.loadFont(entry.id));
+     const obj=textEditTarget?editableTextObject(store.get(),textEditTarget.id):null;
+     syncTextEditDialogControls(store.get(),{...(obj||{}),fontId:entry.id});
+     studioToast(`Özel font yüklendi: ${entry.label}`);
+   }catch(err){studioToast(err?.message||'Font yüklenemedi.',true);}
+ });
  dialog.addEventListener('cancel',e=>{e.preventDefault();close();});
  dialog.addEventListener('close',()=>{textEditTarget=null;});
  dialog.addEventListener('keydown',e=>{
@@ -5390,14 +5491,27 @@ function bindTextEditor(){
    if(e.key==='Escape'){e.preventDefault();close();}
    if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&e.target===input){e.preventDefault();form.requestSubmit();}
  });
- form.addEventListener('submit',e=>{
+ form.addEventListener('submit',async e=>{
    e.preventDefault();const target=textEditTarget,value=input.value,state=store.get();
    if(!target||target.docId!==docManager.activeDocId||target.pageId!==state.activePageId||!editableTextObject(state,target.id)){close();return;}
    if(!value.trim()){input.setCustomValidity('Metin boş olamaz.');input.reportValidity();return;}
-   if(editableTextObject(state,target.id).text!==value)mutate('Metin düzenlendi',s=>applyTextEdit(s,target.id,value));
+   const nextOpts={
+     text:value,
+     fontId:document.getElementById('textEditFont')?.value||undefined,
+     heightMm:Number(document.getElementById('textEditSize')?.value)||undefined,
+     letterSpacingMm:document.getElementById('textEditSpacing')?.value!==''?Number(document.getElementById('textEditSpacing').value):undefined,
+     lineSpacingMult:Number(document.getElementById('textEditLineHeight')?.value)||undefined,
+     textAlign:dialog.querySelector('[data-te-align].is-on')?.dataset?.teAlign||'center',
+     fontWeight:document.getElementById('textEditBold')?.classList.contains('is-on')?'bold':'normal',
+     fontItalic:Boolean(document.getElementById('textEditItalic')?.classList.contains('is-on')),
+   };
+   if(nextOpts.fontId&&!fontMap.has(nextOpts.fontId)){
+     try{fontMap.set(nextOpts.fontId,await fontManager.loadFont(nextOpts.fontId));}catch{}
+   }
+   mutate('Metin ve tipografi düzenlendi',s=>applyTextEdit(s,target.id,nextOpts));
    close();
  });
- input.addEventListener('input',()=>input.setCustomValidity(''));
+ input.addEventListener('input',()=>{input.setCustomValidity('');updateTextEditLivePreview();});
 }
 function showObjectContextMenu(e, objId) {
   if (!contextMenu) return;
@@ -5651,7 +5765,7 @@ function init() {
       const targetWs = ['model3d', 'materials', 'design2d'].includes(lastTracerReturnWs) ? lastTracerReturnWs : 'model3d';
       setMainWorkspace(targetWs);
       await handleLogoUpload(file, { bypassQualityPrompt: true });
-      studioToast('Image Tracer vektörü 3D sahneye aktarıldı.');
+      studioToast('Image Studio vektörü 3D sahneye aktarıldı.');
     } else if (msg.type === 'SIGNAGE_STUDIO_IMPORT_NESTING' && (msg.svgText || msg.dxfText)) {
       const useSvg = Boolean(msg.svgText);
       const rawName = String(msg.fileName || 'trace_vektor').replace(/\.(svg|dxf)$/i, '');
@@ -6508,11 +6622,11 @@ function init() {
     onCornersChange: (corners) => {
       store.update(s => { s.photomontage.cornersNorm = corners; });
     },
-    onConfirm: async () => {
+    onConfirm: () => {
       store.update(s => { s.photomontage.confirmed = true; });
       updateStageChrome(store.get());
       renderActiveWorkspace();
-      await sendPhotomontageToTracer();
+      studioToast('✓ Cephe yerleşimi 3D sahneye uygulandı.');
     },
     onSendToTracer: async () => {
       await sendPhotomontageToTracer();
@@ -6521,6 +6635,16 @@ function init() {
       store.update(s => { s.photomontage.confirmed = false; });
       updateStageChrome(store.get());
       renderActiveWorkspace();
+    },
+    onModeChange: () => {
+      syncWorkspaceRail(store.get().mainWorkspace);
+    },
+    onResizeSignMm: (axis, mm) => {
+      mutate('Cephe tabela boyutu', s => {
+        const o = getSelectedOrFirst(s);
+        if (o && !o.locked) resizeObjectToMm(o, axis, mm, objectPhysicalSize(o));
+        else s.dimensions.heightMm = mm;
+      });
     },
     onResetCorners: () => {
       store.update(s => {
@@ -7128,6 +7252,30 @@ function activateTool(tool) {
   if (tool === 'logo') {
     document.getElementById('globalLogoImport')?.click();
     return;
+  }
+  if (tool === 'perspective') {
+    const st = store.get();
+    if (st.photomontage?.photoUrl) {
+      if (photomontageOverlay) photomontageOverlay.resizeUniform = false;
+      store.update(s => {
+        s.photomontage.visible = true;
+        s.photomontage.confirmed = false;
+        s.activeTool = 'perspective';
+      });
+      updateStageChrome(store.get());
+      renderActiveWorkspace();
+      studioToast('⤢ 4 köşe cephe perspektif aracı aktif.');
+    } else {
+      studioToast('Perspektif için önce Arka Plan & Cephe panelinden cephe fotoğrafı seçin.', true);
+    }
+    return;
+  }
+  if (tool === 'scale') {
+    const st = store.get();
+    if (is3DWorkspace(st) && st.photomontage?.photoUrl && st.photomontage.visible !== false && !st.photomontage.confirmed) {
+      if (photomontageOverlay) photomontageOverlay.resizeUniform = true;
+      updateStageChrome(st);
+    }
   }
   if (tool === 'zoom') {
     signEngine?.zoomBy(0.85);

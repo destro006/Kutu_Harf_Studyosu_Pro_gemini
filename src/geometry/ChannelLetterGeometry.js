@@ -54,14 +54,14 @@ export function polygonMmToThreeShape(outer, holes = [], scale = MM_TO_M) {
   return s;
 }
 
-export function extrudeShapeMm(shapeM, depthMm, bevelMm = 1.6, bevelSegments = 3, curveSegments = 14) {
+export function extrudeShapeMm(shapeM, depthMm, bevelMm = 1.6, bevelSegments = 3, curveSegments = 14, bevelSizeRatio = 0.8) {
   const depthM = Math.max(0.0015, depthMm * MM_TO_M);
   const bM = Math.max(0, Math.min(depthM * 0.35, bevelMm * MM_TO_M));
   const geo = new THREE.ExtrudeGeometry(shapeM, {
     depth: Math.max(0.0005, depthM - bM * 2),
     bevelEnabled: bM > 0.0001,
     bevelThickness: bM,
-    bevelSize: bM * 0.8,
+    bevelSize: bM * bevelSizeRatio,
     bevelSegments,
     curveSegments,
   });
@@ -220,8 +220,9 @@ export function buildChannelComponent(shapesMm, config) {
             exportFileContours.push({ outer: ring.outer, holes: ring.holes });
 
             const rimShape = polygonMmToThreeShape(ring.outer, ring.holes, MM_TO_M);
-            const safeBevel = Math.max(0, Math.min(borderBevelMm, rimThick * 0.2, fileWidthMm * 0.08));
-            const fGeo = extrudeShapeMm(rimShape, rimThick, safeBevel, 2);
+            // Keep 1:1 trim proportion (e.g., 10 mm file on 400 mm letter = 1:40) without bevel width inflation
+            const safeBevel = Math.max(0, Math.min(borderBevelMm * 0.35, rimThick * 0.15, fileWidthMm * 0.035));
+            const fGeo = extrudeShapeMm(rimShape, rimThick, safeBevel, 1, 14, 0.2);
             fGeo.translate(0, 0, bodyDepthMm * MM_TO_M);
             fileGeos.push(fGeo);
           }

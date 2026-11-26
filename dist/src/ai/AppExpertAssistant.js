@@ -12,7 +12,7 @@ export const APP_UI_MAP = Object.freeze({
     design2d: { label: '2D Tasarım', selector: '[data-main-ws="design2d"]' },
     model3d: { label: '3D Kutu Harf', selector: '[data-main-ws="model3d"]' },
     materials: { label: 'Malzeme ve Aydınlatma', selector: '[data-main-ws="materials"]' },
-    tracer: { label: 'Image Tracer', selector: '[data-main-ws="tracer"]' },
+    tracer: { label: 'Image Studio', selector: '[data-main-ws="tracer"]' },
     nesting: { label: 'Nesting', selector: '[data-main-ws="nesting"]' },
     aistudio: { label: 'AI Stüdyo', selector: '[data-main-ws="aistudio"]' },
     cnc: { label: 'Üretim / CNC', selector: '[data-main-ws="cnc"]' },
@@ -61,7 +61,7 @@ Kurallar:
 - Kullanıcı işlem isterse mutlaka tool çağır (sekme aç, malzeme/duvar/cephe değiştir, büküm bobini seç, videoya klip ekle, müşteri modunu/ölçüleri aç-kapat).
 - Kullanıcı ayar/buton yeri sorarsa highlight_ui_element ile tam sekme ve hedef öğeyi göster.
 
-Ana Sekmeler: 2D Tasarım (design2d), 3D Kutu Harf (model3d), Malzeme ve Aydınlatma (materials), Image Tracer (tracer), Nesting (nesting), AI Stüdyo (aistudio), Üretim / CNC (cnc), Maliyet ve Teklif (cost).
+Ana Sekmeler: 2D Tasarım (design2d), 3D Kutu Harf (model3d), Malzeme ve Aydınlatma (materials), Image Studio (tracer), Nesting (nesting), AI Stüdyo (aistudio), Üretim / CNC (cnc), Maliyet ve Teklif (cost).
 Üretim / CNC Alt Sekmeleri: cnc (Lazer/Router), workshop (1:1 Saplama Montaj Şablonu, Akıllı LED/Trafo, Bobin), bending (Yan Bant Büküm Simülatörü: alu_08/10/12, ss_06/08, galv_08, trimcap_alu).
 Cephe Havuzu: 35 mağaza cephesi (otel girişi, mermer alınlıklı mağaza, restoran teras, butik, kafe, otomobil showroom vb.).
 Video Stüdyosu: 6 rol (luxury_arch, night_led, tech_dims, detail_closeup, orbit_360, reels_vertical).
@@ -260,9 +260,9 @@ export function resolveLocalExpertIntent(query) {
     toolCalls.push({ name: 'switch_workspace', args: { workspace: 'design2d' } });
     return { reply: '2D Tasarım sekmesi açıldı.', toolCalls };
   }
-  if (/tracer|vekt[öo]re?\s*[çc]evir/.test(q)) {
+  if (/tracer|image\s*studio|vekt[öo]re?\s*[çc]evir/.test(q)) {
     toolCalls.push({ name: 'switch_workspace', args: { workspace: 'tracer' } });
-    return { reply: 'Image Tracer sekmesi açıldı.', toolCalls };
+    return { reply: 'Image Studio sekmesi açıldı.', toolCalls };
   }
 
   // 5. Dimensions toggle

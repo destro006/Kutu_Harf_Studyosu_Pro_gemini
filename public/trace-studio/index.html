@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Kutu Harf Stüdyosu — Resim İyileştirme &amp; Vektör Trace Stüdyosu</title>
+  <title>Kutu Harf Stüdyosu — Image Studio (Resim İyileştirme &amp; Vektör Dönüştürücü)</title>
   <style>
     :root {
       --bg: #0b0f17;
@@ -613,76 +613,49 @@
 (() => {
   const PRESETS = [
     {
-      id: 'art_vector', name: 'Art & Vector Graphics', desc: 'Logo, yazı ve tabela grafiği (Trace için önerilen).',
-      sharp: 85, denoise: 45, contrast: 26, edgeBoost: 1.35, flatDefault: true,
-      upscaleMode: 'catmull', gfPasses: 1, gfRadius: 2, gfEps: 0.0045, flatLockMode: 'strong',
-      shockPasses: 2, shockStrength: 1.0, unsharpRadius: 1, unsharpGain: 1.15, haloSlack: 18,
-      localClarity: 0.16, contrastAmt: 0.26, vibrance: 0.10, warmth: 0.0, gamma: 1.0,
-      inkDarken: 0.0, whiteLift: 0.0, softBlurMix: 0.0,
-      grad: 'linear-gradient(135deg,#d4a24c,#10b981)'
+      id: 'ultra_logo_clean', name: 'Ultra Keskin Logo & Vektör Temizleme', desc: 'De-JPEG gürültü temizleme, keskin kenarlar ve düz renk kilitleme.',
+      sharp: 112, denoise: 52, contrast: 38, edgeBoost: 1.55, flatDefault: true,
+      upscaleMode: 'catmull', gfPasses: 1, gfRadius: 2, gfEps: 0.0040, flatLockMode: 'strong',
+      shockPasses: 2, shockStrength: 1.25, unsharpRadius: 1, unsharpGain: 1.55, haloSlack: 24,
+      localClarity: 0.28, contrastAmt: 0.36, vibrance: 0.16, warmth: 0.0, gamma: 0.98,
+      inkDarken: 0.18, whiteLift: 0.12, softBlurMix: 0.0, hdrStrength: 0.0, monoContrast: 0.0,
+      grad: 'linear-gradient(135deg,#ffb547,#10b981)'
     },
     {
-      id: 'photo_text', name: 'Photo LN + Text', desc: 'Tabela fotoğrafı ve ekran görüntüsü netleştirme.',
-      sharp: 95, denoise: 28, contrast: 42, edgeBoost: 1.45, flatDefault: false,
-      upscaleMode: 'catmull', gfPasses: 1, gfRadius: 1, gfEps: 0.0020, flatLockMode: 'none',
-      shockPasses: 2, shockStrength: 1.15, unsharpRadius: 1, unsharpGain: 1.75, haloSlack: 34,
-      localClarity: 0.48, contrastAmt: 0.42, vibrance: -0.08, warmth: 0.0, gamma: 0.96,
-      inkDarken: 0.30, whiteLift: 0.14, softBlurMix: 0.0,
-      grad: 'linear-gradient(135deg,#6366f1,#ec4899)'
-    },
-    {
-      id: 'pixel_line', name: 'Pixel & Line Art', desc: 'Küçük piksel ve çizgi logoları keskin büyütme.',
-      sharp: 120, denoise: 10, contrast: 55, edgeBoost: 1.65, flatDefault: true,
-      upscaleMode: 'nearest', gfPasses: 0, gfRadius: 0, gfEps: 0.0, flatLockMode: 'snap',
-      shockPasses: 0, shockStrength: 0.0, unsharpRadius: 1, unsharpGain: 1.45, haloSlack: 40,
-      localClarity: 0.0, contrastAmt: 0.55, vibrance: 0.05, warmth: 0.0, gamma: 0.95,
-      inkDarken: 0.42, whiteLift: 0.12, softBlurMix: 0.0,
-      grad: 'linear-gradient(135deg,#84cc16,#0f172a)'
-    },
-    {
-      id: 'diffusion_razor', name: 'Diffusion Razor', desc: 'AI üretimi ve sert kenarlı illüstrasyonlar.',
-      sharp: 115, denoise: 30, contrast: 34, edgeBoost: 1.55, flatDefault: true,
-      upscaleMode: 'catmull', gfPasses: 1, gfRadius: 2, gfEps: 0.0030, flatLockMode: 'light',
-      shockPasses: 3, shockStrength: 1.45, unsharpRadius: 2, unsharpGain: 2.10, haloSlack: 42,
-      localClarity: 0.52, contrastAmt: 0.34, vibrance: 0.22, warmth: 0.0, gamma: 1.0,
-      inkDarken: 0.14, whiteLift: 0.0, softBlurMix: 0.0,
-      grad: 'linear-gradient(135deg,#ec4899,#06b6d4)'
-    },
-    {
-      id: 'digital_art', name: 'Digital Art Supreme', desc: 'Kurumsal görsellerde canlı doku güçlendirme.',
-      sharp: 78, denoise: 26, contrast: 30, edgeBoost: 1.15, flatDefault: false,
-      upscaleMode: 'catmull', gfPasses: 1, gfRadius: 1, gfEps: 0.0018, flatLockMode: 'none',
-      shockPasses: 1, shockStrength: 0.70, unsharpRadius: 2, unsharpGain: 1.20, haloSlack: 26,
-      localClarity: 0.44, contrastAmt: 0.30, vibrance: 0.55, warmth: 0.07, gamma: 0.98,
-      inkDarken: 0.0, whiteLift: 0.0, softBlurMix: 0.0,
-      grad: 'linear-gradient(135deg,#f43f5e,#d4a24c)'
-    },
-    {
-      id: 'photo_sharp', name: 'Photo Sharp UHD', desc: 'Yüksek dokulu fotoğraflar için detay artırma.',
-      sharp: 108, denoise: 8, contrast: 28, edgeBoost: 1.30, flatDefault: false,
+      id: 'super_res_4k', name: '4K Süper Çözünürlük (Lanczos + Unsharp)', desc: 'Halesiz pürüzsüz büyütme ve ince tabela detayı netleştirme.',
+      sharp: 118, denoise: 12, contrast: 30, edgeBoost: 1.40, flatDefault: false,
       upscaleMode: 'catmull', gfPasses: 0, gfRadius: 0, gfEps: 0.0, flatLockMode: 'none',
-      shockPasses: 1, shockStrength: 0.55, unsharpRadius: 1, unsharpGain: 2.30, haloSlack: 48,
-      localClarity: 0.60, contrastAmt: 0.28, vibrance: 0.14, warmth: 0.0, gamma: 1.0,
-      inkDarken: 0.0, whiteLift: 0.0, softBlurMix: 0.0,
-      grad: 'linear-gradient(135deg,#0ea5e9,#d4a24c)'
+      shockPasses: 1, shockStrength: 0.65, unsharpRadius: 1, unsharpGain: 2.35, haloSlack: 48,
+      localClarity: 0.58, contrastAmt: 0.28, vibrance: 0.18, warmth: 0.0, gamma: 1.0,
+      inkDarken: 0.0, whiteLift: 0.0, softBlurMix: 0.0, hdrStrength: 0.0, monoContrast: 0.0,
+      grad: 'linear-gradient(135deg,#0ea5e9,#ffb547)'
     },
     {
-      id: 'photo_3d_nr', name: 'Photo, 3D + NR', desc: 'Gradyan ve 3D renderlarda gürültü giderme.',
-      sharp: 35, denoise: 72, contrast: 10, edgeBoost: 0.75, flatDefault: false,
-      upscaleMode: 'catmull', gfPasses: 2, gfRadius: 3, gfEps: 0.014, flatLockMode: 'none',
-      shockPasses: 0, shockStrength: 0.0, unsharpRadius: 1, unsharpGain: 0.25, haloSlack: 10,
-      localClarity: 0.05, contrastAmt: 0.08, vibrance: 0.04, warmth: 0.0, gamma: 1.0,
-      inkDarken: 0.0, whiteLift: 0.0, softBlurMix: 0.14,
+      id: 'facade_hdr', name: 'Cephe HDR & Işık Dengeleme', desc: 'Mağaza cephesi fotoğraflarında gölge açma ve yerel CLAHE kontrast.',
+      sharp: 82, denoise: 24, contrast: 32, edgeBoost: 1.22, flatDefault: false,
+      upscaleMode: 'catmull', gfPasses: 1, gfRadius: 2, gfEps: 0.0022, flatLockMode: 'none',
+      shockPasses: 1, shockStrength: 0.55, unsharpRadius: 1, unsharpGain: 1.35, haloSlack: 28,
+      localClarity: 0.64, contrastAmt: 0.30, vibrance: 0.48, warmth: 0.05, gamma: 0.94,
+      inkDarken: 0.0, whiteLift: 0.0, softBlurMix: 0.0, hdrStrength: 0.55, monoContrast: 0.0,
+      grad: 'linear-gradient(135deg,#f59e0b,#ec4899)'
+    },
+    {
+      id: 'arch_denoise', name: 'Mimari Detay & Gürültü Giderme', desc: 'Gece / grenli cephe çekimlerinde kenar koruyan bilateral gürültü temizleme.',
+      sharp: 48, denoise: 82, contrast: 14, edgeBoost: 0.90, flatDefault: false,
+      upscaleMode: 'catmull', gfPasses: 2, gfRadius: 3, gfEps: 0.015, flatLockMode: 'light',
+      shockPasses: 0, shockStrength: 0.0, unsharpRadius: 1, unsharpGain: 0.55, haloSlack: 12,
+      localClarity: 0.14, contrastAmt: 0.12, vibrance: 0.06, warmth: 0.0, gamma: 1.0,
+      inkDarken: 0.0, whiteLift: 0.0, softBlurMix: 0.22, hdrStrength: 0.15, monoContrast: 0.0,
       grad: 'linear-gradient(135deg,#14b8a6,#334155)'
     },
     {
-      id: 'photo_3d_soft', name: 'Photo, 3D Soft', desc: 'Doğal yumuşak kenarlı pürüzsüzleştirme.',
-      sharp: 12, denoise: 84, contrast: -18, edgeBoost: 0.50, flatDefault: false,
-      upscaleMode: 'catmull', gfPasses: 2, gfRadius: 4, gfEps: 0.028, flatLockMode: 'none',
-      shockPasses: 0, shockStrength: 0.0, unsharpRadius: 1, unsharpGain: 0.0, haloSlack: 0,
-      localClarity: -0.24, contrastAmt: -0.18, vibrance: -0.12, warmth: 0.03, gamma: 1.06,
-      inkDarken: 0.0, whiteLift: 0.0, softBlurMix: 0.44,
-      grad: 'linear-gradient(135deg,#b45309,#334155)'
+      id: 'laser_cnc_contrast', name: 'Lazer / CNC Yüksek Kontrast', desc: 'Temiz tek renk / yüksek kontrastlı kesim konturu hazırlama.',
+      sharp: 125, denoise: 28, contrast: 62, edgeBoost: 1.70, flatDefault: true,
+      upscaleMode: 'nearest', gfPasses: 0, gfRadius: 0, gfEps: 0.0, flatLockMode: 'snap',
+      shockPasses: 1, shockStrength: 0.85, unsharpRadius: 1, unsharpGain: 1.65, haloSlack: 38,
+      localClarity: 0.22, contrastAmt: 0.62, vibrance: 0.0, warmth: 0.0, gamma: 0.94,
+      inkDarken: 0.55, whiteLift: 0.35, softBlurMix: 0.0, hdrStrength: 0.0, monoContrast: 0.92,
+      grad: 'linear-gradient(135deg,#84cc16,#0f172a)'
     }
   ];
 
@@ -692,7 +665,7 @@
 
   const state = {
     fileName: 'ornek_tabela_logo',
-    presetId: 'art_vector',
+    presetId: 'ultra_logo_clean',
     scale: 2,
     autoParams: { sharp: 85, denoise: 40, contrast: 24, bgTol: 32, bgFeather: 8, traceColors: 4, traceThresh: 128 },
     viewMode: 'compare',
@@ -1357,6 +1330,8 @@
     const whiteLift = preset.whiteLift || 0;
     const vibrance = preset.vibrance || 0;
     const warmth = preset.warmth || 0;
+    const hdrStrength = preset.hdrStrength || 0;
+    const monoContrast = preset.monoContrast || 0;
 
     for (let k = 0; k < total; k++) {
       const i4 = k * 4;
@@ -1379,6 +1354,12 @@
       }
 
       let tL = curL + dSharp + dClarity;
+      if (hdrStrength > 0 && lMed) {
+        // Local CLAHE-style shadow recovery + highlight rolloff on storefront photos
+        const localShadowBoost = (1 - lMed[k] / 255) * hdrStrength * 34;
+        const hiCompress = lMed[k] > 210 ? -((lMed[k] - 210) * hdrStrength * 0.28) : 0;
+        tL += localShadowBoost + hiCompress;
+      }
       if (tL < 0) tL = 0;
       else if (tL > 255) tL = 255;
 
@@ -1403,6 +1384,14 @@
       let r = base[i4] + deltaL;
       let g = base[i4 + 1] + deltaL;
       let b = base[i4 + 2] + deltaL;
+
+      if (monoContrast > 0) {
+        const lum = Math.max(0, Math.min(255, 0.299 * r + 0.587 * g + 0.114 * b));
+        const stretched = Math.max(0, Math.min(255, (lum - 128) * (1 + monoContrast * 1.35) + 128));
+        r = r * (1 - monoContrast) + stretched * monoContrast;
+        g = g * (1 - monoContrast) + stretched * monoContrast;
+        b = b * (1 - monoContrast) + stretched * monoContrast;
+      }
 
       if (vibrance !== 0 || warmth !== 0) {
         const avg = (r + g + b) / 3;
@@ -3287,8 +3276,8 @@
       analyzeImageAuto(state.sourceCanvas);
       runEnhancement(false);
       showToast(options.source === 'logo-quality'
-        ? '✓ Logo önerilen iyileştirme ayarıyla Image Tracer’a yüklendi — düzenleyip Stüdyoya Gönder ile 3D sahneye aktarabilirsiniz.'
-        : '✓ Fotomontaj görüntüsü Image Tracer’a yüklendi — düzenleyip çıktı alabilirsiniz.');
+        ? '✓ Logo önerilen iyileştirme ayarıyla Image Studio’ya yüklendi — düzenleyip Stüdyoya Gönder ile 3D sahneye aktarabilirsiniz.'
+        : '✓ Fotomontaj görüntüsü Image Studio’ya yüklendi — düzenleyip çıktı alabilirsiniz.');
     };
     img.src = dataUrl;
   }

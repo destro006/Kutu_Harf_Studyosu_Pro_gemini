@@ -111,12 +111,12 @@ LB
   const cleanQ = analyzeRasterLogoQuality(cleanBuf, 800, 400, { naturalWidth: 800, naturalHeight: 400, fileName: 'atlas.png', mimeType: 'image/png' });
   assert.equal(cleanQ.isLowQuality, false, `Clean high-res PNG should pass: ${JSON.stringify(cleanQ)}`);
 
-  // 2b. Low-resolution small pixel logo -> low quality, pixel_line preset
+  // 2b. Low-resolution small pixel logo -> low quality, laser_cnc_contrast preset
   const tinyBuf = makeSolid(160, 80);
   drawRect(tinyBuf, 160, 80, 20, 15, 140, 65, [0, 0, 0, 255]);
   const tinyQ = analyzeRasterLogoQuality(tinyBuf, 160, 80, { naturalWidth: 160, naturalHeight: 80, fileName: 'tiny.png', mimeType: 'image/png' });
   assert.equal(tinyQ.isLowQuality, true);
-  assert.equal(tinyQ.recommendedPreset, 'pixel_line');
+  assert.equal(tinyQ.recommendedPreset, 'laser_cnc_contrast');
   assert(tinyQ.reasons.some(r => /çözünürlük/i.test(r)));
 
   // 2c. Blurry & noisy JPEG -> low quality
@@ -156,12 +156,12 @@ LB
   }
   const photoQ = analyzeRasterLogoQuality(photoBuf, 600, 400, { naturalWidth: 600, naturalHeight: 400, fileName: 'cephe.jpg', mimeType: 'image/jpeg' });
   assert.equal(photoQ.isLowQuality, true);
-  assert.equal(photoQ.recommendedPreset, 'photo_text');
+  assert.equal(photoQ.recommendedPreset, 'facade_hdr');
 
-  // 2e. Prompt & Trace Studio preset forwarding wired
+  // 2e. Prompt & Image Studio preset forwarding wired
   const mainSrc = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
   const tracerHtml = fs.readFileSync(new URL('../public/trace-studio/index.html', import.meta.url), 'utf8');
-  assert(mainSrc.includes("Bu görsel düşük kaliteli, Image Tracer'da iyileştirip vektöre çevirelim mi?"));
+  assert(mainSrc.includes("Bu görsel düşük kaliteli, Image Studio'da iyileştirip vektöre çevirelim mi?"));
   assert(mainSrc.includes('presetId: pendingTracerImage.presetId'));
   assert(tracerHtml.includes('options.presetId && PRESETS.some'));
 }

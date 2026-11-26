@@ -7,7 +7,7 @@ import Clipper from '../../public/vendor/cad/clipper-runtime.js';
  * custom TTF/OTF/WOFF upload, persistent custom font storage, and Local Font Access API support.
  */
 
-const FONT_ASSETS = [
+export const FONT_ASSETS = [
   {
     id: 'montserrat',
     label: 'Montserrat',
