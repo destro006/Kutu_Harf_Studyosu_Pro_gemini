@@ -11,7 +11,7 @@ import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v15';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v36';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v37';
 import { attachTabDragReorder, reorderTabIds } from './ui/TabReorderManager.js';
 import {
   buildBendingJob,
@@ -70,7 +70,17 @@ import { ENVIRONMENT_PRESETS } from './render/EnvironmentManager.js';
 import { LIGHT_COLOR_PRESETS, LIGHTING_MODES } from './render/LightingSystem.js';
 import {detectVectorFormat} from './manufacturing/VectorFormatDetect.js';
 import { BACKGROUND_SCENES } from './photomontage/BackgroundLibrary.js';
-import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js?v=20261125-v15';
+import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js?v=20261126-v37';
+import {
+  FACADE_CATEGORIES,
+  addCustomFacade,
+  deleteFacadeById,
+  findFacadeByQuery,
+  getActiveFacades,
+  getHiddenDefaultCount,
+  restoreDefaultFacades,
+} from './photomontage/FacadeLibrary.js';
+import { renderAiStudioWorkspace } from './ui/AiStudioView.js';
 import { renderNestingSvg } from './ui/NestingView.js?v=20261126-v23';
 import { applySurfaceMaterialPreset, getDisplayedSurfaceMaterial } from './core/MaterialActions.js';
 import { getExportSelection } from './export/ExportScope.js';
@@ -265,6 +275,35 @@ function flushPendingTracerImage() {
   pendingTracerImage = null;
   return true;
 }
+let lastAiCompositeUrl = null;
+let lastAiResultUrl = null;
+let activeFacadeCat = 'all';
+let aiStudioState = {
+  compositeUrl: '',
+  resultUrl: '',
+  brief: '',
+  masterPrompt: '',
+  comparePct: 50,
+  statusText: '',
+  expertCollapsed: false,
+  expertMessages: [{ role: 'bot', text: 'Merhaba! Tüm sekme, cephe havuzu, video ve büküm araçlarını doğrudan yönetebilirim.' }],
+};
+function applyFacadeEntryToScene(facade) {
+  if (!facade?.src) return false;
+  lastPhotomontageScene = null;
+  lastPhotomontageUrl = null;
+  lastPhotomontageHaloUrl = null;
+  mutate(`Cephe: ${facade.label}`, s => {
+    s.photomontage.photoUrl = facade.src;
+    s.photomontage.photoName = facade.label;
+    s.photomontage.visible = true;
+    s.photomontage.confirmed = false;
+  });
+  setMainWorkspace('model3d');
+  studioToast(`✓ "${facade.label}" uygulandı — tabelayı konumlandırmak için cepheye tıklayın.`);
+  return true;
+}
+
 function handlePhotomontagePhotoFile(file) {
   if (!file) return;
   const reader = new FileReader();
@@ -2112,7 +2151,35 @@ function renderLayersWs(state) {
 function renderBackgroundWs(state) {
   const pm = state.photomontage;
   const wallScale = Math.max(0.08, Math.min(2.5, Number(state.scene.wallScale ?? 1.0) || 1.0));
+  const activeFacades = getActiveFacades();
+  const filteredFacades = activeFacadeCat === 'all' ? activeFacades : activeFacades.filter(f => f.category === activeFacadeCat);
+  const hiddenCount = getHiddenDefaultCount();
   return `
+    <section class="sec">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px">
+        <h3 class="sec-title" style="margin:0">Cephe Havuzu (${activeFacades.length})</h3>
+        <div style="display:flex;gap:5px">
+          <label class="sec-btn" style="padding:3px 8px;font-size:11px;cursor:pointer" title="Galeriye özel mağaza cephesi ekle">
+            ＋ Ekle
+            <input id="facadeCustomAddInput" type="file" accept="image/png,image/jpeg,image/webp" class="hidden">
+          </label>
+          <button type="button" id="btnRestoreFacades" class="sec-btn" style="padding:3px 8px;font-size:11px" title="Silinen varsayılan 35 cepheyi geri yükle" ${hiddenCount === 0 ? 'disabled' : ''}>↺ Varsayılanlara Yükle</button>
+        </div>
+      </div>
+      <div class="facade-cat-pills">
+        ${FACADE_CATEGORIES.map(c => `<button type="button" class="facade-cat-pill ${activeFacadeCat === c.id ? 'on' : ''}" data-facade-cat="${c.id}">${c.label}</button>`).join('')}
+      </div>
+      <div class="facade-pool-grid">
+        ${filteredFacades.map(f => `
+          <div class="facade-card ${pm.photoUrl === f.src ? 'on' : ''}" data-facade-pick="${escapeAttr(f.id)}" title="${escapeAttr(f.label)}">
+            <img src="${escapeAttr(f.thumb || f.src)}" alt="${escapeAttr(f.label)}" loading="lazy">
+            <div class="facade-card-title">${escapeHtml(f.label)}</div>
+            <button type="button" class="facade-del-btn" data-facade-del="${escapeAttr(f.id)}" title="Galeriden Kaldır">✕</button>
+          </div>
+        `).join('')}
+      </div>
+    </section>
+
     <section class="sec">
       <h3 class="sec-title">1-Tık Sektör Sahne Hazır Ayarları</h3>
       <div class="industry-preset-grid">
@@ -2726,6 +2793,39 @@ function bindWorkspaceEvents(ws, root) {
       s.photomontage.visible = true;
     }));
   } else if (ws === 'background') {
+    root.querySelectorAll('[data-facade-cat]').forEach(b => b.onclick = () => {
+      activeFacadeCat = b.dataset.facadeCat || 'all';
+      renderActiveWorkspace();
+    });
+    root.querySelectorAll('[data-facade-pick]').forEach(card => card.addEventListener('click', e => {
+      if (e.target.closest('[data-facade-del]')) return;
+      const f = getActiveFacades().find(x => x.id === card.dataset.facadePick);
+      if (f) applyFacadeEntryToScene(f);
+    }));
+    root.querySelectorAll('[data-facade-del]').forEach(btn => btn.addEventListener('click', e => {
+      e.stopPropagation();
+      deleteFacadeById(btn.dataset.facadeDel);
+      renderActiveWorkspace();
+      studioToast('Cephe galeriden kaldırıldı. İstediğiniz zaman "Varsayılanlara Yükle" ile geri alabilirsiniz.');
+    }));
+    root.querySelector('#facadeCustomAddInput')?.addEventListener('change', e => {
+      const f = e.target.files?.[0];
+      e.target.value = '';
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = () => {
+        const added = addCustomFacade({ label: f.name.replace(/\.[^.]+$/, ''), dataUrl: r.result, category: activeFacadeCat === 'all' ? '01_klasik_isletme_cepheleri' : activeFacadeCat });
+        renderActiveWorkspace();
+        applyFacadeEntryToScene(added);
+      };
+      r.readAsDataURL(f);
+    });
+    root.querySelector('#btnRestoreFacades')?.addEventListener('click', () => {
+      restoreDefaultFacades();
+      activeFacadeCat = 'all';
+      renderActiveWorkspace();
+      studioToast('✓ 35 varsayılan cephe görseli geri yüklendi.');
+    });
     root.querySelector('#bgWallScaleRange')?.addEventListener('input', e => applyWallScaleChange(e.target.value, false));
     root.querySelector('#bgWallScaleRange')?.addEventListener('change', e => applyWallScaleChange(e.target.value, true));
     root.querySelector('#bgWallScaleReset')?.addEventListener('click', () => applyWallScaleChange(1.0, true));
@@ -3479,6 +3579,7 @@ function setMainWorkspace(ws) {
   document.getElementById('nestingCenterWrap')?.classList.toggle('hidden', ws !== 'nesting');
   document.getElementById('cncCenterWrap')?.classList.toggle('hidden', ws !== 'cnc');
   document.getElementById('costCenterWrap')?.classList.toggle('hidden', ws !== 'cost');
+  document.getElementById('aiStudioCenterWrap')?.classList.toggle('hidden', ws !== 'aistudio');
   if(is3D){const engine=ensureSignEngine();engine?.setActive?.(true);if(previous!==ws)scheduleRebuild(true);}
   else signEngine?.setActive?.(false);
   if (typeof dims3DController !== 'undefined' && dims3DController) {
@@ -3661,6 +3762,130 @@ function updateCenterWorkspaces(state) {
       el.innerHTML = renderCostCenter(state, lastMetrics, lastCosts, {tab:activeCostTab,role:activeCostRole});
       bindCostCenterEvents(el);
       el.scrollTop = oldScroll;
+    }
+  } else if (ws === 'aistudio') {
+    const el = document.getElementById('aiStudioCenterWrap');
+    if (el) {
+      el.innerHTML = renderAiStudioWorkspace({
+        ...aiStudioState,
+        facades: getActiveFacades(),
+        config: loadAiConfig(),
+      });
+      el.querySelector('#aiStudioPull3D')?.addEventListener('click', async () => {
+        const comp = await window.__buildAiComposite?.();
+        if (comp) {
+          aiStudioState.compositeUrl = comp;
+          if (!aiStudioState.masterPrompt) aiStudioState.masterPrompt = buildSignageMasterPrompt(aiStudioState.brief, window.__getAiContext?.() || {});
+          updateCenterWorkspaces(store.get());
+        }
+      });
+      el.querySelector('#aiStudioUploadFacade')?.addEventListener('change', e => {
+        const f = e.target.files?.[0];
+        e.target.value = '';
+        if (!f) return;
+        handlePhotomontagePhotoFile(f);
+        setTimeout(async () => {
+          const comp = await window.__buildAiComposite?.();
+          if (comp) aiStudioState.compositeUrl = comp;
+          updateCenterWorkspaces(store.get());
+        }, 220);
+      });
+      el.querySelector('#aiStudioFacadeSelect')?.addEventListener('change', async e => {
+        const f = getActiveFacades().find(x => x.id === e.target.value);
+        if (!f) return;
+        mutate(`Cephe: ${f.label}`, s => {
+          s.photomontage.photoUrl = f.src;
+          s.photomontage.photoName = f.label;
+          s.photomontage.visible = true;
+          s.photomontage.confirmed = false;
+        });
+        setTimeout(async () => {
+          const comp = await window.__buildAiComposite?.();
+          if (comp) aiStudioState.compositeUrl = comp;
+          updateCenterWorkspaces(store.get());
+        }, 220);
+      });
+      el.querySelectorAll('[data-aistudio-preset]').forEach(btn => btn.addEventListener('click', () => {
+        aiStudioState.brief = btn.dataset.aistudioPreset || '';
+        aiStudioState.masterPrompt = buildSignageMasterPrompt(aiStudioState.brief, window.__getAiContext?.() || {});
+        updateCenterWorkspaces(store.get());
+      }));
+      el.querySelector('#aiStudioBrief')?.addEventListener('input', e => { aiStudioState.brief = e.target.value; });
+      el.querySelector('#aiStudioMasterPrompt')?.addEventListener('input', e => { aiStudioState.masterPrompt = e.target.value; });
+      el.querySelector('#aiStudioEnhanceBtn')?.addEventListener('click', async () => {
+        const draft = buildSignageMasterPrompt(aiStudioState.brief, window.__getAiContext?.() || {});
+        aiStudioState.masterPrompt = draft;
+        aiStudioState.statusText = 'Master Prompt geliştiriliyor...';
+        const cfg = {
+          ...loadAiConfig(),
+          provider: el.querySelector('#aiStudioProviderSel')?.value || 'gemini',
+          apiKey: el.querySelector('#aiStudioApiKeyInp')?.value || '',
+        };
+        saveAiConfig(cfg);
+        const res = await refineMasterPromptWithLlm(draft, aiStudioState.brief, cfg);
+        aiStudioState.masterPrompt = res.prompt;
+        aiStudioState.statusText = res.source === 'api' ? '✓ Geometri kilitli Master Prompt AI ile hazırlandı.' : '✓ Geometri kilitli Master Prompt hazır; görsel oluşturabilirsiniz.';
+        updateCenterWorkspaces(store.get());
+      });
+      el.querySelector('#aiStudioGenerateBtn')?.addEventListener('click', async () => {
+        const cfg = {
+          ...loadAiConfig(),
+          provider: el.querySelector('#aiStudioProviderSel')?.value || 'gemini',
+          apiKey: el.querySelector('#aiStudioApiKeyInp')?.value || '',
+        };
+        saveAiConfig(cfg);
+        if (!aiStudioState.compositeUrl) aiStudioState.compositeUrl = (await window.__buildAiComposite?.()) || '';
+        const mp = aiStudioState.masterPrompt?.trim() || buildSignageMasterPrompt(aiStudioState.brief, window.__getAiContext?.() || {});
+        aiStudioState.masterPrompt = mp;
+        aiStudioState.statusText = 'Fotorealistik görsel işleniyor...';
+        updateCenterWorkspaces(store.get());
+        try {
+          const out = await runHybridSignageRender({ compositeDataUrl: aiStudioState.compositeUrl, masterPrompt: mp, config: cfg });
+          aiStudioState.resultUrl = out.imageUrl;
+          aiStudioState.statusText = out.note;
+        } catch (err) {
+          aiStudioState.statusText = err?.message || 'Görsel oluşturulamadı.';
+        }
+        updateCenterWorkspaces(store.get());
+      });
+      el.querySelector('#aiStudioCompareRange')?.addEventListener('input', e => {
+        aiStudioState.comparePct = Number(e.target.value) || 50;
+        const clip = el.querySelector('#aiStudioAfterClip');
+        const div = el.querySelector('#aiStudioDivider');
+        if (clip) clip.style.clipPath = `inset(0 ${100 - aiStudioState.comparePct}% 0 0)`;
+        if (div) div.style.left = `${aiStudioState.comparePct}%`;
+      });
+      el.querySelector('#aiStudioDownloadBtn')?.addEventListener('click', () => {
+        const url = aiStudioState.resultUrl || aiStudioState.compositeUrl;
+        if (url) downloadDataUrl(`${store.get().projectName || 'ai_studio'}.png`, url);
+      });
+      el.querySelector('#aiStudioSendToSceneBtn')?.addEventListener('click', () => {
+        const url = aiStudioState.resultUrl || aiStudioState.compositeUrl;
+        if (!url) return;
+        mutate('AI Stüdyo çıktısını sahneye aktar', s => {
+          s.photomontage.photoUrl = url;
+          s.photomontage.photoName = 'AI Stüdyo Render';
+          s.photomontage.visible = true;
+          s.photomontage.confirmed = true;
+        });
+        setMainWorkspace('model3d');
+        studioToast('✓ AI Stüdyo görseli 3D sahneye ve teklif önizlemesine gönderildi.');
+      });
+      el.querySelector('#aiStudioToggleExpertBtn')?.addEventListener('click', () => {
+        aiStudioState.expertCollapsed = !aiStudioState.expertCollapsed;
+        updateCenterWorkspaces(store.get());
+      });
+      el.querySelector('#aiStudioExpertForm')?.addEventListener('submit', e => {
+        e.preventDefault();
+        const inp = el.querySelector('#aiStudioExpertInput');
+        const val = inp?.value?.trim();
+        if (!val) return;
+        inp.value = '';
+        window.__submitExpertQuestion?.(val);
+      });
+      el.querySelectorAll('[data-aistudio-expert-q]').forEach(btn => btn.addEventListener('click', () => {
+        window.__submitExpertQuestion?.(btn.dataset.aistudioExpertQ);
+      }));
     }
   }
 }
@@ -5664,8 +5889,7 @@ function init() {
       cancelBtn?.classList.add('hidden');
     }
   });
-  let lastAiCompositeUrl = null;
-  let lastAiResultUrl = null;
+  let _oldUnusedComposite = null;
   async function buildFreeAiComposite() {
     const s = store.get();
     if (s.photomontage?.photoUrl && photomontageOverlay) {
@@ -5694,6 +5918,8 @@ function init() {
       depthMm: first.depthMm || s.dimensions?.depthMm || 80,
     };
   }
+  window.__buildAiComposite = buildFreeAiComposite;
+  window.__getAiContext = getAiSceneContext;
   async function openSignageAiModal() {
     const modal = document.getElementById('signageAiModal');
     if (!modal) return;
@@ -5781,6 +6007,18 @@ function init() {
   const expertMsgs = document.getElementById('expertMessages');
   const expertHistory = [];
   const appendExpertMsg = (role, text) => {
+    aiStudioState.expertMessages.push({ role: role === 'user' ? 'user' : 'bot', text });
+    if (aiStudioState.expertMessages.length > 40) aiStudioState.expertMessages.shift();
+    if (store.get().mainWorkspace === 'aistudio') {
+      const log = document.getElementById('aiStudioExpertLog');
+      if (log) {
+        const div = document.createElement('div');
+        div.className = `ai-msg ${role === 'user' ? 'user' : 'bot'}`;
+        div.textContent = text;
+        log.appendChild(div);
+        log.scrollTop = log.scrollHeight;
+      }
+    }
     if (!expertMsgs) return;
     const div = document.createElement('div');
     div.className = `ai-msg ${role}`;
@@ -5793,6 +6031,16 @@ function init() {
       const args = tc.args || {};
       if (tc.name === 'switch_workspace' && args.workspace) {
         setMainWorkspace(args.workspace);
+      } else if (tc.name === 'open_cnc_subtab' && args.subTab) {
+        activeCncSubTab = args.subTab;
+        if (args.coilId) {
+          bendingConfig.coilId = args.coilId;
+          bendingConfig.springbackPct = null;
+          bendingConfig.notchAngleDeg = null;
+        }
+        if (args.machineId) bendingConfig.machineId = args.machineId;
+        setMainWorkspace('cnc');
+        updateCenterWorkspaces(store.get());
       } else if (tc.name === 'set_material' && args.materialId && MATERIAL_PRESETS[args.materialId]) {
         mutate('Asistan: Malzeme', s => applySurfaceMaterialPreset(s, args.materialId));
       } else if (tc.name === 'set_lighting') {
@@ -5806,6 +6054,10 @@ function init() {
         });
       } else if (tc.name === 'set_wall' && args.wallId) {
         selectWall(args.wallId);
+      } else if (tc.name === 'select_facade' && args.query) {
+        const match = findFacadeByQuery(args.query);
+        if (match) applyFacadeEntryToScene(match);
+        else studioToast(`"${args.query}" için eşleşen cephe bulunamadı.`, true);
       } else if (tc.name === 'set_dimensions') {
         mutate('Asistan: Ölçü', s => {
           if (Number.isFinite(Number(args.heightMm)) && Number(args.heightMm) > 10) {
@@ -5824,7 +6076,14 @@ function init() {
         runAutoNesting();
       } else if (tc.name === 'toggle_3d_dimensions') {
         const want = Boolean(args.visible);
-        if (dims3DController.enabled !== want) document.getElementById('btnToggle3DDims')?.click();
+        if (Boolean(store.get().scene?.showDimensions) !== want) document.getElementById('btnToggle3DDims')?.click();
+      } else if (tc.name === 'add_video_clip' && args.role) {
+        const dur = Math.max(2, Math.min(20, Math.round(Number(args.durationSec) || 5)));
+        videoClips.push({ id: `clip_${Date.now().toString(36)}`, role: args.role, durationSec: dur, transition: 'fade' });
+        if (args.openModal !== false) document.getElementById('btnOpenVideoModal')?.click();
+      } else if (tc.name === 'toggle_kiosk_mode') {
+        const want = Boolean(args.enabled);
+        if (kioskMode !== want) document.getElementById('btnKioskMode')?.click();
       } else if (tc.name === 'apply_industry_preset' && args.presetId) {
         mutate('Asistan: Sektör sahnesi', s => applyIndustryScenePreset(s, args.presetId));
       } else if (tc.name === 'highlight_ui_element' && args.selector) {
@@ -5843,7 +6102,11 @@ function init() {
     appendExpertMsg('bot', res.reply || 'İşlem tamamlandı.');
     expertHistory.push({ role: 'assistant', content: res.reply });
   };
-  document.getElementById('btnAppExpertToggle')?.addEventListener('click', () => expertDrawer?.classList.toggle('hidden'));
+  window.__submitExpertQuestion = submitExpertQuestion;
+  document.getElementById('btnHeaderAiExpert')?.addEventListener('click', () => {
+    if (store.get().mainWorkspace === 'aistudio') expertDrawer?.classList.toggle('hidden');
+    else expertDrawer?.classList.toggle('hidden');
+  });
   document.getElementById('btnExpertClose')?.addEventListener('click', () => expertDrawer?.classList.add('hidden'));
   document.getElementById('btnExpertSettings')?.addEventListener('click', () => {
     const box = document.getElementById('expertApiBox');

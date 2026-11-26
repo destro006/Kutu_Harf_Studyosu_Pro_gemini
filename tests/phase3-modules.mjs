@@ -44,7 +44,7 @@ assert(dimIntent.toolCalls.some(c => c.name === 'set_dimensions' && c.args.heigh
 // UI Wiring
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
-assert(html.includes('id="signageAiModal"') && html.includes('id="appExpertDrawer"') && html.includes('id="btnAppExpertToggle"'));
+assert(html.includes('id="signageAiModal"') && html.includes('id="appExpertDrawer"') && html.includes('id="btnHeaderAiExpert"') && html.includes('data-main-ws="aistudio"'));
 assert(main.includes("label: 'AI ile Devam Et'") && main.includes('showGuideCursor'));
 
 console.log('✓ Phase 3 Modules (4 & 5: Signage AI Engine & App Expert Assistant) verified cleanly');

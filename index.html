@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Kutu Harf Stüdyosu — Profesyonel 3D Tabela CAD/CAM &amp; İmalat Stüdyosu</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Crect x='9' y='7' width='14' height='18' rx='3' fill='%23ffb547'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./src/styles/studio.css?v=20261126-v36">
+  <link rel="stylesheet" href="./src/styles/studio.css?v=20261126-v37">
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -34,6 +34,7 @@
         <button id="btnQuickSaveDoc" class="tb-btn" type="button" title="Projeyi Kaydet (Ctrl+S)">💾 Kaydet</button>
         <button id="btnFullscreen" class="tb-btn" type="button" title="Tam Ekran Modu">⛶</button>
         <button id="btnShortcutsHelp" class="tb-btn" type="button" title="Kısayollar">⌨ Kısayollar</button>
+        <button id="btnHeaderAiExpert" class="tb-btn" type="button" title="Uygulama Uzmanı AI Asistan">✦ AI Uzman</button>
         <div id="headerTotalBadge" class="price-badge" title="KDV Dahil Tahmini Toplam">₺0</div>
       </div>
     </nav>
@@ -53,6 +54,7 @@
         <button type="button" data-main-ws="materials">◈ Malzeme ve Aydınlatma</button>
         <button type="button" data-main-ws="tracer">✦ Image Tracer</button>
         <button type="button" data-main-ws="nesting">▦ Nesting</button>
+        <button type="button" data-main-ws="aistudio">✦ AI Stüdyo</button>
         <button type="button" data-main-ws="cnc">⚙ Üretim / CNC</button>
         <button type="button" data-main-ws="cost">₺ Maliyet ve Teklif</button>
       </div>
@@ -158,6 +160,8 @@
           <div id="cncCenterWrap" class="center-ws-layer hidden"></div>
           <!-- Central Cost & Quote Workspace (used by Maliyet ve Teklif) -->
           <div id="costCenterWrap" class="center-ws-layer hidden"></div>
+          <!-- Dedicated Flagship AI Stüdyo Workspace -->
+          <div id="aiStudioCenterWrap" class="center-ws-layer hidden"></div>
 
           <!-- Ruler & Interactive 2D Overlay (Pen, Measure, Photomontage) -->
           <canvas id="cadOverlay" class="cad-overlay"></canvas>
@@ -608,8 +612,7 @@
     </div>
   </div>
 
-  <!-- Uygulama Uzmanı Etkileşimli AI Asistan -->
-  <button type="button" id="btnAppExpertToggle" class="ai-expert-fab" title="Uygulama Uzmanı AI Asistan">✦ Uzman Asistan</button>
+  <!-- Uygulama Uzmanı Etkileşimli AI Asistan Çekmecesi (Sağ Üst Header'dan açılır) -->
   <aside id="appExpertDrawer" class="ai-expert-drawer hidden" aria-label="Uygulama Uzmanı Asistan">
     <div class="ai-expert-head">
       <strong>✦ Uygulama Uzmanı</strong>
@@ -641,6 +644,6 @@
   </aside>
 
   <script defer src="./public/vendor/pdfjs/pdf.min.js"></script>
-  <script type="module" src="./src/main.js?v=20261126-v36"></script>
+  <script type="module" src="./src/main.js?v=20261126-v37"></script>
 </body>
 </html>

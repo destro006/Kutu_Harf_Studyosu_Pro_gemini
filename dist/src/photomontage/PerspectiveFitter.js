@@ -67,7 +67,42 @@ export function homographyToCssMatrix3d(H) {
 }
 
 /**
- * Composites the customer storefront photograph + perspective-warped 3D sign
+ * Fits a uniform-aspect rectangle (signW x signH) centered inside a 4-point perspective quad
+ * [TL, TR, BR, BL] using bilinear UV coordinates, strictly preventing any stretching/squashing.
+ */
+export function fitAspectLockedQuad(dstQuad, signW, signH) {
+  if (!Array.isArray(dstQuad) || dstQuad.length !== 4) return dstQuad;
+  const [tl, tr, br, bl] = dstQuad;
+  const wTop = Math.hypot(tr.x - tl.x, tr.y - tl.y);
+  const wBot = Math.hypot(br.x - bl.x, br.y - bl.y);
+  const hLeft = Math.hypot(bl.x - tl.x, bl.y - tl.y);
+  const hRight = Math.hypot(br.x - tr.x, br.y - tr.y);
+  const quadW = Math.max(4, (wTop + wBot) * 0.5);
+  const quadH = Math.max(4, (hLeft + hRight) * 0.5);
+  const quadRatio = quadW / quadH;
+  const signRatio = Math.max(1, Number(signW) || 1) / Math.max(1, Number(signH) || 1);
+
+  let uSpan = 1;
+  let vSpan = 1;
+  if (signRatio > quadRatio) {
+    vSpan = Math.max(0.08, Math.min(1, quadRatio / signRatio));
+  } else {
+    uSpan = Math.max(0.08, Math.min(1, signRatio / quadRatio));
+  }
+  const u0 = 0.5 - uSpan * 0.5;
+  const u1 = 0.5 + uSpan * 0.5;
+  const v0 = 0.5 - vSpan * 0.5;
+  const v1 = 0.5 + vSpan * 0.5;
+
+  const bilerp = (u, v) => ({
+    x: (1 - u) * (1 - v) * tl.x + u * (1 - v) * tr.x + u * v * br.x + (1 - u) * v * bl.x,
+    y: (1 - u) * (1 - v) * tl.y + u * (1 - v) * tr.y + u * v * br.y + (1 - u) * v * bl.y,
+  });
+  return [bilerp(u0, v0), bilerp(u1, v0), bilerp(u1, v1), bilerp(u0, v1)];
+}
+
+/**
+ * Composites the customer storefront photograph + aspect-locked perspective-warped 3D sign
  * (using inverse homography bilinear sampling for pixel-accurate perspective)
  * and returns a high-resolution PNG data URL.
  */
@@ -97,10 +132,11 @@ export async function renderPhotomontageComposite(photoUrl, signCanvas, cornersN
   const ctx = out.getContext('2d');
   ctx.drawImage(photo, 0, 0, outW, outH);
 
-  // Destination quad in output pixels
-  const dst = cornersNorm.map(c => ({ x: c.x * outW, y: c.y * outH }));
+  // Destination quad in output pixels — aspect-locked to eliminate vertical/horizontal stretching
+  const rawDst = cornersNorm.map(c => ({ x: c.x * outW, y: c.y * outH }));
   const sw = signCanvas.width;
   const sh = signCanvas.height;
+  const dst = fitAspectLockedQuad(rawDst, sw, sh);
   const src = [
     { x: 0, y: 0 },
     { x: sw, y: 0 },

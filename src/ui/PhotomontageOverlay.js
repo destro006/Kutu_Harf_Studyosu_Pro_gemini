@@ -1,4 +1,4 @@
-import { computeHomography, homographyToCssMatrix3d, renderPhotomontageComposite } from '../photomontage/PerspectiveFitter.js?v=20261125-v15';
+import { computeHomography, fitAspectLockedQuad, homographyToCssMatrix3d, renderPhotomontageComposite } from '../photomontage/PerspectiveFitter.js?v=20261126-v37';
 import { downloadDataUrl } from '../export/ExportService.js';
 
 /**
@@ -86,7 +86,8 @@ export class PhotomontageOverlay {
         { x: sw, y: sh },
         { x: 0, y: sh },
       ];
-      const dst = pm.cornersNorm.map(c => ({ x: c.x * w, y: c.y * h }));
+      const rawDst = pm.cornersNorm.map(c => ({ x: c.x * w, y: c.y * h }));
+      const dst = fitAspectLockedQuad(rawDst, sw, sh);
       const H = computeHomography(src, dst);
       const cssMatrix = homographyToCssMatrix3d(H);
       signImg.style.transform = cssMatrix;
@@ -100,11 +101,11 @@ export class PhotomontageOverlay {
         const svg = this.container.querySelector('#pmHandlesSvg');
         const handlesLayer = this.container.querySelector('#pmHandlesLayer');
         if (svg) {
-          svg.innerHTML = `<polygon points="${dst.map(p => `${p.x},${p.y}`).join(' ')}" fill="none" stroke="#ffb547" stroke-width="1.5" stroke-dasharray="5 4" />`;
+          svg.innerHTML = `<polygon points="${rawDst.map(p => `${p.x},${p.y}`).join(' ')}" fill="none" stroke="#ffb547" stroke-width="1.5" stroke-dasharray="5 4" />`;
         }
         if (handlesLayer) {
           handlesLayer.innerHTML = '';
-          dst.forEach((pt, idx) => {
+          rawDst.forEach((pt, idx) => {
             const hBtn = document.createElement('div');
             hBtn.style.cssText = `position:absolute;left:${pt.x - 8}px;top:${pt.y - 8}px;width:16px;height:16px;border-radius:50%;background:#ffb547;border:2px solid #111;cursor:grab;box-shadow:0 0 8px rgba(0,0,0,0.7)`;
             hBtn.title = `Köşe ${idx + 1}`;
@@ -149,6 +150,28 @@ export class PhotomontageOverlay {
     this._cleanupFns.push(() => window.removeEventListener('keydown', onEsc, true));
 
     if (!confirmed) {
+      // Smart Click-to-Place: clicking directly on blank facade area centers an aspect-locked fascia quad
+      const frameEl = this.container.querySelector('.pm-frame');
+      frameEl?.addEventListener('pointerdown', (e) => {
+        if (this.dragIdx >= 0 || e.target.closest('button') || e.target.closest('[title^="Köşe"]')) return;
+        const rect = bgImg.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        const nx = Math.max(0.18, Math.min(0.82, (e.clientX - rect.left) / rect.width));
+        const ny = Math.max(0.12, Math.min(0.85, (e.clientY - rect.top) / rect.height));
+        const sw = signImg.naturalWidth || 1200;
+        const sh = signImg.naturalHeight || 400;
+        const halfW = 0.22;
+        const imgRatio = rect.width / Math.max(1, rect.height);
+        const halfH = Math.max(0.06, Math.min(0.28, halfW * (sh / Math.max(1, sw)) * imgRatio));
+        pm.cornersNorm = [
+          { x: Math.max(0.02, nx - halfW), y: Math.max(0.02, ny - halfH) },
+          { x: Math.min(0.98, nx + halfW), y: Math.max(0.02, ny - halfH) },
+          { x: Math.min(0.98, nx + halfW), y: Math.min(0.98, ny + halfH) },
+          { x: Math.max(0.02, nx - halfW), y: Math.min(0.98, ny + halfH) },
+        ];
+        updateTransform();
+        this.callbacks.onCornersChange?.(pm.cornersNorm);
+      });
       const onMove = (e) => {
         if (this.dragIdx < 0) return;
         const rect = bgImg.getBoundingClientRect();
