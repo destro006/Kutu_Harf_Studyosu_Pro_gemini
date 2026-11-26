@@ -28,6 +28,8 @@ export function createDefaultState() {
       fileWidthMm: 5,
       fileThicknessMm: 2,
       metalThicknessMm: 1, // Paslanmaz/alüminyum yanak sac kalınlığı; file yüksekliğinden bağımsız.
+      sidewallOverlapMm: 6, // Yan bant kesimi bindirme payı (mm)
+      bandDepthMm: null, // Özel yan bant kesim yüksekliği/derinliği (boşsa harf derinliği kullanılır)
       fileMaterial: 'aynaAltin',
       fileColor: '#f5c66a',
       borderBevelMm: 0.8,
@@ -214,6 +216,7 @@ export function createDefaultState() {
       copies: 1,
       grainDirection: 'none',
       targetPart: 'all',
+      includeSidewallStrips: false, // Ayrı Kenar / Yan Bant (Şerit Kesim) levhasını otomatik ekle
       allowHoleNesting: true,
       groupByMaterial: true,
       marginLeftMm: 15,

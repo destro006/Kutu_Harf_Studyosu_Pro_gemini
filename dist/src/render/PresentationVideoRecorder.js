@@ -1,5 +1,44 @@
+import THREE from '../vendor/three.js';
 import { computeSignageDimensionData, renderDimensions2DOverlay } from './Dimensions3DOverlay.js';
 import { createVideoAudioMuxer } from './VideoAudioEngine.js';
+
+/**
+ * Computes exact safe camera distance from a 3D Box3 size so both horizontal and vertical extents
+ * remain 100% inside the target viewport (16:9 or 9:16) with at least 20% margin.
+ */
+export function computeFramedCameraDistance(boxSize = { w: 2, h: 0.45, d: 0.1 }, fovDeg = 32, aspect = 16 / 9, marginFactor = 1.22) {
+  const w = Math.max(0.2, Number(boxSize.x ?? boxSize.w) || 2.0);
+  const h = Math.max(0.15, Number(boxSize.y ?? boxSize.h) || 0.45);
+  const d = Math.max(0.05, Number(boxSize.z ?? boxSize.d) || 0.1);
+  const vFov = (Math.max(15, Math.min(75, Number(fovDeg) || 32)) * Math.PI) / 180;
+  const hFov = 2 * Math.atan(Math.tan(vFov * 0.5) * Math.max(0.25, aspect));
+  const distV = ((h * 0.5) / Math.max(0.05, Math.tan(vFov * 0.5))) * marginFactor;
+  const distH = ((w * 0.5) / Math.max(0.05, Math.tan(hFov * 0.5))) * marginFactor;
+  return Math.max(0.9, Math.max(distV, distH) + d * 0.9);
+}
+
+export function computeSignGroupBox(signGroup, fallbackSizeM = { w: 2.0, h: 0.45 }) {
+  if (signGroup) {
+    const box = new THREE.Box3();
+    signGroup.traverse?.(node => {
+      if (node.isMesh && node.visible && !node.userData?.isHalo && !node.userData?.isFrontGlow) {
+        box.expandByObject(node);
+      }
+    });
+    if (!box.isEmpty()) {
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      return {
+        center: { x: center.x, y: center.y, z: center.z },
+        size: { x: size.x, y: size.y, z: size.z },
+      };
+    }
+  }
+  return {
+    center: { x: 0, y: 0, z: 0 },
+    size: { x: fallbackSizeM?.w || 2.0, y: fallbackSizeM?.h || 0.45, z: 0.1 },
+  };
+}
 
 /**
  * CapCut-Style Full-Screen 15-Scenario Studio Video Sequencer & Recorder
@@ -471,15 +510,18 @@ export async function recordPresentationVideo({
       }
       hideStudioSelectionHelpers();
 
-      const r = baseRadius * kf.radiusMult;
-      const tx = kf.targetOffsetX * Math.max(0.5, signEngine.lastSizeM?.w || 1.5);
+      const signBox = computeSignGroupBox(signEngine.signGroup, signEngine.lastSizeM);
+      const safeDist = computeFramedCameraDistance(signBox.size, signEngine.camera.fov, width / Math.max(1, height), 1.22);
+      const r = Math.max(safeDist * 0.92, safeDist * kf.radiusMult);
+      const maxTx = signBox.size.x * 0.14;
+      const tx = Math.max(-maxTx, Math.min(maxTx, kf.targetOffsetX * signBox.size.x * 0.35));
       const ty = kf.targetOffsetY;
       signEngine.camera.position.set(
-        tx + r * Math.sin(kf.polar) * Math.sin(kf.azimuth),
-        ty + r * Math.cos(kf.polar),
-        r * Math.sin(kf.polar) * Math.cos(kf.azimuth)
+        signBox.center.x + tx + r * Math.sin(kf.polar) * Math.sin(kf.azimuth),
+        signBox.center.y + ty + r * Math.cos(kf.polar),
+        signBox.center.z + r * Math.sin(kf.polar) * Math.cos(kf.azimuth)
       );
-      signEngine.camera.lookAt(tx, ty, 0);
+      signEngine.camera.lookAt(signBox.center.x + tx, signBox.center.y + ty, signBox.center.z);
       signEngine.renderer.shadowMap.needsUpdate = true;
 
       if (signEngine.postProcessor) signEngine.postProcessor.render(signEngine.scene, signEngine.camera);

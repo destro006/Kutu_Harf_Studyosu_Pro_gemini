@@ -223,3 +223,77 @@ export async function renderPhotomontageComposite(photoUrl, signCanvas, cornersN
 
   return out.toDataURL('image/png');
 }
+
+/**
+ * Generates a 4-point normalized corner quad [TL, TR, BR, BL] from intuitive
+ * Yaw (horizontal perspective), Pitch (vertical tilt), Roll, Scale, and Center X/Y sliders.
+ */
+export function buildPerspectiveQuadFromAngles({
+  cx = 0.5,
+  cy = 0.45,
+  halfW = 0.28,
+  halfH = 0.17,
+  yawDeg = 0,
+  pitchDeg = 0,
+  rollDeg = 0,
+  scale = 1,
+} = {}) {
+  const s = Math.max(0.3, Math.min(2.2, Number(scale) || 1));
+  const hw = halfW * s;
+  const hh = halfH * s;
+  const yaw = Math.max(-0.55, Math.min(0.55, (Number(yawDeg) || 0) / 55));
+  const pitch = Math.max(-0.45, Math.min(0.45, (Number(pitchDeg) || 0) / 55));
+  const rollRad = ((Number(rollDeg) || 0) * Math.PI) / 180;
+  const cosR = Math.cos(rollRad);
+  const sinR = Math.sin(rollRad);
+
+  const localPts = [
+    { x: -hw * (1 - pitch * 0.45), y: -hh * (1 + yaw * 0.5) },
+    { x: hw * (1 - pitch * 0.45), y: -hh * (1 - yaw * 0.5) },
+    { x: hw * (1 + pitch * 0.45), y: hh * (1 - yaw * 0.5) },
+    { x: -hw * (1 + pitch * 0.45), y: hh * (1 + yaw * 0.5) },
+  ];
+
+  return localPts.map(p => ({
+    x: Math.max(0.02, Math.min(0.98, cx + p.x * cosR - p.y * sinR)),
+    y: Math.max(0.02, Math.min(0.98, cy + p.x * sinR + p.y * cosR)),
+  }));
+}
+
+/**
+ * Snaps a dragged corner point against adjacent corners along horizontal/vertical axes,
+ * returning both the snapped coordinate and visual snap guide segments.
+ */
+export function snapCornerWithGuides(corners, idx, candidate, tol = 0.014) {
+  let { x, y } = candidate;
+  const guides = [];
+  const adj = [(idx + 3) % 4, (idx + 1) % 4];
+  for (const j of adj) {
+    const ref = corners?.[j];
+    if (!ref) continue;
+    if (Math.abs(x - ref.x) <= tol) {
+      x = ref.x;
+      guides.push({ x1: ref.x, y1: ref.y, x2: x, y2: y });
+    }
+    if (Math.abs(y - ref.y) <= tol) {
+      y = ref.y;
+      guides.push({ x1: ref.x, y1: ref.y, x2: x, y2: y });
+    }
+  }
+  return {
+    point: { x: Math.max(0.02, Math.min(0.98, x)), y: Math.max(0.02, Math.min(0.98, y)) },
+    guides,
+  };
+}
+
+export function pointInQuadNorm(pt, quad) {
+  if (!pt || !Array.isArray(quad) || quad.length !== 4) return false;
+  let inside = false;
+  for (let i = 0, j = 3; i < 4; j = i++) {
+    const xi = quad[i].x, yi = quad[i].y;
+    const xj = quad[j].x, yj = quad[j].y;
+    const intersect = ((yi > pt.y) !== (yj > pt.y)) && (pt.x < ((xj - xi) * (pt.y - yi)) / ((yj - yi) || 1e-9) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}

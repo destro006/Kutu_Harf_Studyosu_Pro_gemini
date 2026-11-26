@@ -84,6 +84,9 @@ export function renderNestingCenter(state, ctx) {
   const acOverlapMm = state.fileli?.acrylicOverlapMm ?? 3;
   const dekInsetMm = state.fileli?.dekotaInsetMm ?? 2;
   const dekThickMm = state.fileli?.dekotaThicknessMm ?? 5;
+  const bandOverlapMm = state.fileli?.sidewallOverlapMm ?? 6;
+  const bandDepthMm = state.fileli?.bandDepthMm;
+  const includeSidewallStrips = Boolean(state.nesting?.includeSidewallStrips);
   const openGroupsSet = ctx.openGroups instanceof Set
     ? ctx.openGroups
     : new Set(Array.isArray(ctx.openGroups) ? ctx.openGroups : []);
@@ -141,14 +144,26 @@ export function renderNestingCenter(state, ctx) {
               <small class="nest-overlap-hint">Harf dış hattından her kenarda kaç ${unit} içe doğru küçük kesileceği (yanak içine oturması için).</small>
               <div class="field-row"><label for="cwsFileliDekotaThick">Dekota Kalınlığı (${unit})</label><input id="cwsFileliDekotaThick" type="number" min="${show(1)}" max="${show(30)}" step="${show(0.5)}" value="${show(dekThickMm)}"></div>
             </div>
+            <div class="cws-fileli-card">
+              <div class="cws-fileli-card-head"><i class="nest-part-dot" style="background:#f59e0b"></i><span>Kenar / Yan Bant (Şerit Kesim)</span></div>
+              <div class="field-row"><label for="cwsFileliBandOverlap">File / Kenar Bandı Payı (${unit})</label><input id="cwsFileliBandOverlap" type="number" min="0" max="${show(50)}" step="${show(1)}" value="${show(bandOverlapMm)}"></div>
+              <div class="field-row"><label for="cwsFileliBandDepth">Bant Yüksekliği / Derinlik (${unit})</label><input id="cwsFileliBandDepth" type="number" min="${show(10)}" max="${show(400)}" step="${show(5)}" value="${bandDepthMm != null ? show(bandDepthMm) : ''}" placeholder="${show(state.dimensions?.depthMm ?? 80)} (Harf Derinliği)"></div>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11.5px;margin-top:4px;cursor:pointer">
+                <input id="cwsIncludeSidewallSheet" type="checkbox" ${includeSidewallStrips ? 'checked' : ''}>
+                <span>Kenar / Yan Bant (Şerit Kesim) levhasını otomatik ekle</span>
+              </label>
+              <button type="button" id="cwsBuildSidewallSheetBtn" class="sec-btn" style="width:100%;margin-top:6px">✂ Kenar / Yan Bant Levhası Üret</button>
+            </div>
             <div class="cws-fileli-summary">
               <div class="cws-fileli-summary-row"><i class="nest-part-dot" style="background:#d4a24c"></i><span>File Çerçeve: ${show(fileliObjWidth)} ${unit} kenar</span></div>
-              <div class="cws-fileli-summary-row"><i class="nest-part-dot" style="background:#38bdf8"></i><span>Pleksi: +${show(acOverlapMm)} ${unit} binme</span></div>
+              <div class="cws-fileli-summary-row"><i class="nest-part-dot" style="background:#38bdf8"></i><span>Pleksi: ${state.fileli?.acrylicCutInsetMm != null ? `-${show(state.fileli.acrylicCutInsetMm)} ${unit} küçültme` : `+${show(acOverlapMm)} ${unit} binme`}</span></div>
               <div class="cws-fileli-summary-row"><i class="nest-part-dot" style="background:#34d399"></i><span>Dekota: -${show(dekInsetMm)} ${unit} küçültme</span></div>
+              <div class="cws-fileli-summary-row"><i class="nest-part-dot" style="background:#f59e0b"></i><span>Yan Bant: +${show(bandOverlapMm)} ${unit} bindirme payı</span></div>
             </div>
             <button type="button" id="cwsFileliApplyRepack" class="cta-btn" style="width:100%">Levhaları Güncelle</button>
           </div>
         ` : `
+        <button type="button" id="cwsOpenFileliTabQuick" class="sec-btn" style="width:100%;margin-bottom:6px;font-size:11.5px">⚙ File / Pleksi / Yan Bant Payları Ayarla</button>
         ${isSidewallMode ? `
           <div class="cws-sidewall-banner">
             <div>

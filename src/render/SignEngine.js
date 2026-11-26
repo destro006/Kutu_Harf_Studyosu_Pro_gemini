@@ -1218,6 +1218,7 @@ export class SignEngine {
     if (selectedIds && !selectedIds.size) throw new Error('Dışa aktarılacak seçili nesne yok.');
     const cameraPos = this.camera.position.clone();
     const cameraQuat = this.camera.quaternion.clone();
+    const prevFov = this.camera.fov;
     const prevAspect = this.camera.aspect;
     const previousBackground = this.scene.background;
     const previousClearColor = this.renderer.getClearColor(new THREE.Color()).clone();
@@ -1259,10 +1260,14 @@ export class SignEngine {
           const center = bounds.getCenter(new THREE.Vector3());
           const size = bounds.getSize(new THREE.Vector3());
           const aspect = width / Math.max(1, height);
-          const fov = THREE.MathUtils.degToRad(this.camera.fov);
-          const halfH = Math.max(size.y * 0.5, (size.x * 0.5) / Math.max(aspect, 0.1));
-          const distance = (halfH / Math.max(0.01, Math.tan(fov * 0.5))) * 1.12 + size.z * 0.6;
-          this.camera.position.set(center.x, center.y, center.z + Math.max(0.25, distance));
+          const archFov = Math.max(24, Math.min(35, Number(opts.architecturalFov) || 28));
+          this.camera.fov = archFov;
+          const fov = THREE.MathUtils.degToRad(archFov);
+          const hFov = 2 * Math.atan(Math.tan(fov * 0.5) * Math.max(aspect, 0.1));
+          const distV = (size.y * 0.5) / Math.max(0.01, Math.tan(fov * 0.5));
+          const distH = (size.x * 0.5) / Math.max(0.01, Math.tan(hFov * 0.5));
+          const distance = Math.max(distV, distH) * 1.16 + size.z * 0.75;
+          this.camera.position.set(center.x, center.y, center.z + Math.max(0.35, distance));
           this.camera.lookAt(center);
         }
       }
@@ -1324,6 +1329,7 @@ export class SignEngine {
       }
       this.camera.position.copy(cameraPos);
       this.camera.quaternion.copy(cameraQuat);
+      this.camera.fov = prevFov;
       this.camera.aspect = prevAspect;
       this.camera.updateProjectionMatrix();
       this.scene.background = previousBackground;

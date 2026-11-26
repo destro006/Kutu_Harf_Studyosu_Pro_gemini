@@ -11,7 +11,7 @@ import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v15';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v38';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v40';
 import { attachTabDragReorder, reorderTabIds } from './ui/TabReorderManager.js';
 import {
   buildBendingJob,
@@ -73,7 +73,7 @@ import { ENVIRONMENT_PRESETS } from './render/EnvironmentManager.js';
 import { LIGHT_COLOR_PRESETS, LIGHTING_MODES } from './render/LightingSystem.js';
 import {detectVectorFormat} from './manufacturing/VectorFormatDetect.js';
 import { BACKGROUND_SCENES } from './photomontage/BackgroundLibrary.js';
-import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js?v=20261126-v38';
+import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js?v=20261126-v40';
 import {
   FACADE_CATEGORIES,
   addCustomFacade,
@@ -859,10 +859,11 @@ function capturePhotomontageSign(state) {
   const signUrl = signEngine.capturePng(capW, capH, {
     transparent: true,
     fitToSign: true,
+    architecturalFov: 28,
     haloMode: hasActiveHalo ? 'exclude' : 'include',
   });
   const haloUrl = hasActiveHalo
-    ? signEngine.capturePng(capW, capH, { transparent: true, fitToSign: true, haloMode: 'only' })
+    ? signEngine.capturePng(capW, capH, { transparent: true, fitToSign: true, architecturalFov: 28, haloMode: 'only' })
     : null;
   return { signUrl, haloUrl };
 }
@@ -4441,6 +4442,33 @@ function bindNestingCenterEvents(root) {
   bindFileliLeftInput('cwsFileliAcrylicThick', 'Pleksi kalınlığı', 1, 20, (s, v) => { s.fileli.acrylicThicknessMm = v; });
   bindFileliLeftInput('cwsFileliDekotaInset', 'Dekota içe küçültme', 0, 25, (s, v) => { s.fileli.dekotaInsetMm = v; });
   bindFileliLeftInput('cwsFileliDekotaThick', 'Dekota kalınlığı', 1, 30, (s, v) => { s.fileli.dekotaThicknessMm = v; });
+  bindFileliLeftInput('cwsFileliBandOverlap', 'Kenar bandı payı', 0, 50, (s, v) => { s.fileli.sidewallOverlapMm = v; });
+  root.querySelector('#cwsFileliBandDepth')?.addEventListener('change', e => {
+    const raw = String(e.target.value || '').trim();
+    const parsed = raw === '' ? null : displayToMm(raw, store.get().pageLayout?.displayUnit);
+    if (parsed !== null && !Number.isFinite(parsed)) return;
+    const nextVal = parsed === null ? null : Math.max(10, Math.min(400, parsed));
+    mutateData('Bant yüksekliği', s => {
+      s.fileli ||= {};
+      s.fileli.bandDepthMm = nextVal;
+    }, false);
+    sceneDataKey = null;
+    repackNestingSettings('Bant yüksekliği', () => {}, false);
+  });
+  root.querySelector('#cwsIncludeSidewallSheet')?.addEventListener('change', e => {
+    const checked = Boolean(e.target.checked);
+    repackNestingSettings('Kenar / Yan Bant levhası', n => { n.includeSidewallStrips = checked; }, false);
+  });
+  root.querySelector('#cwsBuildSidewallSheetBtn')?.addEventListener('click', () => {
+    repackNestingSettings('Kenar / Yan Bant levhası', n => { n.includeSidewallStrips = true; }, false);
+    studioToast('✂ Kenar / Yan Bant (Şerit Kesim) levhası oluşturuldu.');
+  });
+  root.querySelector('#cwsOpenFileliTabQuick')?.addEventListener('click', () => {
+    nestingLeftTab = 'fileli';
+    const wrap = document.getElementById('nestingCenterWrap');
+    if (wrap) wrap._lastHtml = null;
+    updateCenterWorkspaces(store.get());
+  });
   root.querySelector('#cwsFileliApplyRepack')?.addEventListener('click', () => {
     sceneDataKey = null;
     repackNestingSettings('File malzeme ayarları', () => {}, false);
@@ -5907,6 +5935,13 @@ function init() {
   let videoAudioConfig = { trackId: 'luxury_ambient', customAudioBuffer: null, customFileName: '', trimStartSec: 0, volume: 0.7 };
   const videoModal = document.getElementById('presentationVideoModal');
 
+  const formatVidTc = sec => {
+    const s = Math.max(0, Math.round(sec || 0));
+    const mm = String(Math.floor(s / 60)).padStart(2, '0');
+    const ss = String(s % 60).padStart(2, '0');
+    return `${mm}:${ss}`;
+  };
+
   const syncVideoStudioStaticControls = () => {
     const roleSel = document.getElementById('vidRole');
     if (roleSel && roleSel.options.length !== VIDEO_ROLES.length) {
@@ -5928,6 +5963,22 @@ function init() {
         };
       });
     }
+    const transCardsBox = document.getElementById('vidTransitionCards');
+    if (transCardsBox) {
+      const curTrans = document.getElementById('vidTransition')?.value || 'crossfade';
+      transCardsBox.innerHTML = VIDEO_TRANSITIONS.map(t => `
+        <button type="button" class="vid-trans-card ${t.id === curTrans ? 'on' : ''}" data-vid-tr-card="${t.id}">
+          <span>${escapeHtml(t.label)}</span>
+          <small>${t.id}</small>
+        </button>`).join('');
+      transCardsBox.querySelectorAll('[data-vid-tr-card]').forEach(btn => {
+        btn.onclick = () => {
+          const tSel = document.getElementById('vidTransition');
+          if (tSel) tSel.value = btn.dataset.vidTrCard;
+          transCardsBox.querySelectorAll('.vid-trans-card').forEach(b => b.classList.toggle('on', b === btn));
+        };
+      });
+    }
     const audioSel = document.getElementById('vidAudioTrackSel');
     if (audioSel && audioSel.options.length !== BUILTIN_AUDIO_TRACKS.length) {
       audioSel.innerHTML = BUILTIN_AUDIO_TRACKS.map(t => `<option value="${t.id}">${escapeHtml(t.label)}</option>`).join('');
@@ -5940,22 +5991,37 @@ function init() {
         : `${BUILTIN_AUDIO_TRACKS.find(t => t.id === videoAudioConfig.trackId)?.label || 'Sessiz'} (Ses %${Math.round(videoAudioConfig.volume * 100)})`;
       audioBar.textContent = lbl;
     }
+    const stageEl = document.getElementById('vidPreviewStage');
+    const aspSel = document.getElementById('vidAspectRatio');
+    if (stageEl && aspSel) stageEl.dataset.aspect = aspSel.value;
   };
 
   const renderVideoTimeline = () => {
     syncVideoStudioStaticControls();
     const list = document.getElementById('vidTimelineList');
+    const ruler = document.getElementById('vidTimelineRuler');
     const meta = document.getElementById('vidTimelineMeta');
+    const tcEl = document.getElementById('vidTimecode');
     const activeClips = videoMode === 'single'
       ? [{ id: 'single_mode', role: document.getElementById('vidRole')?.value || 'luxury_arch', durationSec: Math.max(2, Math.min(20, Math.round(Number(document.getElementById('vidDuration')?.value) || 6))), transition: 'cut' }]
       : videoClips;
     const tl = computeSequenceTimeline(activeClips);
     if (meta) meta.textContent = `${activeClips.length} klip · Toplam ${tl.totalDurationSec} sn · ${videoMode === 'single' ? 'Tek Senaryo' : 'Çoklu Kurgu'}`;
+    if (tcEl && (!document.getElementById('vidPreviewEl')?.src || document.getElementById('vidPreviewEl')?.classList.contains('hidden'))) {
+      tcEl.textContent = `00:00 / ${formatVidTc(tl.totalDurationSec)}`;
+    }
+    if (ruler) {
+      const step = Math.max(2, Math.ceil(tl.totalDurationSec / 6));
+      const marks = [];
+      for (let t = 0; t <= tl.totalDurationSec; t += step) marks.push(`<span>${t}s</span>`);
+      if (marks.length === 1 || !marks.at(-1)?.includes(`${tl.totalDurationSec}s`)) marks.push(`<span>${tl.totalDurationSec}s</span>`);
+      ruler.innerHTML = marks.join('');
+    }
     if (!list) return;
     list.innerHTML = activeClips.map((c, idx) => `
-      <div class="vid-clip-card" draggable="${videoMode === 'multi' ? 'true' : 'false'}" data-clip-id="${escapeAttr(c.id)}">
+      <div class="vid-clip-card" style="flex:${c.durationSec} 0 ${Math.max(150, Math.round(c.durationSec * 28))}px" draggable="${videoMode === 'multi' ? 'true' : 'false'}" data-clip-id="${escapeAttr(c.id)}">
         <div class="vid-clip-head">
-          <span>#${idx + 1} Klip</span>
+          <span>#${idx + 1} Klip (${c.durationSec}s)</span>
           <button type="button" class="vid-clip-del" data-clip-del="${escapeAttr(c.id)}" title="Klibi Sil" ${activeClips.length <= 1 || videoMode === 'single' ? 'disabled' : ''}>✕</button>
         </div>
         <select class="vid-clip-role" data-clip-role="${escapeAttr(c.id)}">
@@ -6031,6 +6097,45 @@ function init() {
     });
   };
 
+  document.querySelectorAll('#vidLibTabs [data-vid-lib]').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.dataset.vidLib;
+      document.querySelectorAll('#vidLibTabs [data-vid-lib]').forEach(t => t.classList.toggle('on', t === tab));
+      document.getElementById('vidTabScenarios')?.classList.toggle('hidden', target !== 'scenarios');
+      document.getElementById('vidTabTransitions')?.classList.toggle('hidden', target !== 'transitions');
+      document.getElementById('vidTabAudio')?.classList.toggle('hidden', target !== 'audio');
+    });
+  });
+  document.getElementById('vidAspectRatio')?.addEventListener('change', () => syncVideoStudioStaticControls());
+  const previewVideoEl = document.getElementById('vidPreviewEl');
+  const playPauseBtn = document.getElementById('btnVidPlayPause');
+  const scrubRange = document.getElementById('vidScrubRange');
+  const timecodeEl = document.getElementById('vidTimecode');
+  playPauseBtn?.addEventListener('click', () => {
+    if (!previewVideoEl || previewVideoEl.classList.contains('hidden')) return;
+    if (previewVideoEl.paused) {
+      previewVideoEl.play().catch(() => {});
+      playPauseBtn.textContent = '⏸ Duraklat';
+    } else {
+      previewVideoEl.pause();
+      playPauseBtn.textContent = '▶ Oynat';
+    }
+  });
+  previewVideoEl?.addEventListener('timeupdate', () => {
+    const dur = previewVideoEl.duration || 0;
+    if (dur > 0 && scrubRange) scrubRange.value = String((previewVideoEl.currentTime / dur) * 100);
+    if (timecodeEl) timecodeEl.textContent = `${formatVidTc(previewVideoEl.currentTime)} / ${formatVidTc(dur)}`;
+  });
+  previewVideoEl?.addEventListener('ended', () => { if (playPauseBtn) playPauseBtn.textContent = '▶ Oynat'; });
+  scrubRange?.addEventListener('input', e => {
+    if (!previewVideoEl || !previewVideoEl.duration) return;
+    previewVideoEl.currentTime = (Number(e.target.value) / 100) * previewVideoEl.duration;
+  });
+  document.getElementById('btnVidFullscreen')?.addEventListener('click', () => {
+    const stage = document.getElementById('vidPreviewStage');
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    else stage?.requestFullscreen?.().catch(() => {});
+  });
   document.getElementById('vidModeSingle')?.addEventListener('click', () => {
     videoMode = 'single';
     document.getElementById('vidModeSingle')?.classList.replace('sec-btn', 'cta-btn');
@@ -6118,7 +6223,9 @@ function init() {
     let [w, h] = String(document.getElementById('vidResolution')?.value || '1920x1080').split('x').map(Number);
     const fps = Number(document.getElementById('vidFps')?.value || 60);
     const onlyReels = runClips.length === 1 && runClips[0].role === 'reels_vertical';
-    if (onlyReels && w > h) { const tmp = w; w = h; h = tmp; }
+    const wantPortrait = document.getElementById('vidAspectRatio')?.value === '9:16' || onlyReels;
+    if (wantPortrait && w > h) { const tmp = w; w = h; h = tmp; }
+    else if (!wantPortrait && h > w) { const tmp = w; w = h; h = tmp; }
     const showDims = Boolean(document.getElementById('vidShowDims')?.checked);
     const ctrl = new AbortController();
     videoRecController = ctrl;

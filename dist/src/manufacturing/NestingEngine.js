@@ -135,8 +135,10 @@ export function extractSidewallStripItems(metricsList, state) {
           : (obj.sideMaterial || state.materials?.sideId || 'aynaAltin'));
 
       fallbackStrips.forEach((st, idx) => {
-        const stripH = Math.max(5, Number(st.heightMm) || depthMm);
-        const totalLen = Number(st.widthMm) || 0;
+        const customBandDepth = Number(state.fileli?.bandDepthMm);
+        const stripH = Math.max(5, (Number.isFinite(customBandDepth) && customBandDepth >= 5) ? customBandDepth : (Number(st.heightMm) || depthMm));
+        const overlapPay = Math.max(0, Number(state.fileli?.sidewallOverlapMm ?? 6));
+        const totalLen = (Number(st.widthMm) || 0) + overlapPay;
         if (totalLen <= 1) return;
         const segCount = Math.max(1, Math.ceil(totalLen / maxSpan));
         const segLen = totalLen / segCount;
@@ -164,7 +166,7 @@ export function extractSidewallStripItems(metricsList, state) {
             operation: 'CUT_OUTER',
             material: matName,
             thicknessMm: Number(st.thicknessMm) || defaultThick,
-            materialGroup: `Kenar Çıtaları · ${Math.round(stripH)} mm Yanak`,
+            materialGroup: `Kenar / Yan Bant (Şerit Kesim) · ${Math.round(stripH)} mm`,
             outer,
             holes: [],
             areaMm2: segLen * stripH,
@@ -335,6 +337,9 @@ export function extractNestingItems(metricsList, state) {
         }
       }
     }
+  }
+  if (state.nesting?.includeSidewallStrips === true && (targetPart === 'all' || targetPart === 'sidewalls')) {
+    items.push(...extractSidewallStripItems(metricsList, state));
   }
   return items;
 }

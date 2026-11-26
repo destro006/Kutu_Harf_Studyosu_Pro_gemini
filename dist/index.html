@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Kutu Harf Stüdyosu — Profesyonel 3D Tabela CAD/CAM &amp; İmalat Stüdyosu</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Crect x='9' y='7' width='14' height='18' rx='3' fill='%23ffb547'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./src/styles/studio.css?v=20261126-v39">
+  <link rel="stylesheet" href="./src/styles/studio.css?v=20261126-v40">
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -494,23 +494,56 @@
   <div id="presentationVideoModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="presVideoTitle">
     <div class="modal-card video-studio-card">
       <div class="modal-head video-studio-head">
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          <h3 id="presVideoTitle" style="margin:0">🎬 Video Stüdyosu — CapCut Tarzı Çoklu Klip &amp; Ses Editörü</h3>
+        <div class="vid-header-left">
+          <h3 id="presVideoTitle" style="margin:0">🎬 Video Stüdyosu</h3>
           <div class="vid-mode-switch" role="group" aria-label="Kurgu modu">
-            <button type="button" id="vidModeSingle" class="sec-btn" data-vid-mode="single">Tek Senaryo Hızlı Üret</button>
-            <button type="button" id="vidModeMulti" class="cta-btn" data-vid-mode="multi">Çoklu Klip Kurgu</button>
+            <button type="button" id="vidModeSingle" class="sec-btn" data-vid-mode="single">Tek Senaryo</button>
+            <button type="button" id="vidModeMulti" class="cta-btn" data-vid-mode="multi">Çoklu Kurgu</button>
           </div>
+          <select id="vidAspectRatio" class="vid-top-select" aria-label="En-Boy Oranı">
+            <option value="16:9" selected>16:9 Yatay</option>
+            <option value="9:16">9:16 Reels</option>
+          </select>
+          <select id="vidResolution" class="vid-top-select" aria-label="Çözünürlük">
+            <option value="1280x720">HD · 720p</option>
+            <option value="1920x1080" selected>Full HD · 1080p</option>
+            <option value="3840x2160">Ultra HD · 4K</option>
+          </select>
+          <select id="vidFps" class="vid-top-select" aria-label="Kare Hızı">
+            <option value="60" selected>60 FPS</option>
+            <option value="30">30 FPS</option>
+          </select>
+          <label class="vid-top-check">
+            <input type="checkbox" id="vidShowDims" checked>
+            <span>Ölçüleri Göster</span>
+          </label>
         </div>
-        <button type="button" id="btnCloseVideoModal" class="close-btn" aria-label="Kapat">✕</button>
+        <div class="vid-header-right">
+          <button type="button" id="btnCancelVideoRec" class="sec-btn hidden">İptal</button>
+          <button type="button" id="btnDownloadVideo" class="sec-btn hidden">⬇ Videoyu İndir</button>
+          <button type="button" id="btnStartVideoRec" class="cta-btn vid-primary-export" title="Zaman çizelgesini birleştir ve videoyu indir (Birleştir ve Videoyu İndir)">▶ Videoyu Üret ve İndir</button>
+          <button type="button" id="btnCloseVideoModal" class="close-btn" aria-label="Kapat">✕</button>
+        </div>
       </div>
       <div class="modal-body video-studio-body">
         <div class="video-studio-workspace">
           <aside class="vid-studio-left">
-            <div class="vid-left-block">
-              <strong class="vid-block-title">🎥 15 Sinematik Senaryo (Tıkla / Klibe Ekle)</strong>
+            <div id="vidLibTabs" class="vid-lib-tabs" role="tablist">
+              <button type="button" class="vid-lib-tab on" data-vid-lib="scenarios">15 Senaryo</button>
+              <button type="button" class="vid-lib-tab" data-vid-lib="transitions">Geçiş Efektleri</button>
+              <button type="button" class="vid-lib-tab" data-vid-lib="audio">Ses &amp; Müzik</button>
+            </div>
+
+            <div id="vidTabScenarios" class="vid-left-block vid-lib-pane">
               <div id="vidScenarioCards" class="vid-scenario-list"></div>
             </div>
-            <div class="vid-left-block">
+
+            <div id="vidTabTransitions" class="vid-left-block vid-lib-pane hidden">
+              <strong class="vid-block-title">✦ Klipler Arası Geçiş Efektleri</strong>
+              <div id="vidTransitionCards" class="vid-trans-cards"></div>
+            </div>
+
+            <div id="vidTabAudio" class="vid-left-block vid-lib-pane hidden">
               <strong class="vid-block-title">🎵 Ses &amp; Müzik Kanalı</strong>
               <div class="field-row" style="margin:4px 0"><label for="vidAudioTrackSel">Hazır Stüdyo Müziği</label><select id="vidAudioTrackSel"></select></div>
               <div style="display:flex;gap:6px;align-items:center;margin:6px 0">
@@ -525,66 +558,63 @@
                 <label style="font-size:11px;color:var(--muted)">Ses (%)<input id="vidAudioVolume" type="number" min="0" max="100" step="5" value="70" style="width:100%"></label>
               </div>
             </div>
-          </aside>
-
-          <section class="vid-studio-center">
-            <div class="vid-top-settings">
-              <div class="field-row" style="margin:0"><label for="vidResolution">Çözünürlük</label><select id="vidResolution"><option value="1280x720">HD · 1280 × 720</option><option value="1920x1080" selected>Full HD · 1920 × 1080</option><option value="1080x1920">Dikey Reels · 1080 × 1920</option></select></div>
-              <div class="field-row" style="margin:0"><label for="vidFps">Kare Hızı</label><select id="vidFps"><option value="60" selected>60 FPS (Akıcı)</option><option value="30">30 FPS (Standart)</option></select></div>
-              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
-                <input type="checkbox" id="vidShowDims" checked>
-                <span>Ölçüleri Göster</span>
-              </label>
-            </div>
-
-            <div class="vid-preview-stage">
-              <div id="vidPreviewEmpty" class="vid-preview-empty">
-                <strong>▶ Canlı Önizleme Hazır</strong>
-                <span>Soldan senaryo ve müzik seçip aşağıdan zaman çizelgenizi düzenleyin, ardından <b>Birleştir ve Videoyu İndir</b> butonuna tıklayın.</span>
-              </div>
-              <video id="vidPreviewEl" class="hidden" controls style="width:100%;height:100%;max-height:100%;object-fit:contain;border-radius:8px;background:#000"></video>
-            </div>
-
-            <div id="vidProgressWrap" class="hidden" style="padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid var(--line)">
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span id="vidStageLabel">Hazırlanıyor...</span><strong id="vidPctLabel">0%</strong></div>
-              <progress id="vidProgressBar" max="100" value="0" style="width:100%"></progress>
-            </div>
 
             <div class="vid-builder-bar">
-              <div class="field-row" style="margin:0;flex:1.5;min-width:170px">
-                <label for="vidRole">Kamera Senaryosu</label>
+              <div class="field-row" style="margin:0;flex:1 1 100%">
+                <label for="vidRole">Seçili Kamera Senaryosu</label>
                 <select id="vidRole"></select>
               </div>
-              <div class="field-row" style="margin:0;width:82px">
+              <div class="field-row" style="margin:0;width:78px">
                 <label for="vidDuration">Süre (sn)</label>
                 <input type="number" id="vidDuration" min="2" max="20" step="1" value="4">
               </div>
-              <div class="field-row" style="margin:0;width:165px">
-                <label for="vidTransition">Geçiş Efekti</label>
+              <div class="field-row" style="margin:0;flex:1">
+                <label for="vidTransition">Geçiş</label>
                 <select id="vidTransition">
-                  <option value="crossfade" selected>Yumuşak Geçiş (Cross-Dissolve)</option>
-                  <option value="dip_black">Kararma (Dip-to-Black)</option>
+                  <option value="crossfade" selected>Yumuşak Geçiş</option>
+                  <option value="dip_black">Kararma</option>
                   <option value="spline_blend">Kesintisiz Kamera</option>
-                  <option value="cut">Ani Kesme (Cut)</option>
+                  <option value="cut">Ani Kesme</option>
                 </select>
               </div>
               <button type="button" id="btnAddVideoClip" class="sec-btn" style="height:34px;white-space:nowrap">＋ Klip Ekle</button>
-              <button type="button" id="btnCancelVideoRec" class="sec-btn hidden" style="height:34px">İptal Et</button>
-              <button type="button" id="btnDownloadVideo" class="sec-btn hidden" style="height:34px">⬇ Videoyu İndir</button>
-              <button type="button" id="btnStartVideoRec" class="cta-btn" style="height:34px;white-space:nowrap">▶ Birleştir ve Videoyu İndir</button>
+            </div>
+          </aside>
+
+          <section class="vid-studio-center">
+            <div class="vid-preview-stage" id="vidPreviewStage" data-aspect="16:9">
+              <div class="vid-safe-frame" aria-hidden="true"><span>Güvenli Kadraj (%20)</span></div>
+              <div id="vidPreviewEmpty" class="vid-preview-empty">
+                <strong>▶ Canlı Önizleme Monitörü</strong>
+                <span>Tam 3D bounding-box kadraj kilidi sayesinde en geniş tabelalar bile kesilmeden ortalanır. Sağ üstten <b>▶ Videoyu Üret ve İndir</b> butonuna tıklayın.</span>
+              </div>
+              <video id="vidPreviewEl" class="hidden" playsinline style="width:100%;height:100%;max-height:100%;object-fit:contain;border-radius:8px;background:#000"></video>
+            </div>
+
+            <div class="vid-player-bar">
+              <button type="button" id="btnVidPlayPause" class="sec-btn" style="min-width:92px">▶ Oynat</button>
+              <input id="vidScrubRange" type="range" min="0" max="100" step="0.5" value="0" style="flex:1;accent-color:var(--accent)">
+              <span id="vidTimecode" class="vid-timecode">00:00 / 00:13</span>
+              <button type="button" id="btnVidFullscreen" class="sec-btn" title="Tam Ekran Önizleme">⛶</button>
+            </div>
+
+            <div id="vidProgressWrap" class="hidden" style="padding:7px 10px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid var(--line)">
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span id="vidStageLabel">Hazırlanıyor...</span><strong id="vidPctLabel">0%</strong></div>
+              <progress id="vidProgressBar" max="100" value="0" style="width:100%"></progress>
             </div>
           </section>
         </div>
 
         <div class="vid-tracks-dock">
           <div class="vid-timeline-head">
-            <strong>Zaman Çizelgesi — Video &amp; Ses Kanalları (Sürükleyip Sırala)</strong>
+            <strong>Çok Kanallı Zaman Çizelgesi (Video &amp; Ses · Sürükleyip Sırala)</strong>
             <span id="vidTimelineMeta" style="font-size:12px;color:var(--accent)">3 klip · Toplam 13 sn</span>
           </div>
+          <div id="vidTimelineRuler" class="vid-timeline-ruler"></div>
           <div id="vidTimelineList" class="vid-timeline-list"></div>
           <div class="vid-audio-track-row">
             <span class="vid-track-badge">🎵 Ses Kanalı</span>
-            <div id="vidAudioTrackBar" class="vid-audio-bar">Sessiz (Müzik Yok) · Tüm süreye yayılmaya hazır</div>
+            <div id="vidAudioTrackBar" class="vid-audio-bar">Lüks Mimari Ambient · Tüm süreye yayılmaya hazır</div>
           </div>
         </div>
       </div>
@@ -719,6 +749,6 @@
   </aside>
 
   <script defer src="./public/vendor/pdfjs/pdf.min.js"></script>
-  <script type="module" src="./src/main.js?v=20261126-v39"></script>
+  <script type="module" src="./src/main.js?v=20261126-v40"></script>
 </body>
 </html>

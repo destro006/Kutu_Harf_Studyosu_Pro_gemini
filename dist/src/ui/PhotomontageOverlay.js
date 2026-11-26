@@ -1,10 +1,19 @@
-import { computeHomography, fitAspectLockedQuad, homographyToCssMatrix3d, renderPhotomontageComposite } from '../photomontage/PerspectiveFitter.js?v=20261126-v37';
+import {
+  buildPerspectiveQuadFromAngles,
+  computeHomography,
+  fitAspectLockedQuad,
+  homographyToCssMatrix3d,
+  pointInQuadNorm,
+  renderPhotomontageComposite,
+  snapCornerWithGuides,
+} from '../photomontage/PerspectiveFitter.js?v=20261126-v40';
 import { downloadDataUrl } from '../export/ExportService.js';
 
 /**
  * Interactive 4-Corner Perspective Photomontage Overlay
- * Maps the full, transparent, halo-lit 3D sign render onto 4 draggable corner handles
- * over an uploaded facade/storefront photo, with top-right confirm, Enter, Esc & tracer bridge.
+ * - Architectural grid lines & horizontal/vertical corner snap guides inside fascia quad
+ * - Intuitive floating sliders: Yaw (Yatay Açı), Pitch (Dikey Açı), Roll (Eğim), Ölçek (%), Konum X/Y & G/Y mm
+ * - Smooth drag inside the quad to reposition the whole sign, or drag corners for 4-point / uniform scaling
  */
 export class PhotomontageOverlay {
   constructor(container, callbacks = {}) {
@@ -17,6 +26,11 @@ export class PhotomontageOverlay {
     this.signPreviewUrl = null;
     this.haloPreviewUrl = null;
     this.dragIdx = -1;
+    this.dragMode = null;
+    this.dragStartPt = null;
+    this.dragStartCorners = null;
+    this.snapGuides = [];
+    this.pose = { yawDeg: 0, pitchDeg: 0, rollDeg: 0, scale: 1, cx: 0.5, cy: 0.45 };
     this._cleanupFns = [];
   }
 
@@ -25,6 +39,14 @@ export class PhotomontageOverlay {
       const fn = this._cleanupFns.pop();
       try { fn(); } catch {}
     }
+  }
+
+  _syncPoseFromCorners(corners) {
+    if (!Array.isArray(corners) || corners.length !== 4) return;
+    const cx = corners.reduce((a, p) => a + p.x, 0) / 4;
+    const cy = corners.reduce((a, p) => a + p.y, 0) / 4;
+    this.pose.cx = cx;
+    this.pose.cy = cy;
   }
 
   render(state, signDataUrl, haloDataUrl = undefined) {
@@ -40,6 +62,7 @@ export class PhotomontageOverlay {
     if (signDataUrl !== undefined && signDataUrl !== null) this.signPreviewUrl = signDataUrl;
     if (haloDataUrl !== undefined) this.haloPreviewUrl = haloDataUrl;
     const confirmed = Boolean(pm.confirmed);
+    this._syncPoseFromCorners(pm.cornersNorm);
 
     this.container.innerHTML = `
       <div class="pm-stage" style="position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#090a0d">
@@ -51,19 +74,21 @@ export class PhotomontageOverlay {
           ${!confirmed ? `
             <div class="pm-action-bar pm-action-bar--top-right" id="pmActionBar">
               <button type="button" id="pmConfirmBtn" class="cta-btn" title="Cephe yerleşimini 3D sahneye uygula (Enter)">✓ Onayla</button>
-              <button type="button" id="pmResetCornersBtn" class="sec-btn" title="4 köşeyi varsayılan konuma döndür">↺ Sıfırla</button>
+              <button type="button" id="pmResetCornersBtn" class="sec-btn" title="4 köşeyi ve açıları sıfırla">↺ Sıfırla</button>
               <button type="button" id="pmCloseBtn" class="sec-btn pm-close-btn" title="Fotomontaj ekranından çık ve 3D sahneye dön (Esc)">✕ Çıkış</button>
             </div>
-            <div class="pm-resize-dock" id="pmResizeDock">
+            <div class="pm-resize-dock pm-resize-dock--pro" id="pmResizeDock">
               <button type="button" id="pmModeToggle" class="sec-btn" data-mode="${this.resizeUniform ? 'scale' : 'perspective'}">${this.resizeUniform ? '⤢ Mod: Orantılı Ölçek' : '⬡ Mod: 4 Köşe Perspektif'}</button>
-              <label style="display:flex;align-items:center;gap:6px;font-size:11.5px">Ölçek
-                <input id="pmScaleRange" type="range" min="35" max="200" step="5" value="100" style="width:105px;accent-color:var(--accent)">
-                <b id="pmScaleVal">100%</b>
-              </label>
-              <label style="display:flex;align-items:center;gap:4px;font-size:11px">G (mm)<input id="pmSignW" type="number" min="100" max="10000" step="20" value="${Math.round(this.signWidthMm || 1500)}" style="width:66px"></label>
-              <label style="display:flex;align-items:center;gap:4px;font-size:11px">Y (mm)<input id="pmSignH" type="number" min="40" max="4000" step="10" value="${Math.round(this.signHeightMm || 400)}" style="width:62px"></label>
+              <label>Yatay Açı (Yaw) <input id="pmYawRange" type="range" min="-35" max="35" step="1" value="${this.pose.yawDeg}"> <b id="pmYawVal">${this.pose.yawDeg}°</b></label>
+              <label>Dikey Açı (Pitch) <input id="pmPitchRange" type="range" min="-25" max="25" step="1" value="${this.pose.pitchDeg}"> <b id="pmPitchVal">${this.pose.pitchDeg}°</b></label>
+              <label>Eğim (Roll) <input id="pmRollRange" type="range" min="-20" max="20" step="1" value="${this.pose.rollDeg}"> <b id="pmRollVal">${this.pose.rollDeg}°</b></label>
+              <label>Ölçek <input id="pmScaleRange" type="range" min="35" max="200" step="5" value="${Math.round(this.pose.scale * 100)}"> <b id="pmScaleVal">${Math.round(this.pose.scale * 100)}%</b></label>
+              <label>Konum X <input id="pmPosX" type="range" min="10" max="90" step="1" value="${Math.round(this.pose.cx * 100)}"></label>
+              <label>Konum Y <input id="pmPosY" type="range" min="10" max="90" step="1" value="${Math.round(this.pose.cy * 100)}"></label>
+              <label>G (mm)<input id="pmSignW" type="number" min="100" max="10000" step="20" value="${Math.round(this.signWidthMm || 1500)}" style="width:62px"></label>
+              <label>Y (mm)<input id="pmSignH" type="number" min="40" max="4000" step="10" value="${Math.round(this.signHeightMm || 400)}" style="width:58px"></label>
             </div>
-            <div class="pm-hint-pill">Alınlığa tıklayın veya 4 sarı köşeyi sürükleyin · Enter: Uygula · Esc: Çıkış</div>
+            <div class="pm-hint-pill">Tabelayı sürükleyin · 4 köşeyi veya Yaw/Pitch/Roll sürgülerini kullanın · Enter: Uygula · Esc: Çıkış</div>
           ` : `
             <div class="pm-confirmed-bar" id="pmConfirmedBar">
               <button type="button" id="pmSendTracerBtn" class="cta-btn" title="Perspektifli görüntüyü Image Studio'ya gönder">✦ Image Studio'ya Gönder</button>
@@ -110,7 +135,21 @@ export class PhotomontageOverlay {
         const svg = this.container.querySelector('#pmHandlesSvg');
         const handlesLayer = this.container.querySelector('#pmHandlesLayer');
         if (svg) {
-          svg.innerHTML = `<polygon points="${rawDst.map(p => `${p.x},${p.y}`).join(' ')}" fill="none" stroke="#ffb547" stroke-width="1.5" stroke-dasharray="5 4" />`;
+          const bilerp = (u, v) => ({
+            x: (1 - u) * (1 - v) * rawDst[0].x + u * (1 - v) * rawDst[1].x + u * v * rawDst[2].x + (1 - u) * v * rawDst[3].x,
+            y: (1 - u) * (1 - v) * rawDst[0].y + u * (1 - v) * rawDst[1].y + u * v * rawDst[2].y + (1 - u) * v * rawDst[3].y,
+          });
+          const gridLines = [0.25, 0.5, 0.75].map(u => {
+            const p0 = bilerp(u, 0), p1 = bilerp(u, 1);
+            return `<line x1="${p0.x}" y1="${p0.y}" x2="${p1.x}" y2="${p1.y}" stroke="rgba(255,181,71,0.34)" stroke-width="1" />`;
+          }).concat([0.5].map(v => {
+            const p0 = bilerp(0, v), p1 = bilerp(1, v);
+            return `<line x1="${p0.x}" y1="${p0.y}" x2="${p1.x}" y2="${p1.y}" stroke="rgba(255,181,71,0.34)" stroke-width="1" />`;
+          })).join('');
+          const snapSvg = (this.snapGuides || []).map(g =>
+            `<line x1="${g.x1 * w}" y1="${g.y1 * h}" x2="${g.x2 * w}" y2="${g.y2 * h}" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="3 3" />`
+          ).join('');
+          svg.innerHTML = `${gridLines}${snapSvg}<polygon points="${rawDst.map(p => `${p.x},${p.y}`).join(' ')}" fill="rgba(255,181,71,0.04)" stroke="#ffb547" stroke-width="1.6" stroke-dasharray="5 4" />`;
         }
         if (handlesLayer) {
           handlesLayer.innerHTML = '';
@@ -122,6 +161,8 @@ export class PhotomontageOverlay {
               e.stopPropagation();
               document.activeElement?.blur?.();
               this.dragIdx = idx;
+              this.dragMode = 'corner';
+              this.snapGuides = [];
               hBtn.setPointerCapture?.(e.pointerId);
             });
             handlesLayer.appendChild(hBtn);
@@ -142,7 +183,10 @@ export class PhotomontageOverlay {
     this._cleanupFns.push(() => window.removeEventListener('resize', onResize));
 
     this.container.querySelector('#pmConfirmBtn')?.addEventListener('click', () => this.callbacks.onConfirm?.());
-    this.container.querySelector('#pmResetCornersBtn')?.addEventListener('click', () => this.callbacks.onResetCorners?.());
+    this.container.querySelector('#pmResetCornersBtn')?.addEventListener('click', () => {
+      this.pose = { yawDeg: 0, pitchDeg: 0, rollDeg: 0, scale: 1, cx: 0.5, cy: 0.45 };
+      this.callbacks.onResetCorners?.();
+    });
     this.container.querySelector('#pmSendTracerBtn')?.addEventListener('click', () => this.callbacks.onSendToTracer?.());
     this.container.querySelector('#pmEditPerspBtn')?.addEventListener('click', () => this.callbacks.onEdit?.());
     this.container.querySelector('#pmQuickExportBtn')?.addEventListener('click', () => this.callbacks.onExport?.());
@@ -153,23 +197,40 @@ export class PhotomontageOverlay {
       e.currentTarget.textContent = this.resizeUniform ? '⤢ Mod: Orantılı Ölçek' : '⬡ Mod: 4 Köşe Perspektif';
       this.callbacks.onModeChange?.(this.resizeUniform ? 'scale' : 'perspective');
     });
-    const baseQuad = pm.cornersNorm.map(c => ({ x: c.x, y: c.y }));
-    this.container.querySelector('#pmScaleRange')?.addEventListener('input', e => {
-      const pct = Math.max(35, Math.min(200, Number(e.target.value) || 100));
-      const lbl = this.container.querySelector('#pmScaleVal');
-      if (lbl) lbl.textContent = `${pct}%`;
-      const s = pct / 100;
-      const cx = baseQuad.reduce((a, p) => a + p.x, 0) / 4;
-      const cy = baseQuad.reduce((a, p) => a + p.y, 0) / 4;
-      pm.cornersNorm = baseQuad.map(p => ({
-        x: Math.max(0.02, Math.min(0.98, cx + (p.x - cx) * s)),
-        y: Math.max(0.02, Math.min(0.98, cy + (p.y - cy) * s)),
-      }));
+
+    const applyPoseFromSliders = () => {
+      const next = buildPerspectiveQuadFromAngles({
+        cx: this.pose.cx,
+        cy: this.pose.cy,
+        halfW: 0.28,
+        halfH: 0.17,
+        yawDeg: this.pose.yawDeg,
+        pitchDeg: this.pose.pitchDeg,
+        rollDeg: this.pose.rollDeg,
+        scale: this.pose.scale,
+      });
+      pm.cornersNorm = next;
       updateTransform();
-    });
-    this.container.querySelector('#pmScaleRange')?.addEventListener('change', () => {
-      this.callbacks.onCornersChange?.(pm.cornersNorm);
-    });
+    };
+    const bindSlider = (sel, valSel, suffix, prop, transformFn = v => v) => {
+      this.container.querySelector(sel)?.addEventListener('input', e => {
+        const raw = Number(e.target.value) || 0;
+        const valEl = valSel ? this.container.querySelector(valSel) : null;
+        if (valEl) valEl.textContent = `${raw}${suffix}`;
+        this.pose[prop] = transformFn(raw);
+        applyPoseFromSliders();
+      });
+      this.container.querySelector(sel)?.addEventListener('change', () => {
+        this.callbacks.onCornersChange?.(pm.cornersNorm);
+      });
+    };
+    bindSlider('#pmYawRange', '#pmYawVal', '°', 'yawDeg');
+    bindSlider('#pmPitchRange', '#pmPitchVal', '°', 'pitchDeg');
+    bindSlider('#pmRollRange', '#pmRollVal', '°', 'rollDeg');
+    bindSlider('#pmScaleRange', '#pmScaleVal', '%', 'scale', v => Math.max(0.35, Math.min(2.0, v / 100)));
+    bindSlider('#pmPosX', null, '', 'cx', v => Math.max(0.1, Math.min(0.9, v / 100)));
+    bindSlider('#pmPosY', null, '', 'cy', v => Math.max(0.1, Math.min(0.9, v / 100)));
+
     this.container.querySelector('#pmSignW')?.addEventListener('change', e => {
       const v = Number(e.target.value);
       if (Number.isFinite(v) && v >= 50) this.callbacks.onResizeSignMm?.('w', v);
@@ -190,34 +251,51 @@ export class PhotomontageOverlay {
     this._cleanupFns.push(() => window.removeEventListener('keydown', onEsc, true));
 
     if (!confirmed) {
-      // Smart Click-to-Place: clicking directly on blank facade area centers an aspect-locked fascia quad
       const frameEl = this.container.querySelector('.pm-frame');
       frameEl?.addEventListener('pointerdown', (e) => {
         if (this.dragIdx >= 0 || e.target.closest('button, input, select, label, .pm-resize-dock, .pm-action-bar, .pm-confirmed-bar') || e.target.closest('[title^="Köşe"]')) return;
         const rect = bgImg.getBoundingClientRect();
         if (!rect.width || !rect.height) return;
-        const nx = Math.max(0.18, Math.min(0.82, (e.clientX - rect.left) / rect.width));
-        const ny = Math.max(0.12, Math.min(0.85, (e.clientY - rect.top) / rect.height));
+        const nx = Math.max(0.02, Math.min(0.98, (e.clientX - rect.left) / rect.width));
+        const ny = Math.max(0.02, Math.min(0.98, (e.clientY - rect.top) / rect.height));
+        if (pointInQuadNorm({ x: nx, y: ny }, pm.cornersNorm)) {
+          this.dragMode = 'body';
+          this.dragStartPt = { x: nx, y: ny };
+          this.dragStartCorners = pm.cornersNorm.map(c => ({ x: c.x, y: c.y }));
+          return;
+        }
         const sw = signImg.naturalWidth || 1200;
         const sh = signImg.naturalHeight || 400;
         const halfW = 0.22;
         const imgRatio = rect.width / Math.max(1, rect.height);
         const halfH = Math.max(0.06, Math.min(0.28, halfW * (sh / Math.max(1, sw)) * imgRatio));
+        const cxClamped = Math.max(0.18, Math.min(0.82, nx));
+        const cyClamped = Math.max(0.12, Math.min(0.85, ny));
         pm.cornersNorm = [
-          { x: Math.max(0.02, nx - halfW), y: Math.max(0.02, ny - halfH) },
-          { x: Math.min(0.98, nx + halfW), y: Math.max(0.02, ny - halfH) },
-          { x: Math.min(0.98, nx + halfW), y: Math.min(0.98, ny + halfH) },
-          { x: Math.max(0.02, nx - halfW), y: Math.min(0.98, ny + halfH) },
+          { x: Math.max(0.02, cxClamped - halfW), y: Math.max(0.02, cyClamped - halfH) },
+          { x: Math.min(0.98, cxClamped + halfW), y: Math.max(0.02, cyClamped - halfH) },
+          { x: Math.min(0.98, cxClamped + halfW), y: Math.min(0.98, cyClamped + halfH) },
+          { x: Math.max(0.02, cxClamped - halfW), y: Math.min(0.98, cyClamped + halfH) },
         ];
+        this._syncPoseFromCorners(pm.cornersNorm);
         updateTransform();
         this.callbacks.onCornersChange?.(pm.cornersNorm);
       });
       const onMove = (e) => {
-        if (this.dragIdx < 0) return;
+        if (this.dragIdx < 0 && this.dragMode !== 'body') return;
         const rect = bgImg.getBoundingClientRect();
         const nx = Math.max(0.02, Math.min(0.98, (e.clientX - rect.left) / Math.max(1, rect.width)));
         const ny = Math.max(0.02, Math.min(0.98, (e.clientY - rect.top) / Math.max(1, rect.height)));
-        if (this.resizeUniform) {
+        if (this.dragMode === 'body' && this.dragStartPt && this.dragStartCorners) {
+          const dx = nx - this.dragStartPt.x;
+          const dy = ny - this.dragStartPt.y;
+          pm.cornersNorm = this.dragStartCorners.map(c => ({
+            x: Math.max(0.02, Math.min(0.98, c.x + dx)),
+            y: Math.max(0.02, Math.min(0.98, c.y + dy)),
+          }));
+          this.snapGuides = [];
+          this._syncPoseFromCorners(pm.cornersNorm);
+        } else if (this.resizeUniform) {
           const cx = pm.cornersNorm.reduce((a, p) => a + p.x, 0) / 4;
           const cy = pm.cornersNorm.reduce((a, p) => a + p.y, 0) / 4;
           const oldP = pm.cornersNorm[this.dragIdx];
@@ -228,14 +306,22 @@ export class PhotomontageOverlay {
             x: Math.max(0.02, Math.min(0.98, cx + (p.x - cx) * factor)),
             y: Math.max(0.02, Math.min(0.98, cy + (p.y - cy) * factor)),
           }));
+          this.snapGuides = [];
         } else {
-          pm.cornersNorm[this.dragIdx] = { x: nx, y: ny };
+          const snapped = snapCornerWithGuides(pm.cornersNorm, this.dragIdx, { x: nx, y: ny });
+          pm.cornersNorm[this.dragIdx] = snapped.point;
+          this.snapGuides = snapped.guides;
         }
         updateTransform();
       };
       const onUp = () => {
-        if (this.dragIdx >= 0) {
+        if (this.dragIdx >= 0 || this.dragMode === 'body') {
           this.dragIdx = -1;
+          this.dragMode = null;
+          this.dragStartPt = null;
+          this.dragStartCorners = null;
+          this.snapGuides = [];
+          updateTransform();
           this.callbacks.onCornersChange?.(pm.cornersNorm);
         }
       };
@@ -289,10 +375,11 @@ export class PhotomontageOverlay {
     const signUrl = signEngine.capturePng(capW, capH, {
       transparent: true,
       fitToSign: true,
+      architecturalFov: 28,
       haloMode: hasActiveHalo ? 'exclude' : 'include',
     });
     const haloUrl = hasActiveHalo
-      ? signEngine.capturePng(capW, capH, { transparent: true, fitToSign: true, haloMode: 'only' })
+      ? signEngine.capturePng(capW, capH, { transparent: true, fitToSign: true, architecturalFov: 28, haloMode: 'only' })
       : null;
 
     const signCanvas = await this._rasterizeDataUrl(signUrl);
