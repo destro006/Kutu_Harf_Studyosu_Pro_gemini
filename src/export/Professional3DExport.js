@@ -232,3 +232,58 @@ export function write3mf(groups) {
     ['3D/3dmodel.model',model],
   ]);
 }
+
+/**
+ * Generates an iOS Quick Look compatible .usdz archive (uncompressed ZIP wrapping a .usda scene in meters).
+ */
+export function writeUsdz(groups) {
+  const meshes = (groups || []).map((g, idx) => {
+    const pts = [];
+    const counts = [];
+    const indices = [];
+    let vi = 0;
+    for (const t of g.triangles || []) {
+      for (const p of t.verts) pts.push(`(${f(p[0])}, ${f(p[1])}, ${f(p[2])})`);
+      counts.push(3);
+      indices.push(vi, vi + 1, vi + 2);
+      vi += 3;
+    }
+    const col = hexColor(g.color);
+    const r = (parseInt(col.slice(1, 3), 16) / 255).toFixed(3);
+    const gr = (parseInt(col.slice(3, 5), 16) / 255).toFixed(3);
+    const b = (parseInt(col.slice(5, 7), 16) / 255).toFixed(3);
+    return `  def Mesh "Part_${idx}" {
+    int[] faceVertexCounts = [${counts.join(', ')}]
+    int[] faceVertexIndices = [${indices.join(', ')}]
+    point3f[] points = [${pts.join(', ')}]
+    color3f[] primvars:displayColor = [(${r}, ${gr}, ${b})]
+    uniform token subdivisionScheme = "none"
+  }`;
+  }).join('\n');
+
+  const usda = `#usda 1.0\n(\n  defaultPrim = "KutuHarf"\n  metersPerUnit = 1\n  upAxis = "Y"\n)\ndef Xform "KutuHarf" {\n${meshes}\n}\n`;
+  // USDZ requires 64-byte alignment of embedded data payload; pad extra field cleanly.
+  const nameBytes = ascii('signage.usda');
+  const data = ascii(usda);
+  const padLen = (64 - ((30 + nameBytes.length) % 64)) % 64;
+  const crc = crc32(data);
+  const localHead = new Uint8Array(30 + nameBytes.length + padLen);
+  const lv = new DataView(localHead.buffer);
+  lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint16(6, 0x0800, true);
+  lv.setUint32(14, crc, true); lv.setUint32(18, data.length, true); lv.setUint32(22, data.length, true);
+  lv.setUint16(26, nameBytes.length, true); lv.setUint16(28, padLen, true);
+  localHead.set(nameBytes, 30);
+
+  const dir = new Uint8Array(46 + nameBytes.length);
+  const dv = new DataView(dir.buffer);
+  dv.setUint32(0, 0x02014b50, true); dv.setUint16(4, 20, true); dv.setUint16(6, 20, true);
+  dv.setUint16(8, 0x0800, true); dv.setUint32(16, crc, true); dv.setUint32(20, data.length, true); dv.setUint32(24, data.length, true);
+  dv.setUint16(28, nameBytes.length, true); dv.setUint32(42, 0, true); dir.set(nameBytes, 46);
+
+  const offset = localHead.length + data.length;
+  const end = new Uint8Array(22);
+  const ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, 1, true); ev.setUint16(10, 1, true);
+  ev.setUint32(12, dir.length, true); ev.setUint32(16, offset, true);
+  return bytesJoin([localHead, data, dir, end]);
+}

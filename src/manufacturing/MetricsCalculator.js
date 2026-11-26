@@ -1,3 +1,5 @@
+import { calculateReturnCoilPlan, calculateSmartLedAndPsu } from './WorkshopAutomation.js';
+
 /**
  * Manufacturing Metrics Calculator (Strictly driven by real millimeter geometry)
  * Computes surface areas, cutting perimeters, LED module counts, and power supply requirements.
@@ -72,6 +74,9 @@ export function calculateManufacturingMetrics(metricsList, state) {
   // 12V LED module ~1.2W each; 150W PSU safely drives ~100 modules (80% load)
   const powerSupplies = totalLedModules > 0 ? Math.max(1, Math.ceil(totalLedModules / 95)) : 0;
 
+  const ledPsuPlan = calculateSmartLedAndPsu(metricsList, state);
+  const coilPlan = calculateReturnCoilPlan(metricsList, state);
+
   return {
     componentCount: components.length,
     totalWidthMm,
@@ -85,6 +90,8 @@ export function calculateManufacturingMetrics(metricsList, state) {
     cuttingLengthM: totalCuttingMm / 1000,
     totalLedModules,
     powerSupplies,
+    ledPsuPlan,
+    coilPlan,
     components,
   };
 }

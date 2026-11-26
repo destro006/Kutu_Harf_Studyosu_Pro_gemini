@@ -1,11 +1,12 @@
 import {formatDimensions} from '../core/units.js';
 import { formatMoney } from './CostEngine.js';
+import { generateQrSvg } from '../sales/QrCodeGenerator.js';
 
 /**
  * Müşteriye sunulan teklif. Alış fiyatlarını, genel gideri ve kârı ASLA dışa aktarmaz.
  * HTML tarayıcıdan PDF olarak kaydedilebilir; firma logoları projede data URL olarak saklanır.
  */
-export function buildQuoteHtml(state, metrics, costs, previewDataUrl = null) {
+export function buildQuoteHtml(state, metrics, costs, previewDataUrl = null, extras = {}) {
   const q=state.quote||{};
   const locked=q.locked && q.lockedSnapshot;
   const activeCosts=locked ? q.lockedSnapshot.costs : costs;
@@ -28,9 +29,12 @@ export function buildQuoteHtml(state, metrics, costs, previewDataUrl = null) {
     return `<tr><td class="line-index">${index+1}</td><td><b>${p(l.label)}</b></td><td class="number">${num(l.quantity)}</td><td>${p(l.unit)}</td><td class="number">${formatMoney(unit,curr)}</td><td class="number"><b>${formatMoney(linePrice,curr)}</b></td></tr>`;
   }).join('');
   const dimensions = formatDimensions(activeMetrics.totalWidthMm,activeMetrics.totalHeightMm,state.pageLayout?.displayUnit);
+  const depthMm = Math.round(state.dimensions?.depthMm || 80);
+  const qrTarget = String(extras?.shareUrl || `https://kutuharf.local/?teklif=${encodeURIComponent(q.quoteNumber || 'KT-0001')}`);
+  const qrSvg = generateQrSvg(qrTarget, 92);
   const opts = [
     `${num(activeMetrics.componentCount)} harf/parça`,
-    formatDimensions(activeMetrics.totalWidthMm,activeMetrics.totalHeightMm,state.pageLayout?.displayUnit),
+    `${dimensions} · Derinlik ${depthMm} mm`,
     `LED: ${num(activeMetrics.totalLedModules)} modül`,
   ];
   const styles = `
@@ -55,6 +59,8 @@ export function buildQuoteHtml(state, metrics, costs, previewDataUrl = null) {
   .specs{display:flex;flex-wrap:wrap;gap:7px}.specs span{padding:5px 9px;background:#f6f7f8;border-radius:4px;font-size:10.5px}
   .visual{margin:16px 0 4px;display:grid;place-items:center;padding:10px;border:1px solid #e5e8eb;border-radius:9px}
   .visual img{max-width:100%;max-height:195px;object-fit:contain}
+  .qr-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:12px;padding:10px 14px;border:1px solid #e2d5be;border-radius:9px;background:#fbf8f2}
+  .qr-box{flex:none;background:#fff;padding:4px;border:1px solid #e5e7eb;border-radius:6px;line-height:0}
   table{width:100%;border-collapse:collapse;margin-top:10px;font-size:10.5px}
   thead{display:table-header-group} tr{break-inside:avoid;page-break-inside:avoid}
   th{background:#233043;color:#fff;padding:9px 8px;text-align:left;white-space:nowrap;font-weight:600}
@@ -84,9 +90,10 @@ export function buildQuoteHtml(state, metrics, costs, previewDataUrl = null) {
 <div class="boxes"><section class="box"><h3>TEKLİF VERİLEN FİRMA</h3>${customerLogo?`<img class="customer-logo" src="${customerLogo}" alt="Müşteri firma logosu">`:''}
   <div class="title">${p(q.customerCompany||q.customerName)}</div><div>${p(q.customerName)}</div><div class="muted sm">${p(q.customerAddress)}<br>${p(q.customerPhone)} &nbsp; ${p(q.customerEmail)}</div></section>
   <section class="box"><h3>PROJE &amp; ÜRETİM</h3><div class="project-name">${p(state.projectName)}</div>
-  <div class="specs"><span>Ölçü: ${p(dimensions)}</span><span>${p(q.productionDays||7)} iş günü</span><span>${p(opts[0])}</span></div>
+  <div class="specs"><span>Ölçü: ${p(dimensions)} · Derinlik ${depthMm} mm</span><span>${p(q.productionDays||7)} iş günü</span><span>${p(opts[0])}</span><span>${p(opts[2])}</span></div>
   <div class="sm muted" style="margin-top:8px">${p(q.deliveryTerms)}</div></section></div>
   ${preview?`<div class="visual"><img src="${preview}" alt="Tabela 3D görseli"></div>`:''}
+  <div class="qr-bar"><div><b style="color:#865d25;font-size:11.5px">CANLI 3D ÖNİZLEME &amp; ONAY QR KODU</b><div class="sm muted">Müşteriniz telefon kamerasıyla QR kodu okutarak 3D tabelayı 360° inceleyebilir ve onaylayabilir.</div></div><div class="qr-box">${qrSvg}</div></div>
   <h2>Ürünler, malzemeler ve hizmetler</h2>
   <table><thead><tr><th>#</th><th>Ürün / İş Kalemi</th><th class="number">Miktar</th><th>Birim</th><th class="number">Birim Satış</th><th class="number">Tutar</th></tr></thead>
   <tbody>${rows||'<tr><td colspan="6">Henüz hesaplanmış iş kalemi bulunmuyor.</td></tr>'}</tbody></table>

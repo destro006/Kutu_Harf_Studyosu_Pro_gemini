@@ -109,48 +109,56 @@ export function buildSceneLights(night, sizeM) {
   const h = Math.max(0.4, sizeM.h || 0.4);
 
   if (night) {
-    const amb = new THREE.AmbientLight('#9fb0d0', 0.06);
-    group.add(amb);
-
-    // Primary warm architectural gallery key light (directional: no circular spot hotspot)
-    const dir = new THREE.DirectionalLight('#ffd6a3', 1.65);
-    dir.position.set(0.15, h / 2 + 1.4 + w * 0.15, 2.4 + w * 0.3);
-    dir.castShadow = true;
-    const frustum = Math.max(2, w) * 0.85;
-    dir.shadow.camera.left = -frustum;
-    dir.shadow.camera.right = frustum;
-    dir.shadow.camera.top = frustum;
-    dir.shadow.camera.bottom = -frustum;
-    dir.shadow.mapSize.set(2048, 2048);
-    dir.shadow.bias = -0.0004;
-    dir.shadow.normalBias = 0.015;
-    dir.shadow.radius = 6;
-    group.add(dir);
-
-    // Subtle cool edge rim to sculpt dark metallic returns at night
-    const rim = new THREE.DirectionalLight('#c8dcff', 0.25);
-    rim.position.set(-w * 0.8 - 1.5, h * 0.5 + 1.0, 2.5);
-    group.add(rim);
-  } else {
-    const hemi = new THREE.HemisphereLight('#fff8ee', '#5d5045', 0.9);
+    const hemi = new THREE.HemisphereLight('#8ea4c8', '#2a2420', 0.18);
     group.add(hemi);
 
-    const frustum = Math.max(w, 2) * 0.75;
-    const dir = new THREE.DirectionalLight('#fff3e2', 2.6);
-    dir.position.set(-w * 0.6 - 1.5, h / 2 + 3, 4);
+    // Primary warm architectural gallery key light (directional: no circular spot hotspot)
+    const dir = new THREE.DirectionalLight('#ffdcb0', 1.35);
+    dir.position.set(0.15, h / 2 + 1.4 + w * 0.15, 2.4 + w * 0.3);
     dir.castShadow = true;
-    dir.shadow.mapSize.set(2048, 2048);
-    dir.shadow.bias = -0.0004;
-    dir.shadow.normalBias = 0.015;
+    const frustum = Math.max(1.8, w * 0.78, h * 1.4);
     dir.shadow.camera.left = -frustum;
     dir.shadow.camera.right = frustum;
     dir.shadow.camera.top = frustum;
     dir.shadow.camera.bottom = -frustum;
+    dir.shadow.camera.near = 0.2;
+    dir.shadow.camera.far = Math.max(16, w * 4 + 8);
+    dir.shadow.mapSize.set(2048, 2048);
+    dir.shadow.bias = -0.00025;
+    dir.shadow.normalBias = 0.008;
     dir.shadow.radius = 4;
     group.add(dir);
 
-    const fill = new THREE.DirectionalLight('#e8f0ff', 0.32);
-    fill.position.set(w * 0.6 + 1.5, -h * 0.3, 3.0);
+    // Dual edge rims keep dark metallic return angles legible without blowing out shadows
+    const rimLeft = new THREE.DirectionalLight('#c4daff', 0.34);
+    rimLeft.position.set(-w * 0.8 - 1.5, h * 0.5 + 1.0, 2.5);
+    group.add(rimLeft);
+
+    const rimRight = new THREE.DirectionalLight('#e8d8c4', 0.24);
+    rimRight.position.set(w * 0.8 + 1.5, h * 0.2 + 0.6, 2.2);
+    group.add(rimRight);
+  } else {
+    const hemi = new THREE.HemisphereLight('#f4f7fb', '#7a7066', 0.42);
+    group.add(hemi);
+
+    const frustum = Math.max(1.5, w * 0.72, h * 1.35);
+    const dir = new THREE.DirectionalLight('#fff8ee', 1.45);
+    dir.position.set(-w * 0.45 - 1.2, h / 2 + 2.4, 3.6);
+    dir.castShadow = true;
+    dir.shadow.mapSize.set(2048, 2048);
+    dir.shadow.bias = -0.00025;
+    dir.shadow.normalBias = 0.008;
+    dir.shadow.camera.left = -frustum;
+    dir.shadow.camera.right = frustum;
+    dir.shadow.camera.top = frustum;
+    dir.shadow.camera.bottom = -frustum;
+    dir.shadow.camera.near = 0.2;
+    dir.shadow.camera.far = Math.max(16, w * 4 + 8);
+    dir.shadow.radius = 2.5;
+    group.add(dir);
+
+    const fill = new THREE.DirectionalLight('#dce8ff', 0.28);
+    fill.position.set(w * 0.6 + 1.5, -h * 0.15, 2.8);
     group.add(fill);
   }
 

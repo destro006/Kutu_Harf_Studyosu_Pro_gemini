@@ -3255,13 +3255,17 @@
     reader.readAsDataURL(file);
   }
 
-  function loadImageFromDataUrl(dataUrl, fileName = 'fotomontaj_sunum') {
+  function loadImageFromDataUrl(dataUrl, fileName = 'fotomontaj_sunum', options = {}) {
     if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
       showToast('Geçersiz görsel verisi alındı.');
       return;
     }
     clearHistory();
     state.fileName = String(fileName || 'fotomontaj_sunum').replace(/\.[^.]+$/, '');
+    if (options.presetId && PRESETS.some(p => p.id === options.presetId)) {
+      state.presetId = options.presetId;
+      renderPresets();
+    }
     const img = new Image();
     img.onload = () => {
       const maxIn = 1800;
@@ -3282,7 +3286,9 @@
       setViewMode('compare');
       analyzeImageAuto(state.sourceCanvas);
       runEnhancement(false);
-      showToast('✓ Fotomontaj görüntüsü Image Tracer’a yüklendi — düzenleyip çıktı alabilirsiniz.');
+      showToast(options.source === 'logo-quality'
+        ? '✓ Logo önerilen iyileştirme ayarıyla Image Tracer’a yüklendi — düzenleyip Stüdyoya Gönder ile 3D sahneye aktarabilirsiniz.'
+        : '✓ Fotomontaj görüntüsü Image Tracer’a yüklendi — düzenleyip çıktı alabilirsiniz.');
     };
     img.src = dataUrl;
   }
@@ -3291,7 +3297,10 @@
     const msg = e.data;
     if (!msg || typeof msg !== 'object') return;
     if (msg.type === 'SIGNAGE_STUDIO_LOAD_IMAGE' && msg.dataUrl) {
-      loadImageFromDataUrl(msg.dataUrl, msg.fileName || 'fotomontaj_sunum');
+      loadImageFromDataUrl(msg.dataUrl, msg.fileName || 'fotomontaj_sunum', {
+        presetId: msg.presetId || null,
+        source: msg.source || 'photomontage',
+      });
     }
   });
 

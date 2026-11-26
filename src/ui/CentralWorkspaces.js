@@ -1,11 +1,13 @@
 import {normalizeDisplayUnit,formatMmAsUnit,formatDimensions,formatPresetLabel} from '../core/units.js';
 import { renderDetailedCostCenter } from './CostCenterView.js?v=qa8';
 import { ringLength, SHEET_PRESETS } from '../manufacturing/NestingEngine.js';
-import { renderNestingSvg } from './NestingView.js?v=20261126-v30';
+import { renderNestingSvg } from './NestingView.js?v=20261126-v31';
 import { renderNestingSourceTabs, renderNestingImportPane } from './NestingImportView.js?v=units6';
 import { MACHINE_PROFILES, MACHINE_PROFILE_CATEGORIES, getMachineProfile, validateNestedProduction } from '../export/CncGcodeExporter.js';
 import { formatMoney } from '../manufacturing/CostEngine.js';
 import { buildQuoteHtml } from '../manufacturing/QuoteGenerator.js';
+import { renderBendingSimulatorPane } from './BendingSimulatorView.js';
+import { calculateReturnCoilPlan, calculateSmartLedAndPsu, computeMountingStuds } from '../manufacturing/WorkshopAutomation.js';
 
 /**
  * Central Full-Canvas Workspaces:
@@ -242,6 +244,7 @@ export function renderNestingCenter(state, ctx) {
           </div>
           <div class="cws-nesting-actions">
             <button type="button" id="cwsSendCorel" class="corel-btn" title="Nesting parçalarını, plaka ebatını ve seçili renkleri tek tıkla CorelDRAW'a aktar">✦ Corel'e Aktar</button>
+            <button type="button" id="cwsSendCncQuick" class="cnc-send-btn" title="Aktif makine profili, kerf ve kesim sırasıyla hızlı CNC/DXF çıktısı al">⚡ CNC'ye Aktar</button>
             <button type="button" id="cwsRunNesting" class="cta-btn" title="İçe aktarmadan sonra hassas true-shape optimizasyonu; işlem sürerken tekrar tıklayarak iptal edin">Otomatik Yerleştir</button>
             <button type="button" id="cwsSidewallStrips" class="sec-btn cws-strips-btn ${isSidewallMode ? 'on' : ''}" title="Yalnızca kutu harflerin kenar dönüş çıtalarını (yanak şeritlerini) kesime hazırla">${isSidewallMode ? '✓ Kenar Çıtaları (Aktif)' : '▭ Kenar Çıtaları'}</button>
             <span class="cws-action-sep" aria-hidden="true"></span>
@@ -264,6 +267,12 @@ export function renderNestingCenter(state, ctx) {
             </div>
           ` : ''}
           <span class="nesting-sheet-dimensions">${formatDimensions(displayedSheet.widthMm,displayedSheet.heightMm,unit)}</span>
+          <div id="nestZoomHud" class="nest-zoom-hud" title="Ctrl + Tekerlek ile yakınlaştır/uzaklaştır">
+            <button type="button" id="nestZoomOut" aria-label="Uzaklaştır">−</button>
+            <span id="nestZoomVal">100%</span>
+            <button type="button" id="nestZoomIn" aria-label="Yakınlaştır">+</button>
+            <button type="button" id="nestZoomReset" title="Görünümü sıfırla">↺</button>
+          </div>
           ${!activeSheet ? '<span class="nesting-sheet-empty-note">Parçaları yerleştirmek için Otomatik Yerleştir seçin</span>' : ''}
         </div>
       </div>
@@ -288,7 +297,6 @@ export function renderNestingCenter(state, ctx) {
           <div class="field-row"><label>Levha Yüksekliği (${unit})</label><input id="cwsNestH" type="number" step="any" value="${show(n.sheetHeightMm)}"></div>
           <div class="field-row"><label>Parça Aralığı (${unit})</label><input id="cwsNestSp" type="number" step="any" value="${show(n.clearanceMm??5)}"></div>
           <div class="field-row"><label>Kenar Payı (${unit})</label><input id="cwsNestMg" type="number" step="any" value="${show(n.marginLeftMm)}"></div>
-          <div class="field-row"><label>Delik İçi Yerleştirme</label><input id="cwsNestHoles" type="checkbox" ${n.allowHoleNesting ? 'checked' : ''}></div>
           <div class="field-row"><label>Fırça Yönü Kısıtı (0° Sabit)</label><input id="cwsNestGrain" type="checkbox" ${n.enforceGrainDirection ? 'checked' : ''}></div>
           <details class="nesting-advanced-details" id="cwsNestAdvanced" ${ctx.advancedOpen ? 'open' : ''}>
             <summary class="nesting-advanced-summary">
@@ -296,6 +304,10 @@ export function renderNestingCenter(state, ctx) {
               <small id="cwsNestAdvancedBadge">${n.enforceGrainDirection ? '0° Sabit · Otomatik' : (n.rotationStepDeg === 'auto' || n.rotationStepDeg == null ? 'Otomatik · En İyi Geçirme' : `${n.rotationStepDeg}° Adım`)}</small>
             </summary>
             <div class="nesting-advanced-body">
+              <div class="field-row">
+                <label for="cwsNestHoles" title="O, A, D gibi yuvarlak veya kapalı iç boşluğu olan objelerin içine küçük parçaları yerleştir">Objelerin İçine Ekle (Delik İçi)</label>
+                <input id="cwsNestHoles" type="checkbox" ${n.allowHoleNesting !== false ? 'checked' : ''}>
+              </div>
               <div class="field-row">
                 <label>Dönüş Açısı</label>
                 <select id="cwsNestRot" ${n.enforceGrainDirection ? 'disabled title="Fırça yönü kısıtı açıkken parçalar 0° sabit kalır"' : ''}>
@@ -333,7 +345,7 @@ export function renderNestingCenter(state, ctx) {
         ${wrapRightPanel('cnc', 2, 'CNC Makine ve Ayarları', renderNestedCncPanel(state, activeSheet))}
         ${wrapRightPanel('export', 3, 'Nesting Dışa Aktar', `
           <div style="display:flex;flex-direction:column;gap:6px">
-            <button type="button" id="cwsExpCorel" class="corel-btn" ${totalParts?'':'disabled'}>✦ CorelDRAW'a Aktar (1 Tık)</button>
+            <button type="button" id="cwsExpCorel" class="corel-btn" ${totalParts?'':'disabled'}>✦ CorelDRAW'a Aktar</button>
             <button type="button" id="cwsCorelSetup" class="sec-btn">CorelDRAW Köprüsü &amp; Seçenekler</button>
             <button type="button" id="cwsExpSvg" class="sec-btn" ${activeSheet?.placements?.length?'':'disabled'}>Aktif Levhayı SVG İndir</button>
             <button type="button" id="cwsExpDxf" class="sec-btn" ${totalParts?'':'disabled'}>Tüm Levhaları DXF (1:1 mm) İndir</button>
@@ -406,21 +418,79 @@ function renderNestedCncPanel(state,activeSheet){
  ${profile.kind==='gcode'?'<p>G-code taslağı: hız, güç ve Z değerleri sabittir; telafi, lead-in ve mikro köprüler CAM programında doğrulanıp uygulanmalıdır.</p>':''}</div>
  <button type="button" id="nestCncExport" class="sec-btn" style="width:100%" ${val.valid?'':'disabled'}>Aktif Levha · ${profile.kind==='gcode'?'G-code Taslağı (.'+profile.ext+')':profile.ext.toUpperCase()} İndir</button>
  <div style="display:flex;gap:6px;margin-top:6px">
-   <button type="button" id="nestCncSendMachine" class="cnc-send-btn" style="flex:1" ${val.valid?'':'disabled'} title="Seçili CNC/Lazer makinesine tek tıkla gönder">⚡ Makineye Yükle (1 Tık)</button>
+   <button type="button" id="nestCncSendMachine" class="cnc-send-btn" style="flex:1" ${val.valid?'':'disabled'} title="Seçili CNC/Lazer makinesine gönder">⚡ Makineye Yükle</button>
    <button type="button" id="nestCncMachineConfig" class="sec-btn" title="Makine bağlantı ayarları (USB / Klasör / LightBurn / FTP / TCP / COM)">⚙</button>
  </div>
  </div>`;
 }
 
-export function renderCncCenter(state) {
+function renderWorkshopPane(state, metricsList = []) {
+  const studPlan = computeMountingStuds(metricsList);
+  const ledPlan = calculateSmartLedAndPsu(metricsList, state);
+  const coilPlan = calculateReturnCoilPlan(metricsList, state);
+  const hasLetters = (metricsList || []).length > 0;
+
+  return `
+    <div class="workshop-grid">
+      <div class="sec">
+        <h3 class="sec-title">1:1 Montaj (Saplama) Şablonu</h3>
+        <p style="font-size:12px;color:var(--muted);margin:0 0 10px">Harflerin dış konturunu ve dengeli arka saplama deliklerini 1:1 mm ölçeğinde plotter çıktısına hazır üretir.</p>
+        <div class="workshop-kpi"><span>Harf / Kontur Sayısı</span><strong>${studPlan.letters.length}</strong></div>
+        <div class="workshop-kpi"><span>Toplam Saplama Deliği</span><strong>${studPlan.totalStuds} adet</strong></div>
+        <div class="workshop-kpi"><span>Delik Çapı</span><strong>6 mm (Standart)</strong></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+          <button type="button" id="wsExportStudDxf" class="cta-btn" ${!hasLetters ? 'disabled' : ''}>1:1 Şablon DXF İndir</button>
+          <button type="button" id="wsExportStudSvg" class="sec-btn" ${!hasLetters ? 'disabled' : ''}>1:1 Şablon SVG İndir</button>
+        </div>
+      </div>
+
+      <div class="sec">
+        <h3 class="sec-title">Akıllı LED &amp; IP67 Trafo Hesabı</h3>
+        <p style="font-size:12px;color:var(--muted);margin:0 0 10px">İç alana göre modül dağılımı ve %20 güvenlik payı dahil otomatik dış mekan IP67 güç kaynağı seçimi.</p>
+        <div class="workshop-kpi"><span>Toplam LED Modül</span><strong>${ledPlan.totalModules} modül</strong></div>
+        <div class="workshop-kpi"><span>Net Güç Tüketimi</span><strong>${ledPlan.totalWatt} W</strong></div>
+        <div class="workshop-kpi"><span>+%${ledPlan.safetyMarginPct} Paylı Gereksinim</span><strong>${ledPlan.requiredWatt} W</strong></div>
+        <div class="workshop-kpi"><span>Önerilen Güç Kaynağı</span><strong style="color:#4ade80">${escapeHtml(ledPlan.psuLabel)}</strong></div>
+      </div>
+
+      <div class="sec">
+        <h3 class="sec-title">Yan Bant Bobin &amp; Fire Hesabı</h3>
+        <p style="font-size:12px;color:var(--muted);margin:0 0 10px">Kutu harf derinliğine göre gerekli toplam yan bant metrajı ve bobin rulo kullanımı.</p>
+        <div class="workshop-kpi"><span>Yan Bant Yüksekliği (Bobin Eni)</span><strong>${coilPlan.coilWidthMm} mm</strong></div>
+        <div class="workshop-kpi"><span>Net Harf Çevresi</span><strong>${coilPlan.netPerimeterM} m</strong></div>
+        <div class="workshop-kpi"><span>Fire &amp; Bindirme Payı (%${coilPlan.wastePct})</span><strong>+${coilPlan.wasteAllowanceM} m</strong></div>
+        <div class="workshop-kpi"><span>Toplam Bobin İhtiyacı</span><strong>${coilPlan.grossPerimeterM} m (${coilPlan.estimatedRolls} rulo)</strong></div>
+      </div>
+    </div>
+  `;
+}
+
+export function renderCncCenter(state, ctx = {}) {
   const sheets = state.nesting?.sheets || [];
   const cnc = state.cnc || {};
+  const subTab = ctx.subTab || 'cnc';
   const unit=normalizeDisplayUnit(state.pageLayout?.displayUnit),show=mm=>formatMmAsUnit(mm,unit);
   const val = validateNestedProduction(sheets, cnc);
   const activeProfile = getMachineProfile(cnc.profile);
   const gcodeExt = activeProfile.kind === 'gcode' ? activeProfile.ext : 'nc';
 
+  const tabsHtml = `
+    <div class="cnc-subtabs">
+      <button type="button" class="cnc-subtab-btn ${subTab === 'cnc' ? 'active' : ''}" data-cnc-subtab="cnc">⚙ CNC / Lazer Kesim</button>
+      <button type="button" class="cnc-subtab-btn ${subTab === 'workshop' ? 'active' : ''}" data-cnc-subtab="workshop">🛠 Atölye Otomasyon (Şablon &amp; Bobin)</button>
+      <button type="button" class="cnc-subtab-btn ${subTab === 'bending' ? 'active' : ''}" data-cnc-subtab="bending">🔄 Yan Bant Büküm Simülatörü</button>
+    </div>
+  `;
+
+  if (subTab === 'workshop') {
+    return `${tabsHtml}${renderWorkshopPane(state, ctx.metricsList || [])}`;
+  }
+  if (subTab === 'bending') {
+    return `${tabsHtml}${renderBendingSimulatorPane(ctx.bendingJob, ctx.bendingConfig, ctx.bendingSimState)}`;
+  }
+
   return `
+    ${tabsHtml}
     <div style="padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:1180px;margin:0 auto">
       <div class="sec">
         <h3 class="sec-title">CNC / Lazer Post-Processor Ayarları</h3>
@@ -434,7 +504,7 @@ export function renderCncCenter(state) {
           ${val.issues.map(i => `<div style="font-size:11.5px;margin-top:4px;color:${i.level === 'critical' ? '#fca5a5' : '#fde047'}">• ${escapeHtml(i.msg)}</div>`).join('')}
         </div>
         <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-          <button type="button" id="cncBtnSendMachine" class="cnc-send-btn" style="flex:1" ${!val.valid ? 'disabled' : ''}>⚡ ${escapeHtml(activeProfile.label.split('(')[0].trim())} · Makineye Tek Tıkla Yükle</button>
+          <button type="button" id="cncBtnSendMachine" class="cnc-send-btn" style="flex:1" ${!val.valid ? 'disabled' : ''}>⚡ ${escapeHtml(activeProfile.label.split('(')[0].trim())} · Makineye Yükle</button>
           <button type="button" id="cncBtnMachineConfig" class="sec-btn">⚙ Bağlantı Ayarları</button>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">

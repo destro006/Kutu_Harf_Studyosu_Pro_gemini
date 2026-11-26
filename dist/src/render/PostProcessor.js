@@ -272,10 +272,11 @@ export class PostProcessor {
     this.exposure = Number.isFinite(exposure) ? exposure : 1.0;
     this.transparentBg = Boolean(transparentBg);
     this.quality = quality || 'high';
-    this.bloomThreshold = lit ? (night ? 0.74 : 0.86) : 1.0;
-    this.bloomIntensity = night ? (lit ? 1.58 : 0.4) : (lit ? 0.68 : 0.35);
-    this.bloomRadius = lit ? 0.86 : 0.75;
-    this.vignetteDarkness = this.transparentBg ? 0.0 : (night ? 0.72 : 0.45);
+    // Day mode suppresses wall/travertine whiteout by raising bloom threshold above wall luminance.
+    this.bloomThreshold = lit ? (night ? 0.78 : 1.85) : (night ? 1.15 : 2.4);
+    this.bloomIntensity = night ? (lit ? 1.35 : 0.30) : (lit ? 0.12 : 0.0);
+    this.bloomRadius = lit ? (night ? 0.84 : 0.55) : (night ? 0.72 : 0.50);
+    this.vignetteDarkness = this.transparentBg ? 0.0 : (night ? 0.60 : 0.16);
     this.enabled = this.quality !== 'performance' && !this.transparentBg;
 
     const nextSamples = (this.isWebGL2 && this.quality !== 'performance') ? 4 : 0;

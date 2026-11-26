@@ -511,11 +511,11 @@ export function createSignMaterial(presetId, overrides = {}, lightContext = {}) 
         const tint = Math.min(0.96, 0.86 + 0.10 * Math.min(1, safeInt));
         mat.color.set(mixHex(colorHex, hex, tint));
         mat.emissive.set(hex);
-        mat.emissiveIntensity = (night ? 1.68 : 1.32) * eff;
+        mat.emissiveIntensity = (night ? 1.68 : 0.58) * eff;
       } else {
         mat.color.set(mixHex(colorHex, hex, 0.45));
         mat.emissive.set(mixHex(colorHex, hex, 0.72));
-        mat.emissiveIntensity = (night ? 1.55 : 1.18) * eff;
+        mat.emissiveIntensity = (night ? 1.55 : 0.55) * eff;
       }
     };
     mat.userData.updateLed(glowHex, lightIntensity);

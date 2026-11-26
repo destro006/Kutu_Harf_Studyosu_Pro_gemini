@@ -543,6 +543,12 @@ export class SignEngine {
     }
   }
 
+  computeEffectiveExposure(state) {
+    const userExp = Number.isFinite(state?.render?.exposure) ? state.render.exposure : 1.0;
+    const night = state?.scene?.night ?? true;
+    return userExp * (night ? 1.02 : 0.84);
+  }
+
   _applyEnvironmentAndPost(state) {
     const nextQuality = state.quality || 'high';
     if (nextQuality !== this.quality) {
@@ -550,11 +556,14 @@ export class SignEngine {
       this._resize();
     }
     const prof = QUALITY_PROFILES[this.quality] || QUALITY_PROFILES.high;
+    const night = state.scene?.night ?? true;
+    const effectiveExposure = this.computeEffectiveExposure(state);
+    this._currentNight = night;
     this.renderer.shadowMap.enabled = prof.shadows;
-    this.renderer.toneMappingExposure = state.render?.exposure ?? 1.0;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = effectiveExposure;
 
     const envPresetId = state.render?.envPreset || 'luxuryGold';
-    const night = state.scene?.night ?? true;
     const envPreset = ENVIRONMENT_PRESETS[envPresetId] || ENVIRONMENT_PRESETS.luxuryGold;
     const envTarget = state.render?.useCustomEnv && this.envManager.customTarget
       ? this.envManager.customTarget
@@ -564,7 +573,15 @@ export class SignEngine {
     const rotRad = ((state.render?.envRotationDeg || 0) * Math.PI) / 180;
     const pitchRad = ((state.render?.envPitchDeg || 0) * Math.PI) / 180;
     this.scene.environmentRotation.set(pitchRad, rotRad, 0);
-    this.scene.environmentIntensity = (state.render?.envIntensity ?? 1.0) * (night ? 0.6 : 1.0);
+    this.scene.environmentIntensity = (state.render?.envIntensity ?? 1.0) * (night ? 0.72 : 0.78);
+
+    for (const child of this.wallGroup.children) {
+      const m = child.material;
+      if (m && m.userData?.baseEnvMapIntensity != null) {
+        m.envMapIntensity = m.userData.baseEnvMapIntensity * (night ? 0.65 : 0.28);
+        m.needsUpdate = true;
+      }
+    }
 
     const transparentBg = !!state.scene?.transparentBg;
     if (transparentBg) {
@@ -585,7 +602,7 @@ export class SignEngine {
     this.postProcessor?.setState({
       night,
       lit: anyLit,
-      exposure: state.render?.exposure ?? 1.0,
+      exposure: effectiveExposure,
       transparentBg,
       quality: this.quality,
     });
@@ -1312,16 +1329,16 @@ export class SignEngine {
       gm.visible = visible;
       if (visible && gm.material) {
         const isSide = gm.userData?.frontGlowKind === 'side';
-        const gain = (night ? (isSide ? 1.45 : 1.15) : (isSide ? 0.65 : 0.45)) * Math.min(2.2, fInt);
+        const gain = (night ? (isSide ? 1.45 : 1.15) : (isSide ? 0.28 : 0.20)) * Math.min(2.2, fInt);
         gm.material.color.set(light.frontColor).multiplyScalar(gain);
-        gm.material.opacity = Math.min(0.85, (night ? (isSide ? 0.34 : 0.24) : (isSide ? 0.16 : 0.10)) * Math.min(2.0, fInt) + 0.04);
+        gm.material.opacity = Math.min(0.85, (night ? (isSide ? 0.34 : 0.24) : (isSide ? 0.08 : 0.05)) * Math.min(2.0, fInt) + (night ? 0.04 : 0.01));
       }
     }
     const intensity=light.backIntensity;
     if(refs.halo){
       refs.halo.visible=intensity>0;
-      refs.halo.material.color.set(light.backColor).multiplyScalar((night ? 2.4 : 0.95) * intensity + 0.15);
-      refs.halo.material.opacity=intensity>0?Math.min(.98,(night ? .34 : .22)*intensity+.08):0;
+      refs.halo.material.color.set(light.backColor).multiplyScalar((night ? 2.4 : 0.36) * intensity + (night ? 0.15 : 0.03));
+      refs.halo.material.opacity=intensity>0?Math.min(night ? .98 : .26,(night ? .34 : .12)*intensity+(night ? .08 : .02)):0;
     }
     // No point-light hotspot; the selected intensity controls only the contour glow.
   }
@@ -1341,7 +1358,7 @@ export class SignEngine {
     this.postProcessor?.setState({
       night: state.scene?.night ?? true,
       lit: anyLit,
-      exposure: state.render?.exposure ?? 1.0,
+      exposure: this.computeEffectiveExposure(state),
       transparentBg: !!state.scene?.transparentBg,
       quality: this.quality,
     });
@@ -1401,6 +1418,7 @@ export class SignEngine {
         colors[i * 3 + 2] = shade;
       }
       planeGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      const baseEnv = wt.envMapIntensity ?? 0.55;
       const wallMat = new THREE.MeshStandardMaterial({
         map: wt.map,
         bumpMap: wt.bumpMap,
@@ -1408,9 +1426,10 @@ export class SignEngine {
         roughnessMap: wt.roughnessMap || null,
         roughness: wt.roughness,
         metalness: wt.metalness || 0,
-        envMapIntensity: wt.envMapIntensity ?? 0.55,
+        envMapIntensity: baseEnv * ((this._currentNight ?? true) ? 0.65 : 0.28),
         vertexColors: true,
       });
+      wallMat.userData.baseEnvMapIntensity = baseEnv;
       const wall=new THREE.Mesh(planeGeo,wallMat);
       wall.receiveShadow=true;
       this._clearGroup(this.wallGroup);this.wallGroup.add(wall);this._wallKey=request.key;this.invalidate(true);

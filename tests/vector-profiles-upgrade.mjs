@@ -223,11 +223,11 @@ assert(traceStudioHtml.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && traceStudioHt
 assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes("if (state.viewMode === 'vector')"));
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
-assert(mainJs.includes('./public/trace-studio/index.html?v=20261125-v8'));
-assert(rootHtml.includes('./src/main.js?v=20261126-v30'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v30'));
+assert(mainJs.includes('./public/trace-studio/index.html?v=20261126-v9'));
+assert(rootHtml.includes('./src/main.js?v=20261126-v33'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v33'));
 assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
-assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v30'));
+assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v33'));
 console.log('✓ Image Tracer tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs
@@ -538,6 +538,7 @@ if (process.platform === 'win32') {
 const cncHtml = renderCncCenter(cwsState);
 assert(cncHtml.includes('id="cncBtnSendMachine"') && cncHtml.includes('id="cncBtnMachineConfig"'));
 assert(cwsHtml.includes('id="nestCncSendMachine"') && cwsHtml.includes('id="nestCncMachineConfig"'));
+assert(!cwsHtml.includes('(1 Tık)') && !cncHtml.includes('Tek Tıkla'));
 assert(rootHtml.includes('id="cncMachineModal"'));
 console.log(`✓ 1-Click CNC machine bridge verified for all ${MACHINE_PROFILES.length} profiles (Browser USB/Folder + PowerShell COM/FTP/TCP/UDP)`);
 

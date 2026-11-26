@@ -101,22 +101,40 @@ export class EnvironmentManager {
 
   getEnvironment(presetId, night = true) {
     const id = ENVIRONMENT_PRESETS[presetId] ? presetId : 'luxuryGold';
-    if (this.cache.has(id)) return this.cache.get(id);
+    const cacheKey = `${id}_${night ? 'night' : 'day'}`;
+    if (this.cache.has(cacheKey)) return this.cache.get(cacheKey);
 
     const preset = ENVIRONMENT_PRESETS[id];
     const envScene = new THREE.Scene();
-    const baseColor = preset.baseColor || '#0a0a0b';
-    envScene.background = new THREE.Color(baseColor);
+    const rawBase = new THREE.Color(preset.baseColor || '#0a0a0b');
+    const baseColorObj = night
+      ? rawBase.clone().lerp(new THREE.Color('#20242c'), 0.45)
+      : rawBase.clone().lerp(new THREE.Color('#484c54'), 0.65);
+    envScene.background = baseColorObj;
 
     const disposables = [];
     const boxGeo = new THREE.BoxGeometry(30, 22, 30);
-    const boxMat = new THREE.MeshBasicMaterial({ color: baseColor, side: THREE.BackSide, toneMapped: false });
+    const boxMat = new THREE.MeshBasicMaterial({ color: baseColorObj, side: THREE.BackSide, toneMapped: false });
     envScene.add(new THREE.Mesh(boxGeo, boxMat));
     disposables.push(boxGeo, boxMat);
 
-    for (const p of preset.panels || []) {
+    const panelScale = night ? 1.0 : 0.72;
+    const panels = [...(preset.panels || [])];
+    if (night) {
+      panels.push(
+        { form: 'rect', pos: [-8, 0.5, 5], scale: [6, 8, 1], rot: [0, Math.PI / 2, 0], color: '#c8d6eb', intensity: 0.36 },
+        { form: 'rect', pos: [8, 0.5, 5], scale: [6, 8, 1], rot: [0, -Math.PI / 2, 0], color: '#ffe4c4', intensity: 0.36 }
+      );
+    } else {
+      panels.push(
+        { form: 'rect', pos: [0, 2.5, 9], scale: [14, 7, 1], rot: [0, 0, 0], color: '#f6f8fc', intensity: 0.75 },
+        { form: 'rect', pos: [0, -6, 3], scale: [16, 8, 1], rot: [-Math.PI / 2, 0, 0], color: '#c4b8a6', intensity: 0.42 }
+      );
+    }
+
+    for (const p of panels) {
       const geo = p.form === 'ring' ? new THREE.RingGeometry(0.5, 1.0, 48) : new THREE.PlaneGeometry(1, 1);
-      const col = new THREE.Color(p.color || '#ffffff').multiplyScalar(p.intensity ?? 1);
+      const col = new THREE.Color(p.color || '#ffffff').multiplyScalar((p.intensity ?? 1) * panelScale);
       const mat = new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide, toneMapped: false });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(...p.pos);
@@ -128,7 +146,7 @@ export class EnvironmentManager {
 
     const rt = this.pmrem.fromScene(envScene, 0);
     for (const d of disposables) d.dispose();
-    this.cache.set(id, rt);
+    this.cache.set(cacheKey, rt);
     return rt;
   }
 

@@ -59,7 +59,9 @@ function summary(state,metrics,cost){
    <div><span>Pleksi / File</span><b>${formatAreaM2(metrics.acrylicAreaM2,unit)} / ${formatAreaM2(metrics.fileAreaM2,unit)}</b></div>
    <div><span>Kenar dönüşü (Yanak)</span><b>${formatAreaM2(metrics.sidewallAreaM2,unit)} · ${formatMmAsUnit(metrics.perimeterM*1000,unit,2)} ${unit}</b></div>
    <div><span>Kesim / Büküm</span><b>${formatMmAsUnit(metrics.cuttingLengthM*1000,unit,2)} / ${formatMmAsUnit(metrics.perimeterM*1000,unit,2)} ${unit}</b></div>
-   <div><span>LED / Güç kaynağı</span><b>${dec(metrics.totalLedModules)} / ${dec(metrics.powerSupplies)} adet</b></div></div>
+   <div><span>LED / Güç kaynağı</span><b>${dec(metrics.totalLedModules)} / ${dec(metrics.powerSupplies)} adet</b></div>
+   ${metrics.ledPsuPlan ? `<div><span>Önerilen Trafo (%${metrics.ledPsuPlan.safetyMarginPct} paylı)</span><b>${esc(metrics.ledPsuPlan.psuLabel)} (${dec(metrics.ledPsuPlan.totalWatt)}W)</b></div>` : ''}
+   ${metrics.coilPlan ? `<div><span>Yanak Bobin (${metrics.coilPlan.coilWidthMm} mm)</span><b>${dec(metrics.coilPlan.grossPerimeterM)} m (%${metrics.coilPlan.wastePct} fire dahil)</b></div>` : ''}</div>
    <p class="cst-help">Metrajlar mevcut 3D/2D nesnelerinden hesaplanır; malzeme fire, tedarik ve montaj toleranslarını kendi tarifenize göre kontrol edin.</p>
   </section>
   <section class="cst-card"><div class="cst-heading"><div><small>FİYATLANDIRMA</small><h3>Maliyet ve satış kuralları</h3></div></div>

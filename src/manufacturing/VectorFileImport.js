@@ -58,15 +58,21 @@ function sampleArc(a,rx,ry,angle,large,sweep,b){
  return Array.from({length:steps},(_,i)=>{let z=start+delta*(i+1)/steps;return {x:cx+cp*rx*Math.cos(z)-sp*ry*Math.sin(z),y:cy+sp*rx*Math.cos(z)+cp*ry*Math.sin(z)}});
 }
 /** Pure SVG path-data flattener supporting M/L/H/V/C/S/Q/T/A/Z and implicit start==end closure. */
-export function svgPathRings(d, tolerance=1.5) {
+export function svgPathRings(d, tolerance=1.5, options={}) {
+ const autoCloseFilled=Boolean(options?.autoCloseFilled);
  const tokens=(d.match(/[a-zA-Z]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g)||[]);
- let i=0,cmd='',curr={x:0,y:0},start={x:0,y:0},pts=[],rings=[],prevCmd='',prevC=null,prevQ=null,guard=0;
+ let i=0,cmd='',curr={x:0,y:0},start={x:0,y:0},pts=[],rings=[],prevCmd='',prevC=null,prevQ=null,guard=0,openCount=0;
  const isCmd=t=>/^[a-zA-Z]$/.test(t||'');const count=n=>i+n<=tokens.length&&tokens.slice(i,i+n).every(x=>!isCmd(x));
  const nums=n=>{if(!count(n))throw Error('Eksik SVG path koordinatı.');return Array.from({length:n},()=>Number(tokens[i++]));};
  const point=(x,y,rel)=>({x:x+(rel?curr.x:0),y:y+(rel?curr.y:0)});
  const closeTol=Math.max(0.05,tolerance*0.25);
  const endRing=()=>{const cleaned=clean(pts);if(cleaned.length>=3&&Math.abs(signedArea(cleaned))>0.0001)rings.push(cleaned);pts=[]};
- const maybeCloseImplicit=()=>{if(pts.length>=4&&Math.hypot(pts[0].x-pts.at(-1).x,pts[0].y-pts.at(-1).y)<=closeTol){endRing();return true;}pts=[];return false;};
+ const maybeCloseImplicit=()=>{
+  if(pts.length>=4&&Math.hypot(pts[0].x-pts.at(-1).x,pts[0].y-pts.at(-1).y)<=closeTol){endRing();return true;}
+  if(autoCloseFilled&&pts.length>=3){endRing();return true;}
+  if(pts.length>=2)openCount++;
+  pts=[];return false;
+ };
  const push=p=>{pts.push(p);curr=p};
  while(i<tokens.length){if(++guard>5000000)throw Error('SVG path birincil kontur başına çok karmaşık; dosyayı daha küçük üretim parçalara ayırın.');if(isCmd(tokens[i]))cmd=tokens[i++];if(!cmd)throw Error('SVG path komutu bulunamadı.');
  const lower=cmd.toLowerCase(),rel=cmd!==cmd.toUpperCase();
@@ -82,16 +88,39 @@ export function svgPathRings(d, tolerance=1.5) {
  if(!['c','s'].includes(lower))prevC=null;if(!['q','t'].includes(lower))prevQ=null;prevCmd=lower;
  }
  if(pts.length)maybeCloseImplicit();
+ rings.openContourCount=openCount;
  return rings;
+}
+function normalizeSvgColor(val){
+ if(!val)return null;
+ const s=String(val).trim().toLowerCase();
+ if(!s||s==='inherit')return null;
+ if(s==='none'||s==='transparent')return 'none';
+ if(/^#[0-9a-f]{6}$/.test(s))return s;
+ const m3=s.match(/^#([0-9a-f])([0-9a-f])([0-9a-f])$/);
+ if(m3)return '#'+m3[1]+m3[1]+m3[2]+m3[2]+m3[3]+m3[3];
+ const rgb=s.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/);
+ if(rgb){
+  const hex=v=>Math.max(0,Math.min(255,Math.round(Number(v)||0))).toString(16).padStart(2,'0');
+  return '#'+hex(rgb[1])+hex(rgb[2])+hex(rgb[3]);
+ }
+ return null;
 }
 const svgNums=s=>[...(s||'').matchAll(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g)].map(x=>+x[0]);
 function svgLength(v){if(!v)return null;const m=String(v).trim().match(/^([-+]?(?:\d+(?:\.\d*)?|\.\d+))(mm|cm|m|in|pt|pc|px)?$/i);if(!m)return null;const k={mm:1,cm:10,m:1000,in:25.4,pt:25.4/72,pc:25.4/6,px:25.4/96};return Number(m[1])*(k[m[2]?.toLowerCase()||'px']);}
 export function groupRings(input,fileName,format,unitFactor,warnings=[]){
- const valid=input.map((ring)=>clean(ring)).filter(r=>r.length>=3&&Math.abs(signedArea(r))>0.001);
+ const valid=[];
+ for(const ring of input){
+  const cleaned=clean(ring);
+  if(cleaned.length>=3&&Math.abs(signedArea(cleaned))>0.001){
+   if(ring._meta)cleaned._meta=ring._meta;
+   valid.push(cleaned);
+  }
+ }
  if(!valid.length)throw Error('İçe aktarılan dosyada kapalı vektör kesim konturu bulunamadı. Açık çizgileri CorelDRAW/Illustrator içinde kapatıp tekrar deneyin.');
  if(valid.length>10000)warnings.push('Büyük iş: '+valid.length+' kontur analiz ediliyor; optimizasyon cihazınıza bağlı olarak uzun sürebilir.');
- const scaled=valid.map(r=>r.map(p=>({x:p.x*unitFactor,y:p.y*unitFactor})));
- const candidates=scaled.map((r,i)=>({ring:r,index:i,area:Math.abs(signedArea(r)),bbox:bounds(r),parent:null,depth:0})).sort((a,b)=>b.area-a.area);
+ const scaled=valid.map(r=>{const sr=r.map(p=>({x:p.x*unitFactor,y:p.y*unitFactor}));if(r._meta)sr._meta=r._meta;return sr;});
+ const candidates=scaled.map((r,i)=>({ring:r,index:i,area:Math.abs(signedArea(r)),bbox:bounds(r),parent:null,depth:0,meta:r._meta||null})).sort((a,b)=>b.area-a.area);
  // Spatially indexed containment: ordinary CAD files contain thousands of
  // unrelated paths; comparing every path against every other path is O(N²).
  const allBounds={minX:Infinity,minY:Infinity,maxX:-Infinity,maxY:-Infinity};
@@ -126,7 +155,15 @@ export function groupRings(input,fileName,format,unitFactor,warnings=[]){
   const b=bounds(c.ring),shift=p=>({x:round(p.x-b.minX),y:round(p.y-b.minY)});
   const outer=c.ring.map(shift),hh=holes.map(h=>h.map(shift));
   const area=Math.abs(signedArea(c.ring))-holes.reduce((sum,h)=>sum+Math.abs(signedArea(h)),0);
-  items.push({id:'import_'+items.length,projectId:'external',projectName:fileName,parentId:'external',label:fileName.replace(/\.[^.]+$/,'')+' · Parça '+(items.length+1),partType:'Gövde',operation:'CUT_OUTER',material:'İçe Aktarılan Vektör',thicknessMm:1,materialGroup:'İçe Aktarılan Vektör · 1 mm',outer,holes:hh,areaMm2:Math.max(0,area),locked:false});
+  items.push({
+   id:'import_'+items.length,projectId:'external',projectName:fileName,parentId:'external',
+   label:fileName.replace(/\.[^.]+$/,'')+' · Parça '+(items.length+1),
+   partType:'Gövde',operation:'CUT_OUTER',material:'İçe Aktarılan Vektör',thicknessMm:1,
+   materialGroup:'İçe Aktarılan Vektör · 1 mm',outer,holes:hh,areaMm2:Math.max(0,area),locked:false,
+   sourceOriginMm:{x:round(b.minX),y:round(b.minY)},
+   layerName:c.meta?.layerName||null,
+   color:c.meta?.color||null,
+  });
  }
  if(valid.length!==root.length)warnings.push((valid.length-root.length)+' iç kontur/delik geometrik olarak eşleştirildi.');
  const b=allBounds;return {filename:fileName,format,items,contourCount:valid.length,widthMm:round(b.maxX-b.minX),heightMm:round(b.maxY-b.minY),warnings};
@@ -215,7 +252,7 @@ export function importSvgText(text,filename='vektor.svg', options={}){
  const unit=options.unit||'auto';const units={mm:1,cm:10,m:1000,in:25.4,px:25.4/96};
  let fx=1,fy=1;const warnings=[];
  if(unit!=='auto'){fx=fy=units[unit];if(!fx)throw Error('SVG birimi geçersiz.');}
- else if(vb.length===4&&mw&&mh){fx=mw/vb[2];fy=mh/vb[3];}
+ else if(vb.length===4&&vb[2]>0&&vb[3]>0&&mw&&mh){fx=mw/vb[2];fy=mh/vb[3];}
  else {fx=fy=25.4/96;warnings.push('SVG fiziksel boyut içermiyor: 96 DPI piksel ölçeği kullanıldı. Gerçek mm ölçüsünü doğrulayın.');}
  const scale=Number(options.scale??1);if(!(scale>0&&scale<=1000))throw Error('Ölçek 0 ile 1000 arasında olmalıdır.');
  const idMap=new Map();
@@ -225,11 +262,29 @@ export function importSvgText(text,filename='vektor.svg', options={}){
   for(const c of [...(el.children||[])])indexIds(c);
  })(svg);
  const view=vb.length===4?[1,0,0,1,-vb[0],-vb[1]]:I,all=[];
- function visit(el,m,depth=0,useDepth=0,allowSkipContainers=true){if(depth>60||useDepth>8)throw Error('SVG grup derinliği çok büyük.');
+ let openContoursSkipped=0;
+ function readFillAttr(el){
+  const attrFill=normalizeSvgColor(el.getAttribute?.('fill'));
+  const style=el.getAttribute?.('style')||'';
+  const styleMatch=style.match(/(?:^|;)\s*fill\s*:\s*([^;]+)/i);
+  const styleFill=styleMatch?normalizeSvgColor(styleMatch[1]):null;
+  const resolved=styleFill||attrFill;
+  return {fill:resolved,explicit:Boolean(resolved)};
+ }
+ function visit(el,m,depth=0,useDepth=0,allowSkipContainers=true,ctx={layerName:null,fillColor:null,explicitFill:false}){if(depth>60||useDepth>8)throw Error('SVG grup derinliği çok büyük.');
   const tag=el.localName?.toLowerCase();if(!tag)return;
   if(allowSkipContainers&&['defs','clippath','mask','pattern','symbol','metadata','style','title','desc','lineargradient','radialgradient'].includes(tag))return;
   if(el.getAttribute('display')==='none'||el.getAttribute('visibility')==='hidden')return;
   let mm=matMul(m,svgTransform(el.getAttribute('transform')));
+  let nextLayer=ctx.layerName;
+  if(tag==='g'){
+   const rawName=el.getAttribute('inkscape:label')||el.getAttribute('data-name')||el.getAttribute('id')||'';
+   const cleanName=rawName.trim();
+   if(cleanName&&!(ctx.layerName&&/^g\d+$/i.test(cleanName)))nextLayer=cleanName;
+  }
+  const fillInfo=readFillAttr(el);
+  const nextFillColor=fillInfo.explicit?fillInfo.fill:ctx.fillColor;
+  const nextExplicitFill=fillInfo.explicit||ctx.explicitFill;
   const num=(name,def=0)=>Number(el.getAttribute(name)??def)||0;
   if(tag==='use'){
    const ref=(el.getAttribute('href')||el.getAttribute('xlink:href')||'').trim().replace(/^#/,'');
@@ -237,12 +292,16 @@ export function importSvgText(text,filename='vektor.svg', options={}){
    if(target){
     const ux=num('x'),uy=num('y');
     if(ux||uy)mm=matMul(mm,[1,0,0,1,ux,uy]);
-    visit(target,mm,depth+1,useDepth+1,false);
+    visit(target,mm,depth+1,useDepth+1,false,{layerName:nextLayer,fillColor:nextFillColor,explicitFill:nextExplicitFill});
    }
    return;
   }
   let shapes=[];
-  if(tag==='path'){const physicalScale=Math.max(Math.hypot(mm[0]*fx,mm[1]*fy),Math.hypot(mm[2]*fx,mm[3]*fy))*scale;shapes=svgPathRings(el.getAttribute('d')||'',(Number(options.tolerance)||1)/Math.max(physicalScale,1e-8));}
+  if(tag==='path'){
+   const physicalScale=Math.max(Math.hypot(mm[0]*fx,mm[1]*fy),Math.hypot(mm[2]*fx,mm[3]*fy))*scale;
+   shapes=svgPathRings(el.getAttribute('d')||'',(Number(options.tolerance)||1)/Math.max(physicalScale,1e-8),{autoCloseFilled:Boolean(nextExplicitFill&&nextFillColor&&nextFillColor!=='none')});
+   openContoursSkipped+=(shapes.openContourCount||0);
+  }
   if(tag==='polygon'||tag==='polyline'){
     const pts=svgNums(el.getAttribute('points'));
     if(pts.length>=6&&pts.length%2===0){
@@ -256,11 +315,17 @@ export function importSvgText(text,filename='vektor.svg', options={}){
     const cx=num('cx'),cy=num('cy'),rx=tag==='circle'?num('r'):num('rx'),ry=tag==='circle'?num('r'):num('ry');
     if(rx>0&&ry>0){const count=Math.min(720,Math.max(36,Math.ceil(2*Math.PI*Math.max(rx,ry)/1.5)));shapes=[Array.from({length:count},(_,i)=>({x:cx+rx*Math.cos(2*Math.PI*i/count),y:cy+ry*Math.sin(2*Math.PI*i/count)}))];}
   }
-  all.push(...shapes.map(r=>r.map(p=>apply(mm,p))));
-  for(const child of [...el.children])visit(child,mm,depth+1,useDepth,true);
+  const meta={layerName:nextLayer,color:(nextFillColor&&nextFillColor!=='none')?nextFillColor:null};
+  for(const r of shapes){
+   const mapped=r.map(p=>apply(mm,p));
+   mapped._meta=meta;
+   all.push(mapped);
+  }
+  for(const child of [...el.children])visit(child,mm,depth+1,useDepth,true,{layerName:nextLayer,fillColor:nextFillColor,explicitFill:nextExplicitFill});
  }
  visit(svg,view);
- const transformed=all.map(r=>r.map(p=>({x:p.x*fx,y:p.y*fy})));const ret=groupRings(transformed,filename,'svg',scale,warnings);return ret;
+ if(openContoursSkipped>0)warnings.push(`${openContoursSkipped} açık çizgi/kontur kapalı olmadığı için 3D/kesim dışı bırakıldı.`);
+ const transformed=all.map(r=>{const tr=r.map(p=>({x:p.x*fx,y:p.y*fy}));if(r._meta)tr._meta=r._meta;return tr;});const ret=groupRings(transformed,filename,'svg',scale,warnings);return ret;
 }
 function arcBulge(a,b,bulge){if(Math.abs(bulge)<1e-8)return[b];const chord=Math.hypot(b.x-a.x,b.y-a.y);if(chord<1e-9)return[b];const theta=4*Math.atan(bulge),radius=chord/(2*Math.sin(Math.abs(theta)/2)),mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2};const h=chord/(2*Math.tan(theta/2));const normal={x:-(b.y-a.y)/chord,y:(b.x-a.x)/chord};const center={x:mid.x+normal.x*h,y:mid.y+normal.y*h};const start=Math.atan2(a.y-center.y,a.x-center.x),steps=Math.min(720,Math.max(8,Math.ceil(Math.abs(theta)*Math.abs(radius)/1.5)));return Array.from({length:steps},(_,i)=>{const ang=start+theta*(i+1)/steps;return {x:center.x+Math.abs(radius)*Math.cos(ang),y:center.y+Math.abs(radius)*Math.sin(ang)}})}
 const dxfUnitFactor=u=>({1:25.4,2:304.8,4:1,5:10,6:1000,7:1000000,8:0.0000254,9:0.0254,10:914.4,11:0.0000001,12:0.000001,13:0.001,14:100,15:10000,16:100000})[u];

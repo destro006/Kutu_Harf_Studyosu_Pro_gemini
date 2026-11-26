@@ -44,6 +44,7 @@ function processJob(job,onProgress=()=>{}){
     imported=job.imported;
   } else throw Error('Bilinmeyen içe aktarma işlemi.');
   if(!imported.items?.length)throw Error('Dosyada üretilebilir kapalı vektör parçası yok.');
+  if(job.parseOnly)return {imported,nesting:null};
   const config={...(job.nesting||{}),optimizationBudgetMs:job.operation==='nest'?3500:2500,quickImport:job.operation!=='nest'||Boolean(job.nesting?.quickImport)};
   // Small jobs receive a compact first layout instead of showing a shelf as final.
   const compactImport=job.operation!=='nest'&&imported.items.length<=60;
@@ -67,11 +68,19 @@ if(typeof self!=='undefined'&&typeof self.addEventListener==='function'){
         if(['cdr','dwg'].includes(kind)){
           const {importNativeCad}=await import('./NativeCadImport.js');
           const imported=await importNativeCad(job.bytes,job.filename,kind,job.options||{},status=>self.postMessage({jobId:job.jobId,status}));
+          if(job.parseOnly){
+            if(!imported.items?.length)throw Error('Dosyada üretilebilir kapalı vektör parçası yok.');
+            self.postMessage({jobId:job.jobId,result:{imported,nesting:null}});return;
+          }
           self.postMessage({jobId:job.jobId,result:processJob({...job,operation:'nest',imported,nesting:{...job.nesting,quickImport:imported.items.length>60,optimizationBudgetMs:3000}})});return;
         }
         if(['wmf','emf'].includes(kind)){
           const {importWmfEmf}=await import('./WmfEmfImport.js');
           const imported=importWmfEmf(job.bytes,job.filename,kind,job.options||{});
+          if(job.parseOnly){
+            if(!imported.items?.length)throw Error('Dosyada üretilebilir kapalı vektör parçası yok.');
+            self.postMessage({jobId:job.jobId,result:{imported,nesting:null}});return;
+          }
           self.postMessage({jobId:job.jobId,result:processJob({...job,operation:'nest',imported,nesting:{...job.nesting,quickImport:imported.items.length>60,optimizationBudgetMs:3000}})});return;
         }
       }
@@ -88,6 +97,10 @@ if(typeof self!=='undefined'&&typeof self.addEventListener==='function'){
           self.postMessage({jobId:job.jobId,status:'AI/EPS uyumluluk kontur kurtarıcısı deneniyor…'});
           try{
             const imported=extractAiOutlineFallback(extractPostScript(job.bytes),job.filename,job.options||{});
+            if(job.parseOnly){
+              if(!imported.items?.length)throw Error('Dosyada üretilebilir kapalı vektör parçası yok.');
+              self.postMessage({jobId:job.jobId,result:{imported,nesting:null}});return;
+            }
             self.postMessage({jobId:job.jobId,result:processJob({...job,operation:'nest',imported,nesting:{...job.nesting,quickImport:imported.items.length>60,optimizationBudgetMs:3000}})});
           }catch(fbErr){
             throw Error(String(gsErr?.message||original?.message||'AI/EPS dosyası açılamadı')+' (Yedek okuyucu: '+String(fbErr?.message||fbErr)+')');

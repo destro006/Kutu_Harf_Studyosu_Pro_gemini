@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Kutu Harf Stüdyosu — Profesyonel 3D Tabela CAD/CAM &amp; İmalat Stüdyosu</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Crect x='9' y='7' width='14' height='18' rx='3' fill='%23ffb547'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./src/styles/studio.css?v=20261126-v30">
+  <link rel="stylesheet" href="./src/styles/studio.css?v=20261126-v33">
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -57,6 +57,7 @@
         <button type="button" data-main-ws="cost">₺ Maliyet ve Teklif</button>
       </div>
       <div class="ws-nav-actions">
+        <button id="btnKioskMode" class="tb-btn" type="button" title="Müşteri öz-servis modu (sade 3 adımlı önizleme & fiyat)">🏪 Müşteri Modu</button>
         <div id="legacyExportActions" hidden>
           <button id="btnExportPng" type="button">PNG</button>
           <button id="btnExportTransparentPng" type="button">Şeffaf PNG</button>
@@ -146,6 +147,7 @@
         <div class="stage-wrap" id="stageWrap">
           <!-- 3D Viewport (used by 3D Kutu Harf & Malzeme ve Aydınlatma) -->
           <div id="threeContainer" class="three-container"></div>
+          <canvas id="dims3DOverlayCanvas" class="dims-3d-overlay hidden"></canvas>
           <!-- 2D Vector Canvas (used by 2D Tasarım) -->
           <div id="vector2DWrap" class="center-ws-layer hidden"></div>
           <!-- Embedded Image Tracer Workspace (used by Image Tracer) -->
@@ -176,12 +178,18 @@
             <button type="button" data-view="hero" class="on">3/4</button>
             <button type="button" data-view="top">Üst</button>
             <button type="button" data-view="fit" title="Ekrana Sığdır (F4)">Sığdır</button>
+            <button type="button" id="btnToggle3DDims" title="3D sahnede toplam genişlik, yükseklik ve derinlik ölçülerini göster/gizle">📏 Ölçüleri Göster</button>
+            <button type="button" id="btnOpenVideoModal" title="Müşteriye göndermek için sinematik 3D sunum videosu oluştur">🎬 Sunum Videosu</button>
+            <button type="button" id="btnSplitCompare" title="İki farklı malzeme veya ışık seçeneğini yan yana kaydırmalı karşılaştır">⚖ A/B Karşılaştır</button>
+            <button type="button" id="btnClientShareAr" title="WhatsApp onay linki, QR kod ve telefonla 1:1 AR (GLB/USDZ) önizleme">📱 Onay &amp; AR</button>
           </div>
 
           <!-- Warning Toast Banner -->
           <div id="stageWarning" class="stage-warning hidden" role="alert"></div>
           <div id="wallLoading" class="wall-loading hidden" role="status" aria-live="polite"><div class="wall-loading-top"><span id="wallLoadingLabel">Arka plan hazırlanıyor</span><strong id="wallLoadingPercent">0%</strong></div><progress id="wallLoadingProgress" max="100" value="0" aria-label="Arka plan hazırlama ilerlemesi"></progress><button id="wallLoadingRetry" type="button" class="sec-btn hidden">Tekrar Dene</button></div>
           <div id="canvasTransformHud" class="canvas-transform-hud hidden" aria-live="polite"></div>
+          <div id="kioskOverlayPanel" class="kiosk-overlay hidden"></div>
+          <div id="clientApprovalBanner" class="client-approval-banner hidden"></div>
 
           <!-- Bottom Quick Stage Controls (visible in 3D modes) -->
           <div class="stage-bottom-tools" id="stageBottomTools">
@@ -442,7 +450,155 @@
   <div id="studioToast" role="status" aria-live="polite" hidden></div>
   <div id="quotePreviewModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Teklif önizleme"><div class="quote-preview-shell"><header><strong>Teklif Önizleme</strong><button type="button" id="quoteNewTab" class="tb-btn">Yeni Sekmede Aç</button><button type="button" id="quotePrint" class="tb-btn">Yazdır / PDF</button><button type="button" id="quoteClose" class="tb-btn" aria-label="Kapat">✕</button></header><iframe id="quotePreviewFrame" sandbox="allow-same-origin allow-modals" title="Müşteri teklif önizlemesi"></iframe></div></div>
   <div id="floatingWindowsLayer" class="floating-windows-layer"></div>
+
+  <!-- Sinematik Sunum Videosu Oluşturucu Modalı -->
+  <div id="presentationVideoModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="presVideoTitle">
+    <div class="modal-card" style="max-width:560px">
+      <div class="modal-head">
+        <h3 id="presVideoTitle">🎬 Sinematik Müşteri Sunum Videosu</h3>
+        <button type="button" id="btnCloseVideoModal" class="close-btn" aria-label="Kapat">✕</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:10px">
+        <p style="margin:0;font-size:12.5px;color:var(--muted)">API maliyeti olmadan yerel 3D kamera hareketiyle otomatik stüdyo videosu üretir: 1) Pah &amp; derinlik taraması → 2) Metalik yansıma turu → 3) Gündüzden geceye LED açılışı → 4) Ölçülü merkez sunum.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="field-row" style="margin:0"><label for="vidResolution">Çözünürlük</label><select id="vidResolution"><option value="1280x720" selected>HD · 1280 × 720</option><option value="1920x1080">Full HD · 1920 × 1080</option></select></div>
+          <div class="field-row" style="margin:0"><label for="vidDuration">Süre</label><select id="vidDuration"><option value="8" selected>8 saniye (Hızlı)</option><option value="12">12 saniye (Sinematik)</option></select></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer">
+          <input type="checkbox" id="vidShowDims" checked>
+          <span>Videoda Detaylı Ölçüleri Göster (Genişlik, Yükseklik, Derinlik)</span>
+        </label>
+        <div id="vidProgressWrap" class="hidden" style="padding:8px;border-radius:7px;background:rgba(255,255,255,0.04);border:1px solid var(--line)">
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span id="vidStageLabel">Hazırlanıyor...</span><strong id="vidPctLabel">0%</strong></div>
+          <progress id="vidProgressBar" max="100" value="0" style="width:100%"></progress>
+        </div>
+        <video id="vidPreviewEl" class="hidden" controls style="width:100%;max-height:260px;border-radius:8px;background:#000"></video>
+        <div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
+          <button type="button" id="btnCancelVideoRec" class="sec-btn hidden">İptal Et</button>
+          <button type="button" id="btnDownloadVideo" class="sec-btn hidden">⬇ Videoyu İndir</button>
+          <button type="button" id="btnStartVideoRec" class="cta-btn">▶ Kaydı Başlat</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- Sağ Tık -> AI ile Devam Et (Hibrid Three.js + AI Render) Modalı -->
+  <div id="signageAiModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="signageAiTitle">
+    <div class="modal-card" style="max-width:680px">
+      <div class="modal-head">
+        <h3 id="signageAiTitle">✨ AI ile Devam Et (Ekonomik Hibrit Tabela Render)</h3>
+        <button type="button" id="btnCloseSignageAi" class="close-btn" aria-label="Kapat">✕</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:10px">
+        <p style="margin:0;font-size:12px;color:var(--muted)">İlk 3D yerleşim ve perspektif hizalaması Three.js ile <b>ücretsiz</b> yapılır; yapay zeka yalnızca son fotorealistik ışık, gölge ve cephe harmanlaması için çağrılır.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div>
+            <label class="sec-btn" style="display:block;text-align:center;cursor:pointer;margin-bottom:6px">
+              📷 Müşteri Cephe Fotoğrafı Yükle
+              <input id="aiFacadeInput" type="file" accept="image/png,image/jpeg,image/webp" class="hidden">
+            </label>
+            <img id="aiCompositePreview" alt="3D + Cephe Ön Yerleşim" style="width:100%;height:170px;object-fit:contain;border-radius:8px;background:#0d1117;border:1px solid var(--line)">
+          </div>
+          <div>
+            <div style="font-size:11.5px;color:var(--muted);margin-bottom:4px">Sonuç Önizleme</div>
+            <img id="aiResultPreview" alt="AI Harmanlama Sonucu" style="width:100%;height:170px;object-fit:contain;border-radius:8px;background:#0d1117;border:1px solid var(--line)">
+          </div>
+        </div>
+        <div class="field-row" style="margin:0;align-items:flex-start;flex-direction:column;gap:4px">
+          <label for="aiBriefInput">Kısa İsteğiniz (Türkçe)</label>
+          <input id="aiBriefInput" type="text" style="width:100%" placeholder="Örn: Gece görünümü, sıcak gün ışığı halo, mermer cepheye yerleştir">
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" class="sec-btn ai-chip-btn" data-ai-chip="Gece görünümü, sıcak gün ışığı halo, mermer cepheye yerleştir">🌙 Gece + Sıcak Halo</button>
+          <button type="button" class="sec-btn ai-chip-btn" data-ai-chip="Gündüz doğal güneş ışığı, cepheye keskin temas gölgesi">☀ Gündüz Doğal Gölge</button>
+          <button type="button" class="sec-btn ai-chip-btn" data-ai-chip="Yağmurlu akşam lüks mağaza vitrini, sıcak yansıma">🌧 Lüks Akşam Vitrini</button>
+        </div>
+        <div class="field-row" style="margin:0;align-items:flex-start;flex-direction:column;gap:4px">
+          <label for="aiMasterPromptText">Adım 1 — Teknik Master Prompt (Geometri Kilitli · Düzenlenebilir)</label>
+          <textarea id="aiMasterPromptText" rows="4" style="width:100%;font-size:11.5px"></textarea>
+        </div>
+        <details style="font-size:12px">
+          <summary style="cursor:pointer;color:var(--muted)">⚙ Ekonomik AI API Ayarları (Gemini Flash / GPT-4o-mini)</summary>
+          <div style="display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-top:8px">
+            <select id="aiProviderSelect"><option value="gemini">Google Gemini</option><option value="openai">OpenAI Uyumlu</option></select>
+            <input id="aiApiKeyInput" type="password" placeholder="API Anahtarı (boşsa ücretsiz yerel harmanlama çalışır)">
+          </div>
+        </details>
+        <div id="aiRenderStatus" style="font-size:12px;color:var(--muted)"></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
+          <button type="button" id="btnAiBuildPrompt" class="sec-btn">1. Master Prompt Oluştur</button>
+          <button type="button" id="btnAiDownloadResult" class="sec-btn hidden">⬇ Sonucu PNG İndir</button>
+          <button type="button" id="btnAiRunRender" class="cta-btn">2. Onayla ve Görsel Oluştur</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Müşteri Onay Linki & Tek Tık AR Önizleme Modalı -->
+  <div id="clientShareArModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="clientShareArTitle">
+    <div class="modal-card" style="max-width:560px">
+      <div class="modal-head">
+        <h3 id="clientShareArTitle">📱 Canlı 3D Müşteri Onayı &amp; AR Önizleme</h3>
+        <button type="button" id="btnCloseClientShareAr" class="close-btn" aria-label="Kapat">✕</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:center">
+          <div id="clientShareQrBox" style="background:#fff;padding:6px;border-radius:8px;display:grid;place-items:center"></div>
+          <div style="display:flex;flex-direction:column;gap:6px;font-size:12.5px">
+            <strong>WhatsApp / Canlı 360° Onay Bağlantısı</strong>
+            <input id="clientShareUrlInput" type="text" readonly style="width:100%;font-size:11px">
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button type="button" id="btnCopyShareUrl" class="sec-btn">📋 Bağlantıyı Kopyala</button>
+              <a id="btnWhatsAppShare" class="cta-btn" target="_blank" rel="noopener noreferrer" style="text-decoration:none">💬 WhatsApp'ta Paylaş</a>
+              <button type="button" id="btnPreviewClientMode" class="sec-btn">👁 Onay Ekranını Dene</button>
+            </div>
+            <div id="clientApprovalStatusBadge" style="font-size:11.5px;color:var(--muted)"></div>
+          </div>
+        </div>
+        <div style="border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:8px">
+          <strong style="font-size:13px">Tek Tıkla Artırılmış Gerçeklik (AR) Çıktısı</strong>
+          <p style="margin:0;font-size:12px;color:var(--muted)">Müşteriniz telefon kamerasıyla tabelayı mağaza cephesinde gerçek 1:1 ölçeğinde görebilir (Android: GLB · iPhone/iPad Quick Look: USDZ).</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" id="btnDownloadArGlb" class="sec-btn">⬇ AR Paketi İndir (.glb)</button>
+            <button type="button" id="btnDownloadArUsdz" class="sec-btn">⬇ iOS AR İndir (.usdz)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Uygulama Uzmanı Etkileşimli AI Asistan -->
+  <button type="button" id="btnAppExpertToggle" class="ai-expert-fab" title="Uygulama Uzmanı AI Asistan">✦ Uzman Asistan</button>
+  <aside id="appExpertDrawer" class="ai-expert-drawer hidden" aria-label="Uygulama Uzmanı Asistan">
+    <div class="ai-expert-head">
+      <strong>✦ Uygulama Uzmanı</strong>
+      <div style="display:flex;gap:6px">
+        <button type="button" id="btnExpertSettings" class="sec-btn" style="padding:2px 7px;font-size:11px" title="API Anahtarı Ayarları">⚙</button>
+        <button type="button" id="btnExpertClose" class="close-btn" aria-label="Kapat">✕</button>
+      </div>
+    </div>
+    <div id="expertApiBox" class="hidden" style="padding:8px 10px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:6px;background:rgba(255,255,255,0.03)">
+      <div style="display:flex;gap:6px">
+        <select id="expertProviderSel" style="flex:1"><option value="gemini">Gemini Flash</option><option value="openai">GPT-4o-mini</option></select>
+        <input id="expertApiKeyInp" type="password" style="flex:2" placeholder="API Anahtarı (isteğe bağlı)">
+      </div>
+      <button type="button" id="btnSaveExpertApi" class="sec-btn" style="font-size:11px">API Ayarını Kaydet</button>
+    </div>
+    <div id="expertMessages" class="ai-expert-messages">
+      <div class="ai-msg bot">Merhaba. İşlemi yazın doğrudan yapayım (ör. "Ayna altın yap", "Nesting çalıştır") veya ayar yerini sorun rehber imleçle göstereyim.</div>
+    </div>
+    <div class="ai-expert-chips">
+      <button type="button" data-expert-q="Ayna altın yap">Ayna Altın</button>
+      <button type="button" data-expert-q="Gündüz moduna geç">Gündüz Modu</button>
+      <button type="button" data-expert-q="Ölçüleri göster">Ölçüleri Göster</button>
+      <button type="button" data-expert-q="Corel aktar nerede?">Corel Nerede?</button>
+    </div>
+    <form id="expertForm" class="ai-expert-form">
+      <input id="expertInput" type="text" placeholder="Komut veya soru yazın..." autocomplete="off">
+      <button type="submit" class="cta-btn">Gönder</button>
+    </form>
+  </aside>
+
   <script defer src="./public/vendor/pdfjs/pdf.min.js"></script>
-  <script type="module" src="./src/main.js?v=20261126-v30"></script></script></script></script></script>
+  <script type="module" src="./src/main.js?v=20261126-v33"></script>
 </body>
 </html>

@@ -41,6 +41,18 @@ export function reorderLayer(state, id, direction) {
   state.objects.splice(target, 0, item);
 }
 
+export function moveLayerToTarget(state, draggedId, targetId, insertAfter = false) {
+  if (!draggedId || !targetId || draggedId === targetId) return false;
+  const fromIdx = state.objects.findIndex(o => o.id === draggedId);
+  const targetIdx = state.objects.findIndex(o => o.id === targetId);
+  if (fromIdx < 0 || targetIdx < 0) return false;
+  const [item] = state.objects.splice(fromIdx, 1);
+  const newTargetIdx = state.objects.findIndex(o => o.id === targetId);
+  const insertIdx = insertAfter ? newTargetIdx + 1 : newTargetIdx;
+  state.objects.splice(Math.max(0, Math.min(state.objects.length, insertIdx)), 0, item);
+  return true;
+}
+
 export function duplicateSelectedLayers(state, offsetMm = 30) {
   const selected = state.objects.filter(o => state.selectedIds.includes(o.id));
   if (!selected.length) return [];

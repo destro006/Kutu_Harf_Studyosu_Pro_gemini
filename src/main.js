@@ -11,7 +11,20 @@ import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v15';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v30';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v33';
+import {
+  buildBendingJob,
+  buildBendingJobSheetHtml,
+  exportBendingDxf,
+  exportBendingGcode,
+  exportBendingPlt,
+} from './manufacturing/BendingSimulator.js';
+import { mountBendingSimulatorCanvas } from './ui/BendingSimulatorView.js';
+import {
+  computeMountingStuds,
+  generateMountingTemplateDxf,
+  generateMountingTemplateSvg,
+} from './manufacturing/WorkshopAutomation.js';
 import {
   nextNestingSelection,
   deleteNestingParts,
@@ -34,8 +47,17 @@ import {
   writeAutosave,
 } from './core/projectSerializer.js';
 import { FontManager } from './geometry/FontManager.js?v=20261126-v21';
-import { generateCutoutPreview, parseSvgLogo, traceRasterLogo } from './geometry/LogoTracer.js';
-import { SignEngine, QUALITY_PROFILES } from './render/SignEngine.js?v=20261126-v21';
+import { evaluateRasterFileQuality, extractSvgPhysicalHeightMm, generateCutoutPreview, importedVectorToLogoData, parseSvgLogo, traceRasterLogo } from './geometry/LogoTracer.js';
+import { SignEngine, QUALITY_PROFILES } from './render/SignEngine.js?v=20261126-v22';
+import { Dimensions3DOverlayController } from './render/Dimensions3DOverlay.js';
+import { recordPresentationVideo } from './render/PresentationVideoRecorder.js';
+import { buildSignageMasterPrompt, loadAiConfig, refineMasterPromptWithLlm, runHybridSignageRender, saveAiConfig } from './ai/SignageAiEngine.js';
+import { askAppExpert, showGuideCursor } from './ai/AppExpertAssistant.js';
+import { generateQrSvg } from './sales/QrCodeGenerator.js';
+import { buildClientApprovalUrl, buildWhatsAppShareUrl, decodeClientShareState, getClientApproval, recordClientApproval } from './sales/ClientShareApproval.js';
+import { SplitCompareController } from './sales/SplitCompareController.js';
+import { collectSignTriangles, writeGlb, writeUsdz } from './export/Professional3DExport.js';
+import { INDUSTRY_SCENE_PRESETS, applyIndustryScenePreset, renderKioskPanel } from './ui/KioskAndPresets.js';
 import { ACRYLIC_PALETTE, MATERIAL_PRESETS, PAINT_PALETTE } from './render/MaterialLibrary.js';
 import { RAL_COLORS, RAL_GROUPS } from './render/RalColors.js';
 import { ENVIRONMENT_PRESETS } from './render/EnvironmentManager.js';
@@ -73,6 +95,7 @@ import {
   deleteSelectedLayers,
   duplicateSelectedLayers,
   groupSelectedLayers,
+  moveLayerToTarget,
   renameLayer,
   reorderLayer,
   selectLayer,
@@ -98,9 +121,9 @@ import { SHORTCUT_LIST, SHORTCUT_GROUPS, attachShortcuts } from './cad/Shortcuts
 import { captureObjectClipboard, pasteObjectClipboard } from './core/ObjectClipboard.js';
 import { calculateManufacturingMetrics } from './manufacturing/MetricsCalculator.js';
 import { SHEET_PRESETS, extractNestingItems, runTrueShapeNesting, validateSheetLayout, editNestingPlacement, refreshNestingSheet } from './manufacturing/NestingEngine.js';
-import { importVectorText } from './manufacturing/VectorFileImport.js';
+import { importSvgText, importVectorText } from './manufacturing/VectorFileImport.js';
 import { importPdfFile } from './manufacturing/PdfVectorImport.js';
-import { runVectorImportJob } from './manufacturing/AsyncVectorImport.js?v=20261126-v17';
+import { runVectorImportJob } from './manufacturing/AsyncVectorImport.js?v=20261126-v18';
 import {
   createNestingImportedTab, getActiveNestingImportedItems, openNestingImportTab,
   switchNestingTab, closeNestingImportedTab, syncActiveNestingTab, applyNestingPartOverrides,
@@ -119,6 +142,7 @@ import {
 
 const FILELI_PRESET_WIDTHS = [0, 3, 5, 8, 12, 15, 20, 25, 30];
 const USER_DEFAULTS_KEY = 'khs_user_defaults_v1';
+const NESTING_DEFAULTS_KEY = 'khs_nesting_defaults_v1';
 
 const CONSTRUCTION_TYPES = [
   { id: 'fileli', label: 'Fileli Kutu Harf', desc: 'İçe dönük metal file çerçeve + içeride pleksi yüz, opak yan bant.' },
@@ -136,6 +160,37 @@ if (autosaved) {
   docManager.getActiveDoc().title = autosaved.projectName || 'Yeni Tabela Projesi';
 } else {
   applySavedMaterialDefaults(docManager.getActiveStore());
+  applySavedNestingDefaults(docManager.getActiveStore());
+}
+
+function saveNestingDefaults(n) {
+  if (!n || typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(NESTING_DEFAULTS_KEY, JSON.stringify({
+      sheetWidthMm: n.sheetWidthMm,
+      sheetHeightMm: n.sheetHeightMm,
+      marginMm: n.marginMm,
+      marginLeftMm: n.marginLeftMm,
+      marginRightMm: n.marginRightMm,
+      marginTopMm: n.marginTopMm,
+      marginBottomMm: n.marginBottomMm,
+      clearanceMm: n.clearanceMm,
+      allowHoleNesting: n.allowHoleNesting !== false,
+      enforceGrainDirection: Boolean(n.enforceGrainDirection),
+      rotationStepDeg: n.rotationStepDeg ?? 180,
+      placementStrategy: n.placementStrategy || 'compact',
+    }));
+  } catch { /* ignore storage quota errors */ }
+}
+
+function applySavedNestingDefaults(targetStore) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(NESTING_DEFAULTS_KEY) || 'null');
+    if (!saved || typeof saved !== 'object') return;
+    targetStore.update(s => {
+      s.nesting = { ...s.nesting, ...saved };
+    });
+  } catch { /* ignore corrupt storage */ }
 }
 
 // Personal presets apply to fresh projects; restored projects retain their own finish.
@@ -189,6 +244,7 @@ let sceneDataKey=null;
 let photomontageOverlay = null;
 let traceStudioReady = false;
 let pendingTracerImage = null;
+let lastTracerReturnWs = 'model3d';
 function flushPendingTracerImage() {
   if (!pendingTracerImage) return false;
   const frame = document.getElementById('traceStudioFrame');
@@ -197,6 +253,8 @@ function flushPendingTracerImage() {
     type: 'SIGNAGE_STUDIO_LOAD_IMAGE',
     dataUrl: pendingTracerImage.dataUrl,
     fileName: pendingTracerImage.fileName,
+    presetId: pendingTracerImage.presetId || null,
+    source: pendingTracerImage.source || 'photomontage',
   }, '*');
   pendingTracerImage = null;
   return true;
@@ -235,6 +293,10 @@ async function sendPhotomontageToTracer() {
 let lastSceneResult = { sizeM: { w: 2, h: 0.4 }, metricsList: [], warnings: [] };
 let lastMetrics = calculateManufacturingMetrics([], store.get());
 let lastCosts = calculateProjectCosts(lastMetrics, store.get());
+let activeCncSubTab = 'cnc';
+let bendingConfig = { machineId: 'universal_dxf', coilId: 'alu_08', overlapMm: 6, springbackPct: null, notchAngleDeg: null, seamOverrides: {} };
+let bendingSimState = { activeContourIdx: 0, progress: 0.35, playing: false, speed: 1 };
+let unmountBendingCanvas = null;
 let lastNesting = null;
 let lastPhotomontageScene=null,lastPhotomontageUrl=null,lastPhotomontageHaloUrl=null;
 let selectedNestingId = null;
@@ -1668,8 +1730,8 @@ function renderDesignWs(state) {
     <section class="sec">
       <h3 class="sec-title">${cType==='fileli'?'5':'4'}. Logo İçe Aktarma &amp; Vektörizasyon</h3>
       <label class="sec-btn" style="display:block;text-align:center;cursor:pointer;margin-bottom:8px">
-        SVG, PNG, JPG veya WEBP Logo Yükle
-        <input id="logoFileInput" type="file" accept=".svg,image/svg+xml,image/png,image/jpeg,image/webp" class="hidden">
+        Logo / Vektör Yükle (AI, CDR, SVG, DXF, PNG...)
+        <input id="logoFileInput" type="file" accept=".svg,.ai,.cdr,.dxf,.dwg,.pdf,.eps,.ps,.svgz,.plt,.hpgl,.wmf,.emf,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp" class="hidden">
       </label>
       <div class="field-row">
         <label>Eşik (Threshold)</label>
@@ -2018,7 +2080,8 @@ function renderLayersWs(state) {
       </div>
       <div>
         ${state.objects.map(o => `
-          <div class="layer-item ${state.selectedIds.includes(o.id) ? 'on' : ''}" data-lid="${o.id}">
+          <div class="layer-item ${state.selectedIds.includes(o.id) ? 'on' : ''}" draggable="true" data-lid="${o.id}">
+            <span class="layer-drag-handle" title="Katmanı sürükleyerek alt veya üste taşıyın">⋮⋮</span>
             <button type="button" class="icon-btn" data-vis="${o.id}" title="Görünürlük">${o.visible ? '👁' : '🚫'}</button>
             <button type="button" class="icon-btn" data-lock="${o.id}" title="Kilitle">${o.locked ? '🔒' : '🔓'}</button>
             <span class="layer-name" data-sel="${o.id}" title="${escapeAttr(o.name)}">${escapeHtml(o.name)} ${o.groupId ? '<small style="color:var(--accent)">[G]</small>' : ''}</span>
@@ -2045,6 +2108,10 @@ function renderBackgroundWs(state) {
   const wallScale = Math.max(0.08, Math.min(2.5, Number(state.scene.wallScale ?? 1.0) || 1.0));
   return `
     <section class="sec">
+      <h3 class="sec-title">1-Tık Sektör Sahne Hazır Ayarları</h3>
+      <div class="industry-preset-grid">
+        ${INDUSTRY_SCENE_PRESETS.map(p => `<button type="button" class="industry-preset-card" data-industry-preset="${p.id}"><b>${p.label}</b><small>${p.desc}</small></button>`).join('')}
+      </div>
       <h3 class="sec-title">Hazır Mimari Sahneler</h3>
       <p class="dock-helper">Bir duvar veya cephe seçerek 3D arka planı güncelleyin.</p>
       <div class="bg-scale-control" style="margin:0 0 10px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08)">
@@ -2365,7 +2432,11 @@ function bindWorkspaceEvents(ws, root) {
     root.querySelector('#logoThreshold')?.addEventListener('input', e => { logoTraceOptions.threshold = Number(e.target.value); });
     root.querySelector('#logoBgTol')?.addEventListener('input', e => { logoTraceOptions.bgTolerance = Number(e.target.value); });
     root.querySelector('#logoSmooth')?.addEventListener('change', e => { logoTraceOptions.smoothPasses = Number(e.target.value); });
-    root.querySelector('#logoFileInput')?.addEventListener('change', e => handleLogoUpload(e.target.files?.[0]));
+    root.querySelector('#logoFileInput')?.addEventListener('change', e => {
+      const f = e.target.files?.[0];
+      e.target.value = '';
+      if (f) handleLogoUpload(f);
+    });
   } else if (ws === 'materials') {
     root.querySelectorAll('[data-face-mat]').forEach(b => b.onclick = () => {
       if (!MATERIAL_PRESETS[b.dataset.faceMat]) return;
@@ -2593,6 +2664,42 @@ function bindWorkspaceEvents(ws, root) {
     });
     root.querySelectorAll('[data-up]').forEach(b => b.onclick = () => mutate('Katman sırası', s => reorderLayer(s, b.dataset.up, 'up')));
     root.querySelectorAll('[data-dn]').forEach(b => b.onclick = () => mutate('Katman sırası', s => reorderLayer(s, b.dataset.dn, 'down')));
+    let draggingLayerId = null;
+    root.querySelectorAll('.layer-item[data-lid]').forEach(row => {
+      row.addEventListener('dragstart', e => {
+        draggingLayerId = row.dataset.lid;
+        row.classList.add('dragging');
+        try { e.dataTransfer?.setData('text/plain', draggingLayerId); } catch {}
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+      });
+      row.addEventListener('dragover', e => {
+        if (!draggingLayerId || draggingLayerId === row.dataset.lid) return;
+        e.preventDefault();
+        const rect = row.getBoundingClientRect();
+        const after = (e.clientY - rect.top) > rect.height * 0.5;
+        row.classList.toggle('layer-drop-after', after);
+        row.classList.toggle('layer-drop-before', !after);
+      });
+      row.addEventListener('dragleave', () => {
+        row.classList.remove('layer-drop-before', 'layer-drop-after');
+      });
+      row.addEventListener('drop', e => {
+        e.preventDefault();
+        const targetId = row.dataset.lid;
+        const rect = row.getBoundingClientRect();
+        const after = (e.clientY - rect.top) > rect.height * 0.5;
+        const dragged = draggingLayerId || e.dataTransfer?.getData('text/plain');
+        row.classList.remove('layer-drop-before', 'layer-drop-after');
+        draggingLayerId = null;
+        if (dragged && targetId && dragged !== targetId) {
+          mutate('Katman sırası', s => moveLayerToTarget(s, dragged, targetId, after));
+        }
+      });
+      row.addEventListener('dragend', () => {
+        draggingLayerId = null;
+        root.querySelectorAll('.layer-item').forEach(r => r.classList.remove('dragging', 'layer-drop-before', 'layer-drop-after'));
+      });
+    });
     root.querySelector('#btnGrp')?.addEventListener('click', () => mutate('Grupla', s => groupSelectedLayers(s)));
     root.querySelector('#btnUngrp')?.addEventListener('click', () => mutate('Grubu çöz', s => ungroupSelectedLayers(s)));
     root.querySelector('#btnDupLayer')?.addEventListener('click', () => mutate('Çoğalt', s => duplicateSelectedLayers(s)));
@@ -2618,6 +2725,12 @@ function bindWorkspaceEvents(ws, root) {
     root.querySelector('#bgWallScaleReset')?.addEventListener('click', () => applyWallScaleChange(1.0, true));
     root.querySelectorAll('[data-bg-wall]').forEach(b => b.onclick = () => {
       selectWall(b.dataset.bgWall);
+    });
+    root.querySelectorAll('[data-industry-preset]').forEach(b => b.onclick = () => {
+      const p = INDUSTRY_SCENE_PRESETS.find(x => x.id === b.dataset.industryPreset);
+      if (!p) return;
+      mutate(`Hazır sahne: ${p.label}`, s => applyIndustryScenePreset(s, p.id));
+      studioToast(`✓ "${p.label}" sahne ayarı uygulandı.`);
     });
     root.querySelector('#pmPhotoUpload')?.addEventListener('change', e => {
       const f = e.target.files?.[0];
@@ -2748,7 +2861,7 @@ function bindWorkspaceEvents(ws, root) {
     });
     root.querySelector('#btnPrintQuote')?.addEventListener('click', () => {
       const previewUrl = is3DWorkspace(store.get())&&signEngine&&!signEngine.isDisposed?signEngine.capturePng(1200,750):null;
-      const html = buildQuoteHtml(store.get(), lastMetrics, lastCosts, previewUrl);
+      const html = buildQuoteHtml(store.get(), lastMetrics, lastCosts, previewUrl, { shareUrl: buildClientApprovalUrl(store.get(), lastCosts) });
       const win = window.open('', '_blank');
       if (win) {
         win.document.write(html);
@@ -2794,44 +2907,197 @@ function bindWorkspaceEvents(ws, root) {
   }
 }
 
-async function handleLogoUpload(file) {
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error('Görsel dosyası okunamadı.'));
+    r.readAsDataURL(file);
+  });
+}
+
+function promptLowQualityTracerChoice(fileName, quality) {
+  const presetLabels = {
+    art_vector: 'Art & Vector Graphics',
+    pixel_line: 'Pixel & Line Art',
+    photo_text: 'Photo LN + Text',
+    photo_3d_nr: 'Photo, 3D + NR',
+  };
+  return new Promise(resolve => {
+    const existing = document.getElementById('lowQualityTracerModal');
+    existing?.remove();
+    const modal = document.createElement('div');
+    modal.id = 'lowQualityTracerModal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const reasonsHtml = (quality.reasons || []).map(r => `<li>${escapeHtml(r)}</li>`).join('');
+    const presetName = presetLabels[quality.recommendedPreset] || 'Art & Vector Graphics';
+    modal.innerHTML = `
+      <div class="modal-card" style="max-width:460px">
+        <div class="modal-head">
+          <h3>Düşük Görsel Kalitesi Algılandı</h3>
+          <button type="button" class="close-btn" data-lq-choice="cancel" aria-label="Kapat">✕</button>
+        </div>
+        <div class="modal-body" style="display:flex;flex-direction:column;gap:10px;font-size:13px">
+          <p style="margin:0;font-weight:600;color:#fff">Bu görsel düşük kaliteli, Image Tracer'da iyileştirip vektöre çevirelim mi?</p>
+          <div style="font-size:12px;color:var(--muted)">
+            <div>Dosya: <b>${escapeHtml(fileName || 'görsel')}</b> · Kalite puanı: <b>%${quality.score}</b></div>
+            ${reasonsHtml ? `<ul style="margin:6px 0 6px 18px;padding:0">${reasonsHtml}</ul>` : ''}
+            <div>Önerilen hazır ayar: <b>${escapeHtml(presetName)}</b></div>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:4px">
+            <button type="button" class="sec-btn" data-lq-choice="cancel">İptal</button>
+            <button type="button" class="sec-btn" data-lq-choice="direct">Doğrudan 3D'ye Çevir</button>
+            <button type="button" class="cta-btn" data-lq-choice="tracer">Image Tracer'da İyileştir</button>
+          </div>
+        </div>
+      </div>`;
+    const finish = choice => {
+      window.removeEventListener('keydown', onKey, true);
+      modal.remove();
+      resolve(choice);
+    };
+    const onKey = e => {
+      if (e.key === 'Escape') { e.preventDefault(); finish('cancel'); }
+    };
+    modal.addEventListener('click', e => {
+      if (e.target === modal) { finish('cancel'); return; }
+      const btn = e.target.closest('[data-lq-choice]');
+      if (btn) finish(btn.dataset.lqChoice);
+    });
+    window.addEventListener('keydown', onKey, true);
+    document.body.appendChild(modal);
+  });
+}
+
+async function parseVectorFileForScene(file, onStatus = () => {}) {
+  const options = { unit: 'auto', scale: 1, tolerance: 0.35 };
+  const kind = detectVectorFormat(new Uint8Array(await file.slice(0, 65536).arrayBuffer()), file.name);
+  let job, filename = file.name;
+  if (kind === 'pdf') {
+    const output = await importPdfFile(file, options, text => onStatus(`${file.name}: ${text}`));
+    job = { jobId: Date.now(), operation: 'importPdfPages', parseOnly: true, pages: output.pages, ops: output.ops, warnings: output.warnings, filename: file.name, options };
+  } else if (kind === 'svgz') {
+    if (typeof DecompressionStream !== 'function') throw Error('Bu tarayıcı SVGZ gzip desteğine sahip değil.');
+    const text = await new Response(file.stream().pipeThrough(new DecompressionStream('gzip'))).text();
+    filename = filename.replace(/\.[^.]+$/i, '.svg');
+    job = { jobId: Date.now(), operation: 'importText', parseOnly: true, text, filename, options };
+  } else {
+    const bytes = await file.arrayBuffer();
+    job = { jobId: Date.now(), operation: 'importBinary', parseOnly: true, bytes, filename, options };
+  }
+  let output = await runVectorImportJob(job, { onStatus: msg => onStatus(`${file.name}: ${msg}`) });
+  if (output.convertedPdf) {
+    const pdfFile = new File([output.convertedPdf], file.name, { type: 'application/pdf' });
+    const parsed = await importPdfFile(pdfFile, options, msg => onStatus(`${file.name}: ${msg}`));
+    output = await runVectorImportJob({
+      jobId: Date.now() + 1,
+      operation: 'importPdfPages',
+      parseOnly: true,
+      pages: parsed.pages,
+      ops: parsed.ops,
+      warnings: ['AI/EPS: PostScript yerel PDF vektörlerine dönüştürüldü.', ...parsed.warnings],
+      filename: file.name,
+      options,
+    }, { onStatus: msg => onStatus(`${file.name}: ${msg}`) });
+  }
+  return output.imported;
+}
+
+async function handleLogoUpload(file, opts = {}) {
   if (!file) return;
   const statusEl = document.getElementById('logoTraceStatus');
   if (statusEl) statusEl.textContent = 'Logo vektöre çevriliyor...';
 
-  const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
+  const ext = file.name.toLowerCase().split('.').pop();
+  const isSvg = file.type === 'image/svg+xml' || ext === 'svg';
+  const isVectorDoc = ['ai', 'cdr', 'eps', 'ps', 'pdf', 'dxf', 'dwg', 'svgz', 'plt', 'hpgl', 'wmf', 'emf'].includes(ext);
   let parsed = null;
+  let errorMsg = '';
   try {
     if (isSvg) {
-      parsed = parseSvgLogo(await file.text());
+      const svgText = await file.text();
+      parsed = parseSvgLogo(svgText);
+      const physH = extractSvgPhysicalHeightMm(svgText);
+      if (parsed && physH) parsed.physicalHeightMm = physH;
+      if (!parsed?.parts?.length) {
+        const imported = importSvgText(svgText, file.name, { unit: 'auto', scale: 1, tolerance: 0.35 });
+        parsed = importedVectorToLogoData(imported);
+      }
+    } else if (isVectorDoc) {
+      if (statusEl) statusEl.textContent = 'Vektör dosya 3D sahneye hazırlanıyor…';
+      const imported = await parseVectorFileForScene(file, msg => { if (statusEl) statusEl.textContent = msg; });
+      parsed = importedVectorToLogoData(imported);
     } else {
       const url = URL.createObjectURL(file);
-      parsed = await traceRasterLogo(url, logoTraceOptions);
-      if (parsed) parsed.preview = await generateCutoutPreview(url, logoTraceOptions.bgTolerance);
-      URL.revokeObjectURL(url);
+      try {
+        if (!opts.bypassQualityPrompt) {
+          const quality = await evaluateRasterFileQuality(file, url);
+          if (quality?.isLowQuality) {
+            const choice = await promptLowQualityTracerChoice(file.name, quality);
+            if (choice === 'cancel') {
+              if (statusEl) statusEl.textContent = 'Görsel aktarımı iptal edildi.';
+              return;
+            }
+            if (choice === 'tracer') {
+              const dataUrl = await readFileAsDataUrl(file);
+              lastTracerReturnWs = store.get().mainWorkspace || 'model3d';
+              pendingTracerImage = {
+                dataUrl,
+                fileName: file.name,
+                presetId: quality.recommendedPreset,
+                source: 'logo-quality',
+              };
+              setMainWorkspace('tracer');
+              flushPendingTracerImage();
+              studioToast('Görsel önerilen ayar ile Image Tracer sekmesine aktarıldı.');
+              if (statusEl) statusEl.textContent = 'Görsel iyileştirme için Image Tracer sekmesine gönderildi.';
+              return;
+            }
+          }
+        }
+        parsed = await traceRasterLogo(url, logoTraceOptions);
+        if (parsed) parsed.preview = await generateCutoutPreview(url, logoTraceOptions.bgTolerance);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
     }
-  } catch {
+  } catch (err) {
     parsed = null;
+    errorMsg = err?.message || '';
   }
 
   if (!parsed) {
-    studioToast('Logoda biçim algılanamadı. Toleransı ayarlayın.',true);
-    if (statusEl) statusEl.textContent = 'Logoda biçim algılanamadı. Toleransı ayarlayın.';
+    const msg = errorMsg || 'Logoda biçim algılanamadı. Toleransı veya dosya konturlarını kontrol edin.';
+    studioToast(msg, true);
+    if (statusEl) statusEl.textContent = msg;
     return;
   }
+
+  const targetHeightMm = (parsed.physicalHeightMm >= 10 && parsed.physicalHeightMm <= 10000)
+    ? Math.round(parsed.physicalHeightMm)
+    : 450;
 
   mutate('Logo eklendi', s => {
     const logoObj = createShapeObject('logo', s, {
       name: `Logo: ${file.name}`,
-      heightMm: 450,
-      xMm: -400,
+      heightMm: targetHeightMm,
+      xMm: parsed.sourceFormat ? 0 : -400,
       logoData: parsed,
     });
     s.objects.push(logoObj);
     s.selectedIds = [logoObj.id];
   });
-  studioToast('Logo içe aktarıldı.');
+  studioToast(`${file.name} 3D sahneye aktarıldı (${parsed.parts.length} parça).`);
   if (statusEl) statusEl.textContent = `${parsed.parts.length} bağımsız logo parçası 3D olarak eklendi.`;
+  if (parsed.warnings?.length) {
+    const warning = document.getElementById('stageWarning');
+    if (warning) {
+      warning.textContent = parsed.warnings.slice(0, 2).join(' · ');
+      warning.classList.remove('hidden');
+    }
+  }
 }
 
 
@@ -3180,7 +3446,7 @@ function setMainWorkspace(ws) {
   if (ws === 'tracer' && tracerWrap) {
     if (!tracerWrap.querySelector('#traceStudioFrame')) {
       traceStudioReady = false;
-      tracerWrap.innerHTML = '<iframe id="traceStudioFrame" class="tracer-iframe" src="./public/trace-studio/index.html?v=20261125-v8" title="Image Tracer Stüdyosu"></iframe>';
+      tracerWrap.innerHTML = '<iframe id="traceStudioFrame" class="tracer-iframe" src="./public/trace-studio/index.html?v=20261126-v9" title="Image Tracer Stüdyosu"></iframe>';
       tracerWrap.querySelector('#traceStudioFrame')?.addEventListener('load', () => {
         setTimeout(() => {
           if (pendingTracerImage) {
@@ -3251,8 +3517,60 @@ function syncNestingSettingsControls(sidebar, nesting, displayUnit) {
   }
 }
 
+let nestingViewport = { zoom: 1, panX: 0, panY: 0, sheetKey: '' };
+function applyNestingSvgViewBox(root, sheet) {
+  const svgBox = root?.querySelector('#cwsNestSvgBox');
+  const svg = svgBox?.querySelector('.nesting-sheet-svg');
+  if (!svg || !sheet) return;
+  const w = Math.max(10, sheet.widthMm || 3000);
+  const h = Math.max(10, sheet.heightMm || 1500);
+  const key = `${sheet.id || activeSheetIdx}:${w}x${h}`;
+  if (nestingViewport.sheetKey !== key) {
+    nestingViewport = { zoom: 1, panX: 0, panY: 0, sheetKey: key };
+  }
+  const z = Math.max(0.5, Math.min(8, nestingViewport.zoom || 1));
+  nestingViewport.zoom = z;
+  const vw = w / z;
+  const vh = h / z;
+  const minPx = -w * 0.35, maxPx = w - vw + w * 0.35;
+  const minPy = -h * 0.35, maxPy = h - vh + h * 0.35;
+  const vx = z <= 1.001 && Math.abs(nestingViewport.panX) < 1 ? (w - vw) * 0.5 : Math.max(minPx, Math.min(maxPx, nestingViewport.panX));
+  const vy = z <= 1.001 && Math.abs(nestingViewport.panY) < 1 ? (h - vh) * 0.5 : Math.max(minPy, Math.min(maxPy, nestingViewport.panY));
+  nestingViewport.panX = vx;
+  nestingViewport.panY = vy;
+  svg.setAttribute('viewBox', `${vx.toFixed(2)} ${vy.toFixed(2)} ${vw.toFixed(2)} ${vh.toFixed(2)}`);
+  const zv = svgBox.querySelector('#nestZoomVal');
+  if (zv) zv.textContent = `${Math.round(z * 100)}%`;
+}
+
+function triggerQuickCncExport() {
+  const s = store.get();
+  const sheets = s.nesting?.sheets || [];
+  if (!sheets.length) {
+    studioToast('Önce "Otomatik Yerleştir" ile nesting levhası oluşturun.', true);
+    return;
+  }
+  const sh = sheets[activeSheetIdx] || sheets[0];
+  const profile = getMachineProfile(s.cnc?.profile);
+  const val = validateNestedProduction([sh], s.cnc);
+  if (!val.valid) {
+    studioToast(val.issues[0]?.msg || 'CNC üretim doğrulaması başarısız.', true);
+    return;
+  }
+  const base = `${s.projectName || 'kutu_harf'}_levha${activeSheetIdx + 1}`;
+  if (profile.kind === 'dxf') downloadBlob(`${base}.dxf`, generateNestedDxf([sh]), 'application/dxf');
+  else if (profile.kind === 'svg') downloadBlob(`${base}.svg`, generateNestedSvg([sh]), 'image/svg+xml');
+  else if (profile.kind === 'plt') downloadBlob(`${base}.plt`, generateNestedHpgl([sh], s.cnc), 'text/plain');
+  else downloadBlob(`${base}.${profile.ext || 'nc'}`, generateNestedGcode([sh], s.cnc), 'text/plain');
+  studioToast(`⚡ ${profile.label} profiliyle CNC dosyası indirildi.`);
+}
+
 function updateCenterWorkspaces(state) {
   const ws = state.mainWorkspace || 'model3d';
+  if (ws !== 'cnc' && unmountBendingCanvas) {
+    unmountBendingCanvas();
+    unmountBendingCanvas = null;
+  }
   if (ws === 'nesting') {
     const el = document.getElementById('nestingCenterWrap');
     if (el) {
@@ -3294,13 +3612,26 @@ function updateCenterWorkspaces(state) {
       }
       applyNestingRightPanelLayout(el);
       bindNestingCenterEvents(el);
+      applyNestingSvgViewBox(el, state.nesting?.sheets?.[activeSheetIdx] || { widthMm: state.nesting.sheetWidthMm, heightMm: state.nesting.sheetHeightMm });
       positionNestingRotateBar(el);
     }
   } else if (ws === 'cnc') {
     const el = document.getElementById('cncCenterWrap');
     if (el) {
-      el.innerHTML = renderCncCenter(state);
-      bindCncCenterEvents(el);
+      if (unmountBendingCanvas) {
+        unmountBendingCanvas();
+        unmountBendingCanvas = null;
+      }
+      const metricsList = lastSceneResult?.metricsList || [];
+      const bendingJob = activeCncSubTab === 'bending' ? buildBendingJob(metricsList, bendingConfig) : null;
+      el.innerHTML = renderCncCenter(state, {
+        subTab: activeCncSubTab,
+        metricsList,
+        bendingJob,
+        bendingConfig,
+        bendingSimState,
+      });
+      bindCncCenterEvents(el, bendingJob);
     }
   } else if (ws === 'cost') {
     const el = document.getElementById('costCenterWrap');
@@ -4051,7 +4382,74 @@ function bindNestingCenterEvents(root) {
   });
   root.querySelector('#cwsDeletePart')?.addEventListener('click',()=>editSelectedNesting('delete'));
   root.querySelector('#cwsSendCorel')?.addEventListener('click', () => triggerSendToCorel(true));
+  root.querySelector('#cwsSendCncQuick')?.addEventListener('click', () => triggerQuickCncExport());
   root.querySelector('#cwsRunNesting')?.addEventListener('click', () => runAutoNesting());
+  const nestBox = root.querySelector('#cwsNestSvgBox');
+  if (nestBox && nestBox.dataset.zoomBound !== 'true') {
+    nestBox.dataset.zoomBound = 'true';
+    const zoomAroundPoint = (factor, clientX = null, clientY = null) => {
+      const s = store.get();
+      const sheet = s.nesting?.sheets?.[activeSheetIdx] || { widthMm: s.nesting.sheetWidthMm || 3000, heightMm: s.nesting.sheetHeightMm || 1500 };
+      const svg = nestBox.querySelector('.nesting-sheet-svg');
+      if (!svg) return;
+      const w = Math.max(10, sheet.widthMm || 3000), h = Math.max(10, sheet.heightMm || 1500);
+      const oldZ = nestingViewport.zoom || 1;
+      const newZ = Math.max(0.5, Math.min(8, oldZ * factor));
+      if (Math.abs(newZ - oldZ) < 1e-4) return;
+      const rect = svg.getBoundingClientRect();
+      const oldVw = w / oldZ, oldVh = h / oldZ;
+      let focusX = nestingViewport.panX + oldVw * 0.5;
+      let focusY = nestingViewport.panY + oldVh * 0.5;
+      let fx = 0.5, fy = 0.5;
+      if (clientX != null && clientY != null && rect.width > 0 && rect.height > 0) {
+        fx = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        fy = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+        focusX = nestingViewport.panX + fx * oldVw;
+        focusY = nestingViewport.panY + fy * oldVh;
+      }
+      const newVw = w / newZ, newVh = h / newZ;
+      nestingViewport.zoom = newZ;
+      nestingViewport.panX = newZ <= 1.001 ? 0 : focusX - fx * newVw;
+      nestingViewport.panY = newZ <= 1.001 ? 0 : focusY - fy * newVh;
+      applyNestingSvgViewBox(root, sheet);
+    };
+    nestBox.addEventListener('wheel', e => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      zoomAroundPoint(e.deltaY < 0 ? 1.16 : 1 / 1.16, e.clientX, e.clientY);
+    }, { passive: false });
+    let panDrag = null;
+    nestBox.addEventListener('pointerdown', e => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      const s = store.get();
+      const sheet = s.nesting?.sheets?.[activeSheetIdx] || { widthMm: s.nesting.sheetWidthMm || 3000, heightMm: s.nesting.sheetHeightMm || 1500 };
+      panDrag = { x: e.clientX, y: e.clientY, panX: nestingViewport.panX, panY: nestingViewport.panY, sheet };
+    });
+    window.addEventListener('pointermove', e => {
+      if (!panDrag) return;
+      const svg = nestBox.querySelector('.nesting-sheet-svg');
+      const rect = svg?.getBoundingClientRect();
+      if (!rect?.width || !rect?.height) return;
+      const vw = (panDrag.sheet.widthMm || 3000) / Math.max(0.5, nestingViewport.zoom);
+      const vh = (panDrag.sheet.heightMm || 1500) / Math.max(0.5, nestingViewport.zoom);
+      nestingViewport.panX = panDrag.panX - (e.clientX - panDrag.x) * (vw / rect.width);
+      nestingViewport.panY = panDrag.panY - (e.clientY - panDrag.y) * (vh / rect.height);
+      applyNestingSvgViewBox(root, panDrag.sheet);
+    });
+    window.addEventListener('pointerup', () => { panDrag = null; });
+    nestBox.addEventListener('click', e => {
+      if (e.target.closest('#nestZoomIn')) { e.stopPropagation(); zoomAroundPoint(1.25); }
+      else if (e.target.closest('#nestZoomOut')) { e.stopPropagation(); zoomAroundPoint(0.8); }
+      else if (e.target.closest('#nestZoomReset')) {
+        e.stopPropagation();
+        nestingViewport = { zoom: 1, panX: 0, panY: 0, sheetKey: '' };
+        const s = store.get();
+        applyNestingSvgViewBox(root, s.nesting?.sheets?.[activeSheetIdx] || { widthMm: s.nesting.sheetWidthMm, heightMm: s.nesting.sheetHeightMm });
+      }
+    });
+  }
   const toggleSidewallStripsMode = (forceMode = null) => {
     const cur = store.get().nesting?.targetPart || 'all';
     const nextTarget = forceMode ?? (cur === 'sidewalls' ? 'all' : 'sidewalls');
@@ -4191,31 +4589,42 @@ function bindNestingCenterEvents(root) {
     });
     root.querySelector('#cwsNestPreset')?.addEventListener('change', e => {
       const p = SHEET_PRESETS.find(x => x.id === e.target.value);
-      if (p) applyNestingSheetSize(p.w, p.h, p.id);
+      if (p) { applyNestingSheetSize(p.w, p.h, p.id); saveNestingDefaults(store.get().nesting); }
     });
-  root.querySelector('#cwsNestW')?.addEventListener('change', e => applyNestingSheetSize(displayToMm(e.target.value,store.get().pageLayout?.displayUnit), store.get().nesting.sheetHeightMm));
-  root.querySelector('#cwsNestH')?.addEventListener('change', e => applyNestingSheetSize(store.get().nesting.sheetWidthMm, displayToMm(e.target.value,store.get().pageLayout?.displayUnit)));
+  root.querySelector('#cwsNestW')?.addEventListener('change', e => { applyNestingSheetSize(displayToMm(e.target.value,store.get().pageLayout?.displayUnit), store.get().nesting.sheetHeightMm); saveNestingDefaults(store.get().nesting); });
+  root.querySelector('#cwsNestH')?.addEventListener('change', e => { applyNestingSheetSize(store.get().nesting.sheetWidthMm, displayToMm(e.target.value,store.get().pageLayout?.displayUnit)); saveNestingDefaults(store.get().nesting); });
   root.querySelector('#cwsNestSp')?.addEventListener('change', e => {
     const v = displayToMm(e.target.value,store.get().pageLayout?.displayUnit);
-    if (Number.isFinite(v) && v >= 0) repackNestingSettings('Parça aralığı', n => { n.clearanceMm = v; });
+    if (Number.isFinite(v) && v >= 0) { repackNestingSettings('Parça aralığı', n => { n.clearanceMm = v; }); saveNestingDefaults(store.get().nesting); }
   });
   root.querySelector('#cwsNestMg')?.addEventListener('change', e => {
     const v = displayToMm(e.target.value,store.get().pageLayout?.displayUnit);
-    if (Number.isFinite(v) && v >= 0) repackNestingSettings('Levha kenar payı', n => {
-      n.marginMm = n.marginLeftMm = n.marginRightMm = n.marginTopMm = n.marginBottomMm = v;
-    });
+    if (Number.isFinite(v) && v >= 0) {
+      repackNestingSettings('Levha kenar payı', n => {
+        n.marginMm = n.marginLeftMm = n.marginRightMm = n.marginTopMm = n.marginBottomMm = v;
+      });
+      saveNestingDefaults(store.get().nesting);
+    }
   });
-  root.querySelector('#cwsNestHoles')?.addEventListener('change', e =>
-    repackNestingSettings('Delik içi yerleşim', n => { n.allowHoleNesting = e.target.checked; }));
+  root.querySelector('#cwsNestHoles')?.addEventListener('change', e => {
+    repackNestingSettings('Delik içi yerleşim', n => { n.allowHoleNesting = e.target.checked; });
+    saveNestingDefaults(store.get().nesting);
+  });
   root.querySelector('#cwsNestAdvanced')?.addEventListener('toggle', e => {
     nestingAdvancedOpen = Boolean(e.target.open);
   });
-  root.querySelector('#cwsNestGrain')?.addEventListener('change', e =>
-    repackNestingSettings('Fırça yönü kısıtı', n => { n.enforceGrainDirection = e.target.checked; }));
-  root.querySelector('#cwsNestRot')?.addEventListener('change', e =>
-    repackNestingSettings('Dönüş adımı', n => { n.rotationStepDeg = e.target.value === 'auto' ? 'auto' : Number(e.target.value); }));
-  root.querySelector('#cwsNestStrategy')?.addEventListener('change', e =>
-    repackNestingSettings('Nesting yönü', n => { n.placementStrategy = e.target.value; }));
+  root.querySelector('#cwsNestGrain')?.addEventListener('change', e => {
+    repackNestingSettings('Fırça yönü kısıtı', n => { n.enforceGrainDirection = e.target.checked; });
+    saveNestingDefaults(store.get().nesting);
+  });
+  root.querySelector('#cwsNestRot')?.addEventListener('change', e => {
+    repackNestingSettings('Dönüş adımı', n => { n.rotationStepDeg = e.target.value === 'auto' ? 'auto' : Number(e.target.value); });
+    saveNestingDefaults(store.get().nesting);
+  });
+  root.querySelector('#cwsNestStrategy')?.addEventListener('change', e => {
+    repackNestingSettings('Nesting yönü', n => { n.placementStrategy = e.target.value; });
+    saveNestingDefaults(store.get().nesting);
+  });
   const setNestingPreviewColor = (field, value) => {
     if (!/^#[a-f0-9]{6}$/i.test(value)) return;
     mutateData('Nesting önizleme rengi', s => {
@@ -4284,7 +4693,163 @@ function bindNestedCncPanel(root){
   }
  });
 }
-function bindCncCenterEvents(root) {
+function bindCncCenterEvents(root, bendingJob = null) {
+  root.querySelectorAll('[data-cnc-subtab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeCncSubTab = btn.dataset.cncSubtab || 'cnc';
+      updateCenterWorkspaces(store.get());
+    });
+  });
+
+  if (activeCncSubTab === 'workshop') {
+    root.querySelector('#wsExportStudDxf')?.addEventListener('click', () => {
+      const s = store.get();
+      const plan = computeMountingStuds(lastSceneResult?.metricsList || []);
+      downloadBlob(`${s.projectName || 'proje'}_montaj_sablon_1to1.dxf`, generateMountingTemplateDxf(plan), 'application/dxf');
+      studioToast('✓ 1:1 Montaj (Saplama) şablonu DXF olarak indirildi.');
+    });
+    root.querySelector('#wsExportStudSvg')?.addEventListener('click', () => {
+      const s = store.get();
+      const plan = computeMountingStuds(lastSceneResult?.metricsList || []);
+      downloadBlob(`${s.projectName || 'proje'}_montaj_sablon_1to1.svg`, generateMountingTemplateSvg(plan), 'image/svg+xml');
+      studioToast('✓ 1:1 Montaj (Saplama) şablonu SVG olarak indirildi.');
+    });
+    return;
+  }
+
+  if (activeCncSubTab === 'bending') {
+    const rerenderBending = () => updateCenterWorkspaces(store.get());
+    root.querySelector('#bendMachineSelect')?.addEventListener('change', e => {
+      bendingConfig.machineId = e.target.value;
+      rerenderBending();
+    });
+    root.querySelector('#bendCoilSelect')?.addEventListener('change', e => {
+      bendingConfig.coilId = e.target.value;
+      bendingConfig.springbackPct = null;
+      bendingConfig.notchAngleDeg = null;
+      rerenderBending();
+    });
+    root.querySelector('#bendOverlapMm')?.addEventListener('change', e => {
+      bendingConfig.overlapMm = Math.max(0, Number(e.target.value) || 0);
+      rerenderBending();
+    });
+    root.querySelector('#bendSpringbackPct')?.addEventListener('change', e => {
+      bendingConfig.springbackPct = Math.max(0, Number(e.target.value) || 0);
+      rerenderBending();
+    });
+    root.querySelector('#bendNotchAngleDeg')?.addEventListener('change', e => {
+      bendingConfig.notchAngleDeg = Math.max(10, Number(e.target.value) || 30);
+      rerenderBending();
+    });
+    root.querySelector('#bendContourSelect')?.addEventListener('change', e => {
+      bendingSimState.activeContourIdx = Number(e.target.value) || 0;
+      bendingSimState.progress = 0.25;
+      bendingSimState.playing = false;
+      rerenderBending();
+    });
+    root.querySelectorAll('[data-bend-row]').forEach(tr => {
+      tr.addEventListener('click', () => {
+        bendingSimState.activeContourIdx = Number(tr.dataset.bendRow) || 0;
+        bendingSimState.progress = 0.25;
+        bendingSimState.playing = false;
+        rerenderBending();
+      });
+    });
+
+    const contours = bendingJob?.contours || [];
+    const activeIdx = Math.max(0, Math.min(contours.length - 1, Number(bendingSimState.activeContourIdx || 0)));
+    const activeContour = contours[activeIdx] || null;
+    const playBtn = root.querySelector('#bendPlayPause');
+    const scrubber = root.querySelector('#bendScrubber');
+    const progressMmEl = root.querySelector('#bendProgressMm');
+
+    playBtn?.addEventListener('click', () => {
+      if (bendingSimState.progress >= 0.999) bendingSimState.progress = 0;
+      bendingSimState.playing = !bendingSimState.playing;
+      playBtn.textContent = bendingSimState.playing ? '⏸ Duraklat' : '▶ Başlat';
+    });
+    root.querySelector('#bendStepPrev')?.addEventListener('click', () => {
+      if (!activeContour) return;
+      bendingSimState.playing = false;
+      const d = bendingSimState.progress * activeContour.totalStripMm;
+      const prev = [...activeContour.bends].reverse().find(b => b.distMm < d - 2);
+      bendingSimState.progress = prev ? prev.distMm / Math.max(1, activeContour.totalStripMm) : 0;
+      if (playBtn) playBtn.textContent = '▶ Başlat';
+      if (scrubber) scrubber.value = String(Math.round(bendingSimState.progress * 1000));
+      if (progressMmEl) progressMmEl.textContent = String(Math.round(bendingSimState.progress * activeContour.totalStripMm));
+    });
+    root.querySelector('#bendStepNext')?.addEventListener('click', () => {
+      if (!activeContour) return;
+      bendingSimState.playing = false;
+      const d = bendingSimState.progress * activeContour.totalStripMm;
+      const next = activeContour.bends.find(b => b.distMm > d + 2);
+      bendingSimState.progress = next ? next.distMm / Math.max(1, activeContour.totalStripMm) : 1;
+      if (playBtn) playBtn.textContent = '▶ Başlat';
+      if (scrubber) scrubber.value = String(Math.round(bendingSimState.progress * 1000));
+      if (progressMmEl) progressMmEl.textContent = String(Math.round(bendingSimState.progress * activeContour.totalStripMm));
+    });
+    scrubber?.addEventListener('input', e => {
+      bendingSimState.playing = false;
+      bendingSimState.progress = Math.max(0, Math.min(1, Number(e.target.value) / 1000));
+      if (playBtn) playBtn.textContent = '▶ Başlat';
+      if (progressMmEl && activeContour) progressMmEl.textContent = String(Math.round(bendingSimState.progress * activeContour.totalStripMm));
+    });
+    root.querySelector('#bendSpeedSelect')?.addEventListener('change', e => {
+      bendingSimState.speed = Number(e.target.value) || 1;
+    });
+
+    const baseName = () => `${store.get().projectName || 'proje'}_yan_bant`;
+    root.querySelector('#bendExpDxfR2000')?.addEventListener('click', () => {
+      if (!bendingJob) return;
+      downloadBlob(`${baseName()}_R2000.dxf`, exportBendingDxf(bendingJob, 'R2000'), 'application/dxf');
+      studioToast('✓ Büküm DXF (R2000) indirildi.');
+    });
+    root.querySelector('#bendExpDxfR12')?.addEventListener('click', () => {
+      if (!bendingJob) return;
+      downloadBlob(`${baseName()}_R12.dxf`, exportBendingDxf(bendingJob, 'R12'), 'application/dxf');
+      studioToast('✓ Büküm DXF (R12) indirildi.');
+    });
+    root.querySelector('#bendExpPlt')?.addEventListener('click', () => {
+      if (!bendingJob) return;
+      downloadBlob(`${baseName()}.plt`, exportBendingPlt(bendingJob), 'text/plain');
+      studioToast('✓ Büküm HPGL (.plt) indirildi.');
+    });
+    root.querySelector('#bendExpGcode')?.addEventListener('click', () => {
+      if (!bendingJob) return;
+      const ext = bendingJob.machine?.ext || 'nc';
+      downloadBlob(`${baseName()}_${bendingJob.machine?.id || 'cnc'}.${ext}`, exportBendingGcode(bendingJob), 'text/plain');
+      studioToast('✓ Makine büküm G-Code dosyası indirildi.');
+    });
+    root.querySelector('#bendPrintJobSheet')?.addEventListener('click', () => {
+      if (!bendingJob) return;
+      const html = buildBendingJobSheetHtml(bendingJob);
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(url), 15000);
+    });
+
+    const canvas = root.querySelector('#bendingSimCanvas');
+    if (canvas && activeContour) {
+      unmountBendingCanvas = mountBendingSimulatorCanvas({
+        canvas,
+        contour: activeContour,
+        simState: bendingSimState,
+        onSeamSelect: (key, edgeIdx) => {
+          bendingConfig.seamOverrides[key] = edgeIdx;
+          studioToast('✓ Birleşim noktası (seam) seçilen kenara taşındı.');
+          rerenderBending();
+        },
+        onProgress: (prog, playing) => {
+          if (scrubber) scrubber.value = String(Math.round(prog * 1000));
+          if (progressMmEl) progressMmEl.textContent = String(Math.round(prog * activeContour.totalStripMm));
+          if (playBtn) playBtn.textContent = playing ? '⏸ Duraklat' : '▶ Başlat';
+        },
+      });
+    }
+    return;
+  }
+
   const upd = (id, fn, isChk = false) => root.querySelector('#' + id)?.addEventListener('change', e => {
     mutateData('CNC ayarı', s => fn(s.cnc, isChk ? e.target.checked : ['cncKerf','cncToolDia','cncLeadIn','cncTol'].includes(id)?displayToMm(e.target.value,s.pageLayout?.displayUnit):e.target.value));
   });
@@ -4364,7 +4929,7 @@ async function copyStudioText(text){
 function openCustomerQuote(print = false) {
   const state = store.get();
   const preview = is3DWorkspace(state)&&signEngine&&!signEngine.isDisposed ? signEngine.capturePng(1200, 750) : null;
-  const html = buildQuoteHtml(state, lastMetrics, lastCosts, preview);
+  const html = buildQuoteHtml(state, lastMetrics, lastCosts, preview, { shareUrl: buildClientApprovalUrl(state, lastCosts) });
   const modal=document.getElementById('quotePreviewModal'),frame=document.getElementById('quotePreviewFrame');
   if(!modal||!frame){downloadBlob(state.projectName+'_teklif.html',html,'text/html');return;}
   frame.srcdoc=html;modal.classList.remove('hidden');
@@ -4522,7 +5087,7 @@ function bindCostCenterEvents(root) {
   root.querySelector('#costCenterPreviewBtn')?.addEventListener('click',()=>openCustomerQuote(false));
   root.querySelector('#costCenterPdfBtn')?.addEventListener('click',()=>openCustomerQuote(true));
   root.querySelector('#costCenterHtmlBtn')?.addEventListener('click',()=>{
-    const s=store.get();downloadBlob(`${s.projectName||'proje'}_musteri_teklifi.html`,buildQuoteHtml(s,lastMetrics,lastCosts), 'text/html;charset=utf-8');
+    const s=store.get();downloadBlob(`${s.projectName||'proje'}_musteri_teklifi.html`,buildQuoteHtml(s,lastMetrics,lastCosts,null,{shareUrl:buildClientApprovalUrl(s,lastCosts)}), 'text/html;charset=utf-8');
   });
   root.querySelector('#costCenterCopyBtn')?.addEventListener('click',()=>copyStudioText(customerQuoteText()));
   root.querySelectorAll('#costExportInternalCsv').forEach(b=>b.addEventListener('click',exportInternalCostCsv));
@@ -4572,6 +5137,8 @@ function showObjectContextMenu(e, objId) {
   const hasSel = (store.get().selectedIds || []).length > 0;
   if (hasSel) {
     contextMenu.show(e.clientX, e.clientY, [
+      { label: 'AI ile Devam Et', icon: '✨', action: () => openSignageAiModal() },
+      { sep: true },
       ...(editableTextObject(store.get(),objId||store.get().selectedIds[0])?[{label:'Metni Düzenle',action:()=>openTextEditor(objId||store.get().selectedIds[0])},{sep:true}]:[]),
       { label: 'Kes', kbd: 'Ctrl+X', action: cutSelectionToClipboard },
       { label: 'Kopyala', kbd: 'Ctrl+C', action: () => copySelectionToClipboard() },
@@ -4665,7 +5232,7 @@ async function studioExport(format, selectedOnly = false, resolution = '2400x150
 
 function openImportDialog(){
   if(store.get().mainWorkspace==='nesting')return openNestingVectorImport(true);
-  if(['cnc','cost'].includes(store.get().mainWorkspace))setMainWorkspace('design2d');
+  if(['cnc','cost','tracer'].includes(store.get().mainWorkspace))setMainWorkspace('model3d');
   activateTool('logo');
 }
 function openExportDialog() {
@@ -4785,7 +5352,18 @@ function init() {
   sideWorkspace='layers';ribbonSuppressed='layers';
   store.updateScoped([],s=>{s.activeWorkspace='layers';});
   bindRibbon();
-  document.getElementById('globalLogoImport')?.addEventListener('change',e=>{const file=e.target.files?.[0];e.target.value='';if(file){if(/\.(svg|png|jpe?g|webp)$/i.test(file.name))handleLogoUpload(file);else{openNestingVectorImport(false);importNestingVectorFiles([file],document.getElementById('nestingCenterWrap'));}}});
+  document.getElementById('globalLogoImport')?.addEventListener('change',e=>{
+    const file=e.target.files?.[0];
+    e.target.value='';
+    if(!file)return;
+    const ws=store.get().mainWorkspace||'model3d';
+    if(ws==='nesting'){
+      openNestingVectorImport(false);
+      importNestingVectorFiles([file],document.getElementById('nestingCenterWrap'));
+    }else{
+      handleLogoUpload(file);
+    }
+  });
   window.addEventListener('message', async (e) => {
     if (e.origin && e.origin !== window.location.origin && e.origin !== 'null') return;
     const msg = e.data;
@@ -4798,8 +5376,9 @@ function init() {
     if (msg.type === 'SIGNAGE_STUDIO_IMPORT_VECTOR' && msg.svgText) {
       const name = String(msg.fileName || 'trace_vektor').replace(/\.svg$/i, '') + '.svg';
       const file = new File([msg.svgText], name, { type: 'image/svg+xml' });
-      setMainWorkspace('model3d');
-      await handleLogoUpload(file);
+      const targetWs = ['model3d', 'materials', 'design2d'].includes(lastTracerReturnWs) ? lastTracerReturnWs : 'model3d';
+      setMainWorkspace(targetWs);
+      await handleLogoUpload(file, { bypassQualityPrompt: true });
       studioToast('Image Tracer vektörü 3D sahneye aktarıldı.');
     } else if (msg.type === 'SIGNAGE_STUDIO_IMPORT_NESTING' && (msg.svgText || msg.dxfText)) {
       const useSvg = Boolean(msg.svgText);
@@ -4847,7 +5426,7 @@ function init() {
       materialOverrides: s.materialOverrides,
       lighting: s.lighting,
       render: s.render,
-    }));studioToast('Varsayılan ayarlar kaydedildi.');}catch{studioToast('Varsayılan ayarlar kaydedilemedi.',true);}
+    }));saveNestingDefaults(s.nesting);studioToast('Varsayılan ayarlar (malzeme + nesting) kaydedildi.');}catch{studioToast('Varsayılan ayarlar kaydedilemedi.',true);}
   });
   document.getElementById('btnOpenBackgroundPanel')?.addEventListener('click', () => {
     ribbonSuppressed=null;
@@ -4867,6 +5446,479 @@ function init() {
   document.getElementById('btnFullscreen')?.addEventListener('click', () => {
     document.querySelector('.app-shell')?.classList.toggle('stage-fullscreen');
   });
+  const dims3DController = new Dimensions3DOverlayController(
+    document.getElementById('dims3DOverlayCanvas'),
+    () => ({ signEngine, state: store.get(), metrics: lastMetrics })
+  );
+  document.getElementById('btnToggle3DDims')?.addEventListener('click', () => {
+    const btn = document.getElementById('btnToggle3DDims');
+    const next = !dims3DController.enabled;
+    dims3DController.setEnabled(next);
+    btn?.classList.toggle('on', next);
+    studioToast(next ? '3D ölçüler gösteriliyor.' : '3D ölçüler gizlendi.');
+  });
+  let videoRecController = null;
+  let lastVideoBlobUrl = null;
+  const videoModal = document.getElementById('presentationVideoModal');
+  const closeVideoModal = () => {
+    videoRecController?.abort();
+    videoRecController = null;
+    videoModal?.classList.add('hidden');
+  };
+  document.getElementById('btnOpenVideoModal')?.addEventListener('click', () => {
+    videoModal?.classList.remove('hidden');
+  });
+  document.getElementById('btnCloseVideoModal')?.addEventListener('click', closeVideoModal);
+  videoModal?.addEventListener('click', e => { if (e.target === videoModal) closeVideoModal(); });
+  document.getElementById('btnCancelVideoRec')?.addEventListener('click', () => {
+    videoRecController?.abort();
+  });
+  document.getElementById('btnStartVideoRec')?.addEventListener('click', async () => {
+    const startBtn = document.getElementById('btnStartVideoRec');
+    const cancelBtn = document.getElementById('btnCancelVideoRec');
+    const dlBtn = document.getElementById('btnDownloadVideo');
+    const progWrap = document.getElementById('vidProgressWrap');
+    const stageEl = document.getElementById('vidStageLabel');
+    const pctEl = document.getElementById('vidPctLabel');
+    const barEl = document.getElementById('vidProgressBar');
+    const previewEl = document.getElementById('vidPreviewEl');
+    const [w, h] = String(document.getElementById('vidResolution')?.value || '1280x720').split('x').map(Number);
+    const dur = Number(document.getElementById('vidDuration')?.value || 8);
+    const showDims = Boolean(document.getElementById('vidShowDims')?.checked);
+    const ctrl = new AbortController();
+    videoRecController = ctrl;
+    startBtn.disabled = true;
+    cancelBtn?.classList.remove('hidden');
+    dlBtn?.classList.add('hidden');
+    progWrap?.classList.remove('hidden');
+    previewEl?.classList.add('hidden');
+    try {
+      const res = await recordPresentationVideo({
+        signEngine: ensureSignEngine(),
+        state: store.get(),
+        fontMap,
+        metrics: lastMetrics,
+        width: w || 1280,
+        height: h || 720,
+        durationSec: dur || 8,
+        showDimensions: showDims,
+        signal: ctrl.signal,
+        onProgress: ({ percent, stageLabel }) => {
+          if (stageEl) stageEl.textContent = stageLabel;
+          if (pctEl) pctEl.textContent = `${percent}%`;
+          if (barEl) barEl.value = percent;
+        },
+      });
+      if (lastVideoBlobUrl) URL.revokeObjectURL(lastVideoBlobUrl);
+      lastVideoBlobUrl = res.url;
+      if (previewEl) {
+        previewEl.src = res.url;
+        previewEl.classList.remove('hidden');
+      }
+      if (dlBtn) {
+        dlBtn.classList.remove('hidden');
+        dlBtn.onclick = () => {
+          const a = document.createElement('a');
+          a.href = res.url;
+          a.download = `${(store.get().projectName || 'kutu_harf_sunum').replace(/\s+/g, '_')}.${res.ext}`;
+          a.click();
+        };
+      }
+      studioToast('🎬 Sinematik sunum videosu hazır!');
+    } catch (err) {
+      if (err?.name !== 'AbortError') studioToast(err?.message || 'Video oluşturulamadı.', true);
+    } finally {
+      videoRecController = null;
+      startBtn.disabled = false;
+      cancelBtn?.classList.add('hidden');
+    }
+  });
+  let lastAiCompositeUrl = null;
+  let lastAiResultUrl = null;
+  async function buildFreeAiComposite() {
+    const s = store.get();
+    if (s.photomontage?.photoUrl && photomontageOverlay) {
+      const comp = await photomontageOverlay.buildCompositeDataUrl(s, ensureSignEngine());
+      if (comp) return comp;
+    }
+    const eng = ensureSignEngine();
+    if (eng && !eng.isDisposed) return eng.capturePng(1280, 720, { transparent: false });
+    return null;
+  }
+  function getAiSceneContext() {
+    const s = store.get();
+    const sel = s.objects.filter(o => (s.selectedIds || []).includes(o.id));
+    const objs = sel.length ? sel : s.objects;
+    const first = objs[0] || {};
+    return {
+      objects: objs,
+      constructionType: first.constructionType || s.constructionType,
+      faceMaterial: first.faceMaterial || s.materials?.faceId,
+      sideMaterial: first.sideMaterial || s.materials?.sideId,
+      lightingMode: first.lightingMode || s.lighting?.mode,
+      lightColor: s.lighting?.colorHex,
+      night: s.scene?.night,
+      widthMm: lastMetrics?.totalWidthMm || 1500,
+      heightMm: lastMetrics?.totalHeightMm || 400,
+      depthMm: first.depthMm || s.dimensions?.depthMm || 80,
+    };
+  }
+  async function openSignageAiModal() {
+    const modal = document.getElementById('signageAiModal');
+    if (!modal) return;
+    const cfg = loadAiConfig();
+    const provEl = document.getElementById('aiProviderSelect');
+    const keyEl = document.getElementById('aiApiKeyInput');
+    if (provEl) provEl.value = cfg.provider;
+    if (keyEl) keyEl.value = cfg.apiKey;
+    const briefEl = document.getElementById('aiBriefInput');
+    const promptEl = document.getElementById('aiMasterPromptText');
+    if (promptEl && !promptEl.value.trim()) {
+      promptEl.value = buildSignageMasterPrompt(briefEl?.value || '', getAiSceneContext());
+    }
+    lastAiCompositeUrl = await buildFreeAiComposite();
+    const compImg = document.getElementById('aiCompositePreview');
+    if (compImg && lastAiCompositeUrl) compImg.src = lastAiCompositeUrl;
+    modal.classList.remove('hidden');
+  }
+  document.getElementById('btnCloseSignageAi')?.addEventListener('click', () => document.getElementById('signageAiModal')?.classList.add('hidden'));
+  document.getElementById('signageAiModal')?.addEventListener('click', e => { if (e.target.id === 'signageAiModal') e.target.classList.add('hidden'); });
+  document.querySelectorAll('[data-ai-chip]').forEach(b => b.addEventListener('click', () => {
+    const inp = document.getElementById('aiBriefInput');
+    if (inp) inp.value = b.dataset.aiChip;
+    const promptEl = document.getElementById('aiMasterPromptText');
+    if (promptEl) promptEl.value = buildSignageMasterPrompt(b.dataset.aiChip, getAiSceneContext());
+  }));
+  document.getElementById('aiFacadeInput')?.addEventListener('change', async e => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    handlePhotomontagePhotoFile(f);
+    setTimeout(async () => {
+      lastAiCompositeUrl = await buildFreeAiComposite();
+      const compImg = document.getElementById('aiCompositePreview');
+      if (compImg && lastAiCompositeUrl) compImg.src = lastAiCompositeUrl;
+    }, 180);
+  });
+  document.getElementById('btnAiBuildPrompt')?.addEventListener('click', async () => {
+    const statusEl = document.getElementById('aiRenderStatus');
+    const brief = document.getElementById('aiBriefInput')?.value || '';
+    const promptEl = document.getElementById('aiMasterPromptText');
+    const draft = buildSignageMasterPrompt(brief, getAiSceneContext());
+    if (promptEl) promptEl.value = draft;
+    const cfg = {
+      ...loadAiConfig(),
+      provider: document.getElementById('aiProviderSelect')?.value || 'gemini',
+      apiKey: document.getElementById('aiApiKeyInput')?.value || '',
+    };
+    saveAiConfig(cfg);
+    if (statusEl) statusEl.textContent = 'Master Prompt hazırlanıyor...';
+    const res = await refineMasterPromptWithLlm(draft, brief, cfg);
+    if (promptEl) promptEl.value = res.prompt;
+    if (statusEl) statusEl.textContent = res.source === 'api' ? 'Master Prompt AI ile zenginleştirildi; inceleyip onaylayabilirsiniz.' : 'Geometri kilitli Master Prompt hazır; onaylayıp görseli oluşturabilirsiniz.';
+  });
+  document.getElementById('btnAiRunRender')?.addEventListener('click', async () => {
+    const statusEl = document.getElementById('aiRenderStatus');
+    const resImg = document.getElementById('aiResultPreview');
+    const dlBtn = document.getElementById('btnAiDownloadResult');
+    const promptEl = document.getElementById('aiMasterPromptText');
+    const cfg = {
+      ...loadAiConfig(),
+      provider: document.getElementById('aiProviderSelect')?.value || 'gemini',
+      apiKey: document.getElementById('aiApiKeyInput')?.value || '',
+    };
+    saveAiConfig(cfg);
+    if (!lastAiCompositeUrl) lastAiCompositeUrl = await buildFreeAiComposite();
+    const masterPrompt = promptEl?.value?.trim() || buildSignageMasterPrompt(document.getElementById('aiBriefInput')?.value || '', getAiSceneContext());
+    if (statusEl) statusEl.textContent = 'Görsel işleniyor...';
+    try {
+      const out = await runHybridSignageRender({ compositeDataUrl: lastAiCompositeUrl, masterPrompt, config: cfg });
+      lastAiResultUrl = out.imageUrl;
+      if (resImg) resImg.src = out.imageUrl;
+      if (dlBtn) {
+        dlBtn.classList.remove('hidden');
+        dlBtn.onclick = () => downloadDataUrl(`${store.get().projectName || 'ai_sunum'}.png`, lastAiResultUrl);
+      }
+      if (statusEl) statusEl.textContent = out.note;
+    } catch (err) {
+      if (statusEl) statusEl.textContent = err?.message || 'Görsel oluşturulamadı.';
+    }
+  });
+
+  // Module 5: App Expert Interactive Assistant
+  const expertDrawer = document.getElementById('appExpertDrawer');
+  const expertMsgs = document.getElementById('expertMessages');
+  const expertHistory = [];
+  const appendExpertMsg = (role, text) => {
+    if (!expertMsgs) return;
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    div.textContent = text;
+    expertMsgs.appendChild(div);
+    expertMsgs.scrollTop = expertMsgs.scrollHeight;
+  };
+  const executeExpertTools = (calls = []) => {
+    for (const tc of calls) {
+      const args = tc.args || {};
+      if (tc.name === 'switch_workspace' && args.workspace) {
+        setMainWorkspace(args.workspace);
+      } else if (tc.name === 'set_material' && args.materialId && MATERIAL_PRESETS[args.materialId]) {
+        mutate('Asistan: Malzeme', s => applySurfaceMaterialPreset(s, args.materialId));
+      } else if (tc.name === 'set_lighting') {
+        mutate('Asistan: Aydınlatma', s => {
+          if (typeof args.night === 'boolean') s.scene.night = args.night;
+          if (typeof args.enabled === 'boolean') s.lighting.enabled = args.enabled;
+          if (args.mode) {
+            s.lighting.mode = args.mode;
+            for (const o of s.objects) if ((s.selectedIds || []).includes(o.id) && !o.locked) o.lightingMode = args.mode;
+          }
+        });
+      } else if (tc.name === 'set_wall' && args.wallId) {
+        selectWall(args.wallId);
+      } else if (tc.name === 'set_dimensions') {
+        mutate('Asistan: Ölçü', s => {
+          if (Number.isFinite(Number(args.heightMm)) && Number(args.heightMm) > 10) {
+            const h = Math.round(Number(args.heightMm));
+            s.dimensions.heightMm = h;
+            for (const o of s.objects) if ((s.selectedIds || []).includes(o.id) && !o.locked) resizeObjectToMm(o, null, h, fontMap);
+          }
+          if (Number.isFinite(Number(args.depthMm)) && Number(args.depthMm) > 5) {
+            const d = Math.round(Number(args.depthMm));
+            s.dimensions.depthMm = d;
+            for (const o of s.objects) if ((s.selectedIds || []).includes(o.id) && !o.locked) o.depthMm = d;
+          }
+        });
+      } else if (tc.name === 'run_nesting') {
+        setMainWorkspace('nesting');
+        runAutoNesting();
+      } else if (tc.name === 'toggle_3d_dimensions') {
+        const want = Boolean(args.visible);
+        if (dims3DController.enabled !== want) document.getElementById('btnToggle3DDims')?.click();
+      } else if (tc.name === 'apply_industry_preset' && args.presetId) {
+        mutate('Asistan: Sektör sahnesi', s => applyIndustryScenePreset(s, args.presetId));
+      } else if (tc.name === 'highlight_ui_element' && args.selector) {
+        if (args.workspace) setMainWorkspace(args.workspace);
+        setTimeout(() => showGuideCursor(args.selector, args.tip || 'Buraya tıklayın'), 120);
+      }
+    }
+  };
+  const submitExpertQuestion = async q => {
+    const text = String(q || '').trim();
+    if (!text) return;
+    appendExpertMsg('user', text);
+    expertHistory.push({ role: 'user', content: text });
+    const res = await askAppExpert(text, expertHistory, loadAiConfig());
+    if (res.toolCalls?.length) executeExpertTools(res.toolCalls);
+    appendExpertMsg('bot', res.reply || 'İşlem tamamlandı.');
+    expertHistory.push({ role: 'assistant', content: res.reply });
+  };
+  document.getElementById('btnAppExpertToggle')?.addEventListener('click', () => expertDrawer?.classList.toggle('hidden'));
+  document.getElementById('btnExpertClose')?.addEventListener('click', () => expertDrawer?.classList.add('hidden'));
+  document.getElementById('btnExpertSettings')?.addEventListener('click', () => {
+    const box = document.getElementById('expertApiBox');
+    const cfg = loadAiConfig();
+    const pSel = document.getElementById('expertProviderSel');
+    const kInp = document.getElementById('expertApiKeyInp');
+    if (pSel) pSel.value = cfg.provider;
+    if (kInp) kInp.value = cfg.apiKey;
+    box?.classList.toggle('hidden');
+  });
+  document.getElementById('btnSaveExpertApi')?.addEventListener('click', () => {
+    saveAiConfig({
+      ...loadAiConfig(),
+      provider: document.getElementById('expertProviderSel')?.value || 'gemini',
+      apiKey: document.getElementById('expertApiKeyInp')?.value || '',
+    });
+    document.getElementById('expertApiBox')?.classList.add('hidden');
+    studioToast('Asistan API ayarı kaydedildi.');
+  });
+  document.querySelectorAll('[data-expert-q]').forEach(b => b.addEventListener('click', () => submitExpertQuestion(b.dataset.expertQ)));
+  document.getElementById('expertForm')?.addEventListener('submit', e => {
+    e.preventDefault();
+    const inp = document.getElementById('expertInput');
+    if (!inp) return;
+    const val = inp.value;
+    inp.value = '';
+    submitExpertQuestion(val);
+  });
+
+  // Module 7 & 9: A/B Split Compare, Client Approval Link, AR (.glb/.usdz) & Kiosk Mode
+  const splitCompare = new SplitCompareController({
+    hostEl: document.getElementById('stageWrap'),
+    getSignEngine: () => ensureSignEngine(),
+    getState: () => store.get(),
+    getFontMap: () => fontMap,
+  });
+  document.getElementById('btnSplitCompare')?.addEventListener('click', () => {
+    setMainWorkspace('model3d');
+    splitCompare.open();
+  });
+
+  const showClientApprovalBanner = (projectKey, projectName) => {
+    const banner = document.getElementById('clientApprovalBanner');
+    if (!banner) return;
+    const renderBanner = () => {
+      const existing = getClientApproval(projectKey);
+      banner.classList.remove('hidden');
+      banner.innerHTML = `
+        <div>
+          <strong style="color:#fef3c7">👁 Canlı Müşteri 3D Önizleme · ${escapeHtml(projectName)}</strong>
+          <div style="font-size:12px;color:var(--muted)">360° döndürmek için sahneyi sürükleyin · ${existing ? `<span style="color:#86efac">✓ Onaylandı (${escapeHtml(existing.approverName)} · ${escapeHtml(existing.approvedAtLabel)})</span>` : 'Onay bekliyor'}</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" id="cabToggleNight" class="sec-btn">${store.get().scene?.night !== false ? '☀ Gündüz Gör' : '🌙 Gece Gör'}</button>
+          <button type="button" id="cabApproveBtn" class="cta-btn">✓ Tasarımı Onayla</button>
+          <button type="button" id="cabExitBtn" class="sec-btn">Çıkış</button>
+        </div>`;
+      banner.querySelector('#cabToggleNight')?.addEventListener('click', () => {
+        mutate('Ortam', s => { s.scene.night = !s.scene.night; });
+        renderBanner();
+      });
+      banner.querySelector('#cabApproveBtn')?.addEventListener('click', () => {
+        const who = window.prompt('Onaylayan adı / firma:', store.get().quote?.customerName || 'Müşteri Yetkilisi');
+        if (!who) return;
+        const entry = recordClientApproval(projectKey, who);
+        renderBanner();
+        studioToast(`✓ Tasarım "${entry.approverName}" tarafından onaylandı (${entry.approvedAtLabel}).`);
+      });
+      banner.querySelector('#cabExitBtn')?.addEventListener('click', () => banner.classList.add('hidden'));
+    };
+    renderBanner();
+  };
+
+  const openShareArModal = () => {
+    const modal = document.getElementById('clientShareArModal');
+    if (!modal) return;
+    const s = store.get();
+    const url = buildClientApprovalUrl(s, lastCosts);
+    const qrBox = document.getElementById('clientShareQrBox');
+    const urlInp = document.getElementById('clientShareUrlInput');
+    const waLink = document.getElementById('btnWhatsAppShare');
+    const statusBadge = document.getElementById('clientApprovalStatusBadge');
+    if (qrBox) qrBox.innerHTML = generateQrSvg(url, 134);
+    if (urlInp) urlInp.value = url;
+    if (waLink) waLink.href = buildWhatsAppShareUrl(url, s.projectName);
+    const prev = getClientApproval(s.projectName || 'default');
+    if (statusBadge) {
+      statusBadge.textContent = prev
+        ? `✓ Son onay: ${prev.approverName} (${prev.approvedAtLabel})`
+        : 'Henüz müşteri onayı kaydedilmedi.';
+    }
+    modal.classList.remove('hidden');
+  };
+  document.getElementById('btnClientShareAr')?.addEventListener('click', openShareArModal);
+  document.getElementById('btnCloseClientShareAr')?.addEventListener('click', () => document.getElementById('clientShareArModal')?.classList.add('hidden'));
+  document.getElementById('clientShareArModal')?.addEventListener('click', e => { if (e.target.id === 'clientShareArModal') e.target.classList.add('hidden'); });
+  document.getElementById('btnCopyShareUrl')?.addEventListener('click', async () => {
+    const url = document.getElementById('clientShareUrlInput')?.value;
+    if (!url) return;
+    try { await navigator.clipboard.writeText(url); studioToast('Onay bağlantısı kopyalandı.'); }
+    catch { studioToast('Bağlantı seçildi — Ctrl+C ile kopyalayın.'); }
+  });
+  document.getElementById('btnPreviewClientMode')?.addEventListener('click', () => {
+    document.getElementById('clientShareArModal')?.classList.add('hidden');
+    const s = store.get();
+    showClientApprovalBanner(s.projectName || 'default', s.projectName || 'Tabela Tasarımı');
+  });
+  document.getElementById('btnDownloadArGlb')?.addEventListener('click', () => {
+    const eng = ensureSignEngine();
+    if (!eng || eng.isDisposed) return;
+    const groups = collectSignTriangles(eng.signGroup);
+    if (!groups.length) { studioToast('3D sahnede model yok.', true); return; }
+    downloadBlob(`${store.get().projectName || 'tabela'}_ar.glb`, writeGlb(groups), 'model/gltf-binary');
+    studioToast('Android / Web AR için .glb indirildi.');
+  });
+  document.getElementById('btnDownloadArUsdz')?.addEventListener('click', () => {
+    const eng = ensureSignEngine();
+    if (!eng || eng.isDisposed) return;
+    const groups = collectSignTriangles(eng.signGroup);
+    if (!groups.length) { studioToast('3D sahnede model yok.', true); return; }
+    downloadBlob(`${store.get().projectName || 'tabela'}_ar.usdz`, writeUsdz(groups), 'model/vnd.usdz+zip');
+    studioToast('iPhone / iPad Quick Look AR için .usdz indirildi.');
+  });
+
+  // Client Kiosk Mode
+  let kioskMode = false;
+  const syncKioskUi = () => {
+    const app = document.getElementById('app');
+    const host = document.getElementById('kioskOverlayPanel');
+    const btn = document.getElementById('btnKioskMode');
+    app?.classList.toggle('kiosk-mode', kioskMode);
+    btn?.classList.toggle('on', kioskMode);
+    if (!host) return;
+    host.classList.toggle('hidden', !kioskMode);
+    if (!kioskMode) { host.innerHTML = ''; return; }
+    host.innerHTML = renderKioskPanel(store.get(), lastMetrics, lastCosts);
+    host.querySelector('#btnKioskExit')?.addEventListener('click', () => { kioskMode = false; syncKioskUi(); });
+    host.querySelector('#kioskTextInput')?.addEventListener('change', e => {
+      const txt = e.target.value.trim();
+      if (!txt) return;
+      mutate('Müşteri modu yazısı', s => {
+        const t = s.objects.find(o => o.kind === 'text');
+        if (t) t.text = txt;
+      });
+      syncKioskUi();
+    });
+    host.querySelector('#kioskLogoInput')?.addEventListener('change', async e => {
+      const f = e.target.files?.[0];
+      e.target.value = '';
+      if (f) { await handleLogoUpload(f); syncKioskUi(); }
+    });
+    host.querySelectorAll('[data-kiosk-preset]').forEach(b => b.addEventListener('click', () => {
+      mutate('Sektör sahnesi', s => applyIndustryScenePreset(s, b.dataset.kioskPreset));
+      syncKioskUi();
+    }));
+    host.querySelectorAll('[data-kiosk-mat]').forEach(b => b.addEventListener('click', () => {
+      mutate('Malzeme', s => applySurfaceMaterialPreset(s, b.dataset.kioskMat));
+      syncKioskUi();
+    }));
+    host.querySelector('#kioskToggleNight')?.addEventListener('click', () => {
+      mutate('Ortam', s => { s.scene.night = !s.scene.night; });
+      syncKioskUi();
+    });
+    host.querySelector('#kioskShareBtn')?.addEventListener('click', openShareArModal);
+  };
+  document.getElementById('btnKioskMode')?.addEventListener('click', () => {
+    setMainWorkspace('model3d');
+    kioskMode = !kioskMode;
+    syncKioskUi();
+  });
+
+  // Load ?clientPreview=<token> if opened from client WhatsApp link
+  try {
+    const previewToken = new URLSearchParams(window.location.search).get('clientPreview');
+    if (previewToken) {
+      const snap = decodeClientShareState(previewToken);
+      store.update(s => {
+        s.projectName = snap.p || s.projectName;
+        s.constructionType = snap.ct || s.constructionType;
+        if (snap.sc) s.scene = { ...s.scene, ...snap.sc };
+        if (snap.lt) s.lighting = { ...s.lighting, ...snap.lt };
+        if (snap.mt) s.materials = { ...s.materials, ...snap.mt };
+        if (Array.isArray(snap.objs) && snap.objs.length) {
+          s.objects = snap.objs.map((o, i) => ({
+            ...createShapeObject(o.kind || 'text', s, {
+              id: o.id || `shared_${i}`,
+              name: o.name || `Parça ${i + 1}`,
+              text: o.text || 'MARKANIZ',
+              fontId: o.fontId || 'cinzel',
+              heightMm: o.h || 400,
+              depthMm: o.d || 80,
+              xMm: o.x || 0,
+              yMm: o.y || 0,
+              rotationDeg: o.r || 0,
+              constructionType: o.ct || s.constructionType,
+              faceMaterial: o.fm || s.materials.faceId,
+              faceColor: o.fc || s.materials.faceColor,
+              lightingMode: o.lm || s.lighting.mode,
+            }),
+          }));
+        }
+      });
+      setTimeout(() => showClientApprovalBanner(snap.p || 'default', snap.p || 'Tabela Tasarımı'), 350);
+    }
+  } catch { /* ignore invalid share query */ }
+
   const threeContainer = document.getElementById('threeContainer');
   ensureSignEngine=()=>{
     if(signEngine)return signEngine;
@@ -4926,7 +5978,10 @@ function init() {
       });
       scheduleRebuild(false);
     },
-    onFrame: () => positionCanvasTransformHud(store.get()),
+    onFrame: () => {
+      positionCanvasTransformHud(store.get());
+      if (dims3DController.enabled) dims3DController.render();
+    },
     onSelectObject: (layerId, additive) => {
       store.updateScoped(['selectedIds'],s => { s.selectedIds = selectLayer(s, layerId, additive); });
       signEngine.updateSelectionBox(store.get());
@@ -5374,6 +6429,7 @@ function init() {
   document.getElementById('btnNewDocTab')?.addEventListener('click', () => {
     docManager.newDocument();
     applySavedMaterialDefaults(docManager.getActiveStore());
+    applySavedNestingDefaults(docManager.getActiveStore());
     applyDefaultPriceTemplate();
     renderDocumentTabs();
     setMainWorkspace(store.get().mainWorkspace || 'model3d');
