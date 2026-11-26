@@ -366,6 +366,44 @@ export function pickSupportedVideoMimeType() {
   return { mimeType: '', ext: 'webm' };
 }
 
+/**
+ * Resolves WebGL & MediaRecorder encoding specification so 4K UHD exports never trigger GPU
+ * maxTextureSize clipping (right-side gray blocks) or encoder starvation / stretched duration.
+ */
+export function resolveVideoRecordingSpec({
+  width = 1920,
+  height = 1080,
+  fps = 60,
+  deviceDpr = 1,
+  maxTextureSize = 4096,
+} = {}) {
+  const outW = Math.max(320, Math.round(Number(width) || 1920));
+  const outH = Math.max(320, Math.round(Number(height) || 1080));
+  const is4k = outW >= 3840 || outH >= 3840;
+  const is1080 = outW >= 1920 || outH >= 1920;
+
+  const effectiveFps = is4k
+    ? Math.max(24, Math.min(30, Number(fps) || 30))
+    : Math.max(24, Math.min(60, Number(fps) || 60));
+  const recDpr = is4k ? 1 : Math.max(1, Math.min(Number(deviceDpr) || 1, 1.5));
+  const maxTex = Math.max(1024, Number(maxTextureSize) || 4096);
+  const scaleBack = Math.min(1, maxTex / Math.max(outW * recDpr, outH * recDpr));
+  const renderW = Math.max(320, Math.floor((outW * scaleBack) / 2) * 2);
+  const renderH = Math.max(320, Math.floor((outH * scaleBack) / 2) * 2);
+  const bitrate = is4k ? 18_000_000 : (is1080 ? 15_000_000 : 12_000_000);
+
+  return {
+    outW,
+    outH,
+    renderW,
+    renderH,
+    recDpr,
+    effectiveFps,
+    bitrate,
+    is4k,
+  };
+}
+
 export async function recordPresentationVideo({
   signEngine,
   state,
@@ -404,9 +442,17 @@ export async function recordPresentationVideo({
   prevClipCanvas.height = height;
   const prevClipCtx = prevClipCanvas.getContext('2d');
 
-  const targetFps = Math.max(24, Math.min(60, Number(fps) || 60));
-  const bitrate = (width >= 1920 || height >= 1920) ? 15_000_000 : 12_000_000;
-  const videoStream = outCanvas.captureStream(targetFps);
+  const maxTex = signEngine.renderer?.capabilities?.maxTextureSize || 4096;
+  const deviceDpr = Math.min(typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1, 2);
+  const spec = resolveVideoRecordingSpec({ width, height, fps, deviceDpr, maxTextureSize: maxTex });
+  const targetFps = spec.effectiveFps;
+  const bitrate = spec.bitrate;
+
+  const sampleTrack = typeof outCanvas.captureStream === 'function' ? outCanvas.captureStream(0) : null;
+  const manualTrack = sampleTrack?.getVideoTracks?.()[0];
+  const useManualRequestFrame = Boolean(manualTrack && typeof manualTrack.requestFrame === 'function');
+  const videoStream = useManualRequestFrame ? sampleTrack : outCanvas.captureStream(targetFps);
+  const activeVideoTrack = videoStream.getVideoTracks?.()[0] || null;
 
   const audioMuxer = audioConfig && (audioConfig.trackId !== 'none' || audioConfig.customAudioBuffer)
     ? await createVideoAudioMuxer({ ...audioConfig, durationSec: timeline.totalDurationSec }).catch(() => null)
@@ -473,17 +519,15 @@ export async function recordPresentationVideo({
   try {
     signEngine.setActive(false);
     hideStudioSelectionHelpers();
-    const recDpr = Math.min(typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1, 2);
-    signEngine.renderer.setPixelRatio(recDpr);
-    signEngine.renderer.setSize(width, height, false);
-    signEngine.postProcessor?.setSize(Math.round(width * recDpr), Math.round(height * recDpr));
-    signEngine.camera.aspect = width / height;
+    signEngine.renderer.setPixelRatio(spec.recDpr);
+    signEngine.renderer.setSize(spec.renderW, spec.renderH, false);
+    signEngine.postProcessor?.setSize(Math.round(spec.renderW * spec.recDpr), Math.round(spec.renderH * spec.recDpr));
+    signEngine.camera.aspect = spec.outW / spec.outH;
     signEngine.camera.updateProjectionMatrix();
 
-    const baseRadius = signEngine.orbit.fitRadius || signEngine.orbit.radius || 3.5;
     const totalMs = Math.max(2000, timeline.totalDurationSec * 1000);
     const frameIntervalMs = 1000 / targetFps;
-    recorder.start(250);
+    recorder.start(useManualRequestFrame ? 1000 : 250);
 
     const startTime = performance.now();
     let frameIndex = 0;
@@ -524,11 +568,14 @@ export async function recordPresentationVideo({
       signEngine.camera.lookAt(signBox.center.x + tx, signBox.center.y + ty, signBox.center.z);
       signEngine.renderer.shadowMap.needsUpdate = true;
 
-      if (signEngine.postProcessor) signEngine.postProcessor.render(signEngine.scene, signEngine.camera);
+      if (signEngine.postProcessor && !spec.is4k) signEngine.postProcessor.render(signEngine.scene, signEngine.camera);
       else signEngine.renderer.render(signEngine.scene, signEngine.camera);
 
+      const dom = signEngine.renderer.domElement;
+      const srcW = dom.width || spec.renderW;
+      const srcH = dom.height || spec.renderH;
       ctx.clearRect(0, 0, width, height);
-      ctx.drawImage(signEngine.renderer.domElement, 0, 0, width, height);
+      ctx.drawImage(dom, 0, 0, srcW, srcH, 0, 0, width, height);
 
       if (kf.crossFadeAlpha < 0.99 && kf.clipIndex > 0) {
         ctx.save();
@@ -552,15 +599,19 @@ export async function recordPresentationVideo({
         });
       }
 
+      if (useManualRequestFrame) activeVideoTrack?.requestFrame?.();
+
       onProgress({ percent: Math.round(progress * 100), stageLabel: `${kf.clipLabel} · ${kf.stage.label}` });
       if (progress >= 1) break;
 
       frameIndex++;
       const targetNextMs = frameIndex * frameIntervalMs;
-      const waitMs = Math.max(4, Math.min(50, targetNextMs - (performance.now() - startTime)));
+      const waitMs = Math.max(2, Math.min(60, targetNextMs - (performance.now() - startTime)));
       await new Promise(res => setTimeout(res, waitMs));
     }
 
+    const actualDurationSec = Math.round(((performance.now() - startTime) / 1000) * 10) / 10;
+    try { recorder.requestData?.(); } catch {}
     recorder.stop();
     await stoppedPromise;
     const blob = new Blob(chunks, { type: picked.mimeType || 'video/webm' });
@@ -569,6 +620,8 @@ export async function recordPresentationVideo({
       mimeType: blob.type || picked.mimeType || 'video/webm',
       ext: picked.ext,
       url: URL.createObjectURL(blob),
+      actualDurationSec,
+      spec,
     };
   } finally {
     try { if (recorder.state !== 'inactive') recorder.stop(); } catch {}

@@ -224,10 +224,10 @@ assert(traceStudioHtml.includes('activePreset.name') && traceStudioHtml.includes
 const mainJs = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 assert(mainJs.includes('tracerCenterWrap') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_VECTOR') && mainJs.includes('SIGNAGE_STUDIO_IMPORT_NESTING'));
 assert(mainJs.includes('./public/trace-studio/index.html?v=20261126-v10'));
-assert(rootHtml.includes('./src/main.js?v=20261126-v40'));
-assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v40'));
+assert(rootHtml.includes('./src/main.js?v=20261126-v41'));
+assert(rootHtml.includes('./src/styles/studio.css?v=20261126-v41'));
 assert(rootHtml.includes('id="stagePmPhotoUpload"') && mainJs.includes("getElementById('stagePmPhotoUpload')"));
-assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v40'));
+assert(mainJs.includes('./ui/CentralWorkspaces.js?v=20261126-v41'));
 console.log('✓ Image Studio tab, bridge, cache-busting, and position left of Nesting verified');
 
 // 10. All 8 Image Tracer enhancement presets produce distinct, goal-accurate pixel outputs

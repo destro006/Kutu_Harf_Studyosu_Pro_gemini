@@ -2158,6 +2158,11 @@ model-viewer.ar-model-viewer{width:100%;height:340px;background:#090d14;border-r
 .vid-player-bar{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:8px;background:#0e121a;border:1px solid var(--line)}
 .vid-timecode{font-size:11.5px;color:#f3cb85;font-variant-numeric:tabular-nums;white-space:nowrap}
 .vid-timeline-ruler{display:flex;justify-content:space-between;padding:2px 6px;font-size:10px;color:#8e9bae;border-bottom:1px solid #242e3d;font-variant-numeric:tabular-nums}
+.vid-builder-grid{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:10px!important;align-items:stretch!important;box-sizing:border-box}
+.vid-builder-row2{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;align-items:end;width:100%}
+.vid-field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.vid-field label{font-size:11px;color:#cbd5e1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vid-field input,.vid-field select{width:100%;box-sizing:border-box;height:34px;padding:0 8px;border-radius:7px;background:#0c1118;border:1px solid #354254;color:var(--text);font-size:12px}
 
 
 

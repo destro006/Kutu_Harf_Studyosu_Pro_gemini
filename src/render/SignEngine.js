@@ -1266,8 +1266,15 @@ export class SignEngine {
           const hFov = 2 * Math.atan(Math.tan(fov * 0.5) * Math.max(aspect, 0.1));
           const distV = (size.y * 0.5) / Math.max(0.01, Math.tan(fov * 0.5));
           const distH = (size.x * 0.5) / Math.max(0.01, Math.tan(hFov * 0.5));
-          const distance = Math.max(distV, distH) * 1.16 + size.z * 0.75;
-          this.camera.position.set(center.x, center.y, center.z + Math.max(0.35, distance));
+          const distance = Math.max(distV, distH) * 1.18 + size.z * 0.85;
+          const pose = opts.planePose || {};
+          const yawRad = THREE.MathUtils.degToRad(Math.max(-35, Math.min(35, Number(pose.yawDeg) || 0)));
+          const pitchRad = THREE.MathUtils.degToRad(Math.max(-22, Math.min(22, Number(pose.pitchDeg) || 0)));
+          const r = Math.max(0.35, distance);
+          const ox = r * Math.cos(pitchRad) * Math.sin(yawRad);
+          const oy = r * Math.sin(pitchRad);
+          const oz = r * Math.cos(pitchRad) * Math.cos(yawRad);
+          this.camera.position.set(center.x + ox, center.y + oy, center.z + oz);
           this.camera.lookAt(center);
         }
       }

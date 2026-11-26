@@ -297,3 +297,32 @@ export function pointInQuadNorm(pt, quad) {
   }
   return inside;
 }
+
+/**
+ * Solves a physically consistent 3D architectural plane orientation { yawDeg, pitchDeg, rollDeg }
+ * from 4 normalized corner points [TL, TR, BR, BL] so 3D channel letter depth aligns cleanly
+ * with the facade's real vanishing point from the first letter to the last.
+ */
+export function solvePlanePoseFromQuad(cornersNorm, fovDeg = 28) {
+  if (!Array.isArray(cornersNorm) || cornersNorm.length !== 4) {
+    return { yawDeg: 0, pitchDeg: 0, rollDeg: 0 };
+  }
+  const [tl, tr, br, bl] = cornersNorm;
+  const wTop = Math.max(0.01, Math.hypot(tr.x - tl.x, tr.y - tl.y));
+  const wBot = Math.max(0.01, Math.hypot(br.x - bl.x, br.y - bl.y));
+  const hLeft = Math.max(0.01, Math.hypot(bl.x - tl.x, bl.y - tl.y));
+  const hRight = Math.max(0.01, Math.hypot(br.x - tr.x, br.y - tr.y));
+
+  // Right taller than left -> sign plane recedes left-to-right (positive camera yaw)
+  const hDiffRatio = (hRight - hLeft) / Math.max(hRight, hLeft);
+  // Bottom wider than top -> top edge tilted away (positive pitch)
+  const wDiffRatio = (wBot - wTop) / Math.max(wTop, wBot);
+
+  const scaleFactor = 46 * (28 / Math.max(20, Number(fovDeg) || 28));
+  const yawDeg = Math.max(-35, Math.min(35, Math.round(hDiffRatio * scaleFactor * 10) / 10));
+  const pitchDeg = Math.max(-22, Math.min(22, Math.round(wDiffRatio * scaleFactor * 0.75 * 10) / 10));
+  const rollRad = Math.atan2(((tr.y - tl.y) + (br.y - bl.y)) * 0.5, ((tr.x - tl.x) + (br.x - bl.x)) * 0.5);
+  const rollDeg = Math.max(-20, Math.min(20, Math.round((rollRad * 180 / Math.PI) * 10) / 10));
+
+  return { yawDeg, pitchDeg, rollDeg };
+}

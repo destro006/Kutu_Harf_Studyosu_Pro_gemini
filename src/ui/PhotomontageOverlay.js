@@ -6,7 +6,8 @@ import {
   pointInQuadNorm,
   renderPhotomontageComposite,
   snapCornerWithGuides,
-} from '../photomontage/PerspectiveFitter.js?v=20261126-v40';
+  solvePlanePoseFromQuad,
+} from '../photomontage/PerspectiveFitter.js?v=20261126-v41';
 import { downloadDataUrl } from '../export/ExportService.js';
 
 /**
@@ -372,14 +373,16 @@ export class PhotomontageOverlay {
     const capW = 1800;
     const capH = Math.max(520, Math.min(1250, Math.round(capW * ((sz.h + 0.30) / Math.max(0.5, sz.w + 0.36)))));
     const hasActiveHalo = Boolean(signEngine?.signGroup?.children?.some(c => c.userData?.isHalo && c.visible && c.material?.opacity > 0));
+    const planePose = solvePlanePoseFromQuad(pm.cornersNorm, 28);
     const signUrl = signEngine.capturePng(capW, capH, {
       transparent: true,
       fitToSign: true,
       architecturalFov: 28,
+      planePose,
       haloMode: hasActiveHalo ? 'exclude' : 'include',
     });
     const haloUrl = hasActiveHalo
-      ? signEngine.capturePng(capW, capH, { transparent: true, fitToSign: true, architecturalFov: 28, haloMode: 'only' })
+      ? signEngine.capturePng(capW, capH, { transparent: true, fitToSign: true, architecturalFov: 28, planePose, haloMode: 'only' })
       : null;
 
     const signCanvas = await this._rasterizeDataUrl(signUrl);

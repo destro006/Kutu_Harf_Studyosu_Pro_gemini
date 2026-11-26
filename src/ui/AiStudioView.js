@@ -193,6 +193,7 @@ export function renderAiStudioWorkspace(ctx = {}) {
           <div class="bend-center-head">
             <h3 class="sec-title" style="margin:0">Görsel Önizleme &amp; Öncesi / Sonrası Karşılaştırma</h3>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button type="button" id="aiStudioAdjustPlacementBtn" class="sec-btn" ${!compositeUrl ? 'disabled' : ''} title="3D sahnede 4 köşe perspektif ve konumu ince ayarla">⤢ Konum / 4 Köşe Ayarla</button>
               <button type="button" id="aiStudioToggleExpertBtn" class="sec-btn">${expertCollapsed ? '✦ Uzmanı Aç' : '✦ Uzmanı Gizle'}</button>
               <button type="button" id="aiStudioDownloadBtn" class="sec-btn" ${!resultUrl ? 'disabled title="Önce 2. Görsel Oluştur ile net AI çıktısını üretin"' : 'title="Sonuç AI görselini tam çözünürlükte indir"'}>⬇ Yüksek Çözünürlük İndir</button>
               <button type="button" id="aiStudioSendToSceneBtn" class="cta-btn" ${!resultUrl && !compositeUrl ? 'disabled' : ''}>↗ 3D Sahneye / Teklife Gönder</button>

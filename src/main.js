@@ -11,7 +11,7 @@ import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v15';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v40';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v41';
 import { attachTabDragReorder, reorderTabIds } from './ui/TabReorderManager.js';
 import {
   buildBendingJob,
@@ -59,7 +59,7 @@ import {
   recordPresentationVideo,
 } from './render/PresentationVideoRecorder.js';
 import { BUILTIN_AUDIO_TRACKS } from './render/VideoAudioEngine.js';
-import { buildSignageMasterPrompt, estimateSignageCostParams, loadAiConfig, refineMasterPromptWithLlm, runHybridSignageRender, saveAiConfig } from './ai/SignageAiEngine.js';
+import { buildSignageMasterPrompt, detectUpperFasciaBand, estimateSignageCostParams, loadAiConfig, parseLocalTurkishSignageIntent, refineMasterPromptWithLlm, runHybridSignageRender, saveAiConfig } from './ai/SignageAiEngine.js';
 import { EXPERT_QUICK_PRESETS, askAppExpert, showGuideCursor } from './ai/AppExpertAssistant.js';
 import { generateQrSvg } from './sales/QrCodeGenerator.js';
 import { buildClientApprovalUrl, buildWhatsAppShareUrl, decodeClientShareState, getClientApproval, recordClientApproval } from './sales/ClientShareApproval.js';
@@ -73,13 +73,15 @@ import { ENVIRONMENT_PRESETS } from './render/EnvironmentManager.js';
 import { LIGHT_COLOR_PRESETS, LIGHTING_MODES } from './render/LightingSystem.js';
 import {detectVectorFormat} from './manufacturing/VectorFormatDetect.js';
 import { BACKGROUND_SCENES } from './photomontage/BackgroundLibrary.js';
-import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js?v=20261126-v40';
+import { PhotomontageOverlay } from './ui/PhotomontageOverlay.js?v=20261126-v41';
+import { solvePlanePoseFromQuad } from './photomontage/PerspectiveFitter.js?v=20261126-v41';
 import {
   FACADE_CATEGORIES,
   addCustomFacade,
   deleteFacadeById,
   findFacadeByQuery,
   getActiveFacades,
+  getFacadeFasciaPreset,
   getHiddenDefaultCount,
   restoreDefaultFacades,
 } from './photomontage/FacadeLibrary.js';
@@ -298,14 +300,17 @@ function applyFacadeEntryToScene(facade) {
   lastPhotomontageScene = null;
   lastPhotomontageUrl = null;
   lastPhotomontageHaloUrl = null;
+  const preset = getFacadeFasciaPreset(facade.id);
   mutate(`Cephe: ${facade.label}`, s => {
     s.photomontage.photoUrl = facade.src;
     s.photomontage.photoName = facade.label;
     s.photomontage.visible = true;
     s.photomontage.confirmed = false;
+    s.photomontage.cornersNorm = (facade.fasciaCorners || preset.fasciaCorners).map(c => ({ x: c.x, y: c.y }));
+    if (preset.ambient === 'night') s.scene.night = true;
   });
   setMainWorkspace('model3d');
-  studioToast(`✓ "${facade.label}" uygulandı — tabelayı konumlandırmak için cepheye tıklayın.`);
+  studioToast(`✓ "${facade.label}" uygulandı — alınlık konumu otomatik hizalandı.`);
   return true;
 }
 
@@ -855,15 +860,17 @@ function capturePhotomontageSign(state) {
   const sz = lastSceneResult?.sizeM || signEngine?.lastSizeM || { w: 2.0, h: 0.45 };
   const capW = 1400;
   const capH = Math.max(380, Math.min(1000, Math.round(capW * ((sz.h + 0.30) / Math.max(0.5, sz.w + 0.36)))));
+  const planePose = solvePlanePoseFromQuad(state?.photomontage?.cornersNorm, 28);
   const hasActiveHalo = Boolean(signEngine?.signGroup?.children?.some(c => c.userData?.isHalo && c.visible && c.material?.opacity > 0));
   const signUrl = signEngine.capturePng(capW, capH, {
     transparent: true,
     fitToSign: true,
     architecturalFov: 28,
+    planePose,
     haloMode: hasActiveHalo ? 'exclude' : 'include',
   });
   const haloUrl = hasActiveHalo
-    ? signEngine.capturePng(capW, capH, { transparent: true, fitToSign: true, architecturalFov: 28, haloMode: 'only' })
+    ? signEngine.capturePng(capW, capH, { transparent: true, fitToSign: true, architecturalFov: 28, planePose, haloMode: 'only' })
     : null;
   return { signUrl, haloUrl };
 }
@@ -3807,38 +3814,70 @@ function updateCenterWorkspaces(state) {
         const f = e.target.files?.[0];
         e.target.value = '';
         if (!f) return;
-        handlePhotomontagePhotoFile(f);
-        aiStudioState.resultUrl = '';
-        aiStudioState.costEstimate = estimateSignageCostParams(store.get(), { fileName: f.name, brief: aiStudioState.brief });
-        setTimeout(async () => {
-          const comp = await window.__buildAiComposite?.();
-          if (comp) aiStudioState.compositeUrl = comp;
-          updateCenterWorkspaces(store.get());
-        }, 260);
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = String(reader.result || '');
+          const im = new Image();
+          im.onload = async () => {
+            const cw = 320;
+            const ch = Math.max(120, Math.round((im.naturalHeight / Math.max(1, im.naturalWidth)) * cw));
+            const cv = document.createElement('canvas');
+            cv.width = cw;
+            cv.height = ch;
+            const cctx = cv.getContext('2d', { willReadFrequently: true });
+            cctx.drawImage(im, 0, 0, cw, ch);
+            const rgba = cctx.getImageData(0, 0, cw, ch).data;
+            const upperCorners = detectUpperFasciaBand(rgba, cw, ch);
+            aiStudioState.resultUrl = '';
+            aiStudioState.costEstimate = estimateSignageCostParams(store.get(), { fileName: f.name, brief: aiStudioState.brief, width: im.naturalWidth, height: im.naturalHeight });
+            mutate('AI Stüdyo Cephe Yükleme', s => {
+              s.photomontage.photoUrl = dataUrl;
+              s.photomontage.photoName = f.name;
+              s.photomontage.visible = true;
+              s.photomontage.confirmed = false;
+              s.photomontage.cornersNorm = upperCorners;
+            });
+            const comp = await window.__buildAiComposite?.();
+            if (comp) aiStudioState.compositeUrl = comp;
+            aiStudioState.statusText = '✓ Üst alınlık (tabela) bölgesi otomatik algılandı ve hizalandı.';
+            updateCenterWorkspaces(store.get());
+          };
+          im.src = dataUrl;
+        };
+        reader.readAsDataURL(f);
       });
       el.querySelector('#aiStudioFacadeSelect')?.addEventListener('change', async e => {
         const f = getActiveFacades().find(x => x.id === e.target.value);
         if (!f) return;
+        const preset = getFacadeFasciaPreset(f.id);
         aiStudioState.resultUrl = '';
         aiStudioState.costEstimate = estimateSignageCostParams(store.get(), { fileName: f.label, brief: aiStudioState.brief || f.label });
-        aiStudioState.statusText = `✓ "${f.label}" cephesine 3D logo hizalandı.`;
+        aiStudioState.statusText = `✓ "${f.label}" alınlık bölgesine otomatik hizalandı.`;
         mutate(`Cephe: ${f.label}`, s => {
           s.photomontage.photoUrl = f.src;
           s.photomontage.photoName = f.label;
           s.photomontage.visible = true;
           s.photomontage.confirmed = false;
-          s.photomontage.cornersNorm = [
-            { x: 0.22, y: 0.28 },
-            { x: 0.78, y: 0.28 },
-            { x: 0.78, y: 0.62 },
-            { x: 0.22, y: 0.62 },
-          ];
+          s.photomontage.cornersNorm = (f.fasciaCorners || preset.fasciaCorners).map(c => ({ x: c.x, y: c.y }));
+          if (preset.ambient === 'night') s.scene.night = true;
         });
         setTimeout(async () => {
           const comp = await window.__buildAiComposite?.();
           if (comp) aiStudioState.compositeUrl = comp;
           updateCenterWorkspaces(store.get());
         }, 260);
+      });
+      el.querySelector('#aiStudioAdjustPlacementBtn')?.addEventListener('click', () => {
+        if (!store.get().photomontage?.photoUrl) {
+          studioToast('Önce bir cephe fotoğrafı veya hazır cephe seçin.', true);
+          return;
+        }
+        store.update(s => {
+          s.photomontage.visible = true;
+          s.photomontage.confirmed = false;
+        });
+        setMainWorkspace('model3d');
+        studioToast('⤢ 4 köşeyi veya Yaw/Pitch/Roll sürgülerini ayarlayıp Onayla diyebilirsiniz.');
       });
       el.querySelectorAll('[data-aistudio-preset]').forEach(btn => btn.addEventListener('click', () => {
         aiStudioState.brief = btn.dataset.aistudioPreset || '';
@@ -3870,7 +3909,21 @@ function updateCenterWorkspaces(state) {
           apiKey: el.querySelector('#aiStudioApiKeyInp')?.value || '',
         };
         saveAiConfig(cfg);
-        if (!aiStudioState.compositeUrl) aiStudioState.compositeUrl = (await window.__buildAiComposite?.()) || '';
+        const intent = parseLocalTurkishSignageIntent(aiStudioState.brief);
+        if (intent.night !== null || intent.lightingMode || intent.faceMaterial || (intent.shouldPlaceOnFascia && store.get().photomontage?.photoUrl)) {
+          mutate('AI Türkçe komut uygulama', s => {
+            if (intent.night !== null) s.scene.night = intent.night;
+            if (intent.lightingMode) {
+              s.lighting.enabled = intent.lightingMode !== 'none';
+              s.lighting.mode = intent.lightingMode;
+              for (const o of s.objects) if (!o.locked) o.lightingMode = intent.lightingMode;
+            }
+            if (intent.faceMaterial && MATERIAL_PRESETS[intent.faceMaterial]) {
+              applySurfaceMaterialPreset(s, intent.faceMaterial);
+            }
+          });
+        }
+        aiStudioState.compositeUrl = (await window.__buildAiComposite?.()) || aiStudioState.compositeUrl;
         const mp = aiStudioState.masterPrompt?.trim() || buildSignageMasterPrompt(aiStudioState.brief, window.__getAiContext?.() || {});
         aiStudioState.masterPrompt = mp;
         aiStudioState.costEstimate = estimateSignageCostParams(store.get(), { brief: aiStudioState.brief });
@@ -6934,7 +6987,9 @@ function init() {
 
   photomontageOverlay = new PhotomontageOverlay(document.getElementById('photomontageLayer'), {
     onCornersChange: (corners) => {
+      lastPhotomontageScene = null;
       store.update(s => { s.photomontage.cornersNorm = corners; });
+      updateStageChrome(store.get());
     },
     onConfirm: () => {
       store.update(s => { s.photomontage.confirmed = true; });

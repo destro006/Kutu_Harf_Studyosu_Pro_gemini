@@ -11,6 +11,59 @@ export const FACADE_CATEGORIES = [
   { id: '03_genis_premium_sahneler', label: 'Geniş Premium Sahneler' },
 ];
 
+export const FACADE_FASCIA_PRESETS = Object.freeze({
+  elegan_modern_klinik_vitrini: { ambient: 'day', fasciaCorners: [{ x: 0.21, y: 0.19 }, { x: 0.79, y: 0.19 }, { x: 0.79, y: 0.34 }, { x: 0.21, y: 0.34 }] },
+  luks_altin_detayli_butik_cephesi: { ambient: 'golden', fasciaCorners: [{ x: 0.22, y: 0.18 }, { x: 0.78, y: 0.18 }, { x: 0.78, y: 0.33 }, { x: 0.22, y: 0.33 }] },
+  mahalle_marketinin_yesil_vitrini: { ambient: 'day', fasciaCorners: [{ x: 0.18, y: 0.17 }, { x: 0.82, y: 0.17 }, { x: 0.82, y: 0.33 }, { x: 0.18, y: 0.33 }] },
+  modern_donanim_magazasi_cephesi: { ambient: 'day', fasciaCorners: [{ x: 0.20, y: 0.18 }, { x: 0.80, y: 0.18 }, { x: 0.80, y: 0.34 }, { x: 0.20, y: 0.34 }] },
+  modern_endustriyel_garaj_magazasi: { ambient: 'night', fasciaCorners: [{ x: 0.22, y: 0.16 }, { x: 0.78, y: 0.18 }, { x: 0.78, y: 0.33 }, { x: 0.22, y: 0.32 }] },
+  modern_kose_magaza_cephesi: { ambient: 'golden', fasciaCorners: [{ x: 0.20, y: 0.19 }, { x: 0.74, y: 0.15 }, { x: 0.74, y: 0.32 }, { x: 0.20, y: 0.34 }] },
+  modern_magaza_cephesi_ve_sik_giris: { ambient: 'day', fasciaCorners: [{ x: 0.21, y: 0.18 }, { x: 0.79, y: 0.18 }, { x: 0.79, y: 0.33 }, { x: 0.21, y: 0.33 }] },
+  sicak_isikli_buyuleyici_firin_vitrini: { ambient: 'night', fasciaCorners: [{ x: 0.22, y: 0.20 }, { x: 0.78, y: 0.20 }, { x: 0.78, y: 0.35 }, { x: 0.22, y: 0.35 }] },
+  zarif_modern_butik_magazasi: { ambient: 'day', fasciaCorners: [{ x: 0.22, y: 0.18 }, { x: 0.78, y: 0.18 }, { x: 0.78, y: 0.33 }, { x: 0.22, y: 0.33 }] },
+  zarif_yesil_kafe_cephesi: { ambient: 'day', fasciaCorners: [{ x: 0.20, y: 0.19 }, { x: 0.80, y: 0.19 }, { x: 0.80, y: 0.34 }, { x: 0.20, y: 0.34 }] },
+  art_deco_luks_mucevher_butigi: { ambient: 'night', fasciaCorners: [{ x: 0.23, y: 0.18 }, { x: 0.77, y: 0.18 }, { x: 0.77, y: 0.33 }, { x: 0.23, y: 0.33 }] },
+  bej_travertenli_luks_moda_butigi: { ambient: 'golden', fasciaCorners: [{ x: 0.21, y: 0.17 }, { x: 0.79, y: 0.17 }, { x: 0.79, y: 0.32 }, { x: 0.21, y: 0.32 }] },
+  endustriyel_siklikta_aksam_vitrini: { ambient: 'night', fasciaCorners: [{ x: 0.20, y: 0.18 }, { x: 0.80, y: 0.20 }, { x: 0.80, y: 0.35 }, { x: 0.20, y: 0.34 }] },
+  luks_estetik_klinigi_girisi: { ambient: 'day', fasciaCorners: [{ x: 0.22, y: 0.17 }, { x: 0.78, y: 0.17 }, { x: 0.78, y: 0.32 }, { x: 0.22, y: 0.32 }] },
+  mediterranean_restoranin_altin_saati_girisi: { ambient: 'golden', fasciaCorners: [{ x: 0.21, y: 0.19 }, { x: 0.79, y: 0.19 }, { x: 0.79, y: 0.34 }, { x: 0.21, y: 0.34 }] },
+  modern_cam_magazasi_kosesi: { ambient: 'day', fasciaCorners: [{ x: 0.22, y: 0.18 }, { x: 0.75, y: 0.15 }, { x: 0.75, y: 0.31 }, { x: 0.22, y: 0.33 }] },
+  modern_premium_oto_detaylandirma_garaji: { ambient: 'night', fasciaCorners: [{ x: 0.19, y: 0.16 }, { x: 0.81, y: 0.16 }, { x: 0.81, y: 0.32 }, { x: 0.19, y: 0.32 }] },
+  paris_sikliginda_zarif_pastane_cephesi: { ambient: 'golden', fasciaCorners: [{ x: 0.22, y: 0.18 }, { x: 0.78, y: 0.18 }, { x: 0.78, y: 0.33 }, { x: 0.22, y: 0.33 }] },
+  zarif_cicekci_butigi_cephesi: { ambient: 'day', fasciaCorners: [{ x: 0.21, y: 0.19 }, { x: 0.79, y: 0.19 }, { x: 0.79, y: 0.34 }, { x: 0.21, y: 0.34 }] },
+  zeytin_yesili_zarif_kafe_cephesi: { ambient: 'day', fasciaCorners: [{ x: 0.22, y: 0.18 }, { x: 0.78, y: 0.18 }, { x: 0.78, y: 0.33 }, { x: 0.22, y: 0.33 }] },
+  alisveris_caddesi: { ambient: 'day', fasciaCorners: [{ x: 0.22, y: 0.17 }, { x: 0.78, y: 0.19 }, { x: 0.78, y: 0.34 }, { x: 0.22, y: 0.32 }] },
+  bronz_sacakli_otel: { ambient: 'night', fasciaCorners: [{ x: 0.23, y: 0.21 }, { x: 0.77, y: 0.21 }, { x: 0.77, y: 0.35 }, { x: 0.23, y: 0.35 }] },
+  cam_kurumsal_bina: { ambient: 'day', fasciaCorners: [{ x: 0.22, y: 0.18 }, { x: 0.78, y: 0.18 }, { x: 0.78, y: 0.33 }, { x: 0.22, y: 0.33 }] },
+  genis_restoran: { ambient: 'night', fasciaCorners: [{ x: 0.20, y: 0.17 }, { x: 0.80, y: 0.17 }, { x: 0.80, y: 0.32 }, { x: 0.20, y: 0.32 }] },
+  kose_mermer_cephe: { ambient: 'golden', fasciaCorners: [{ x: 0.22, y: 0.18 }, { x: 0.74, y: 0.15 }, { x: 0.74, y: 0.31 }, { x: 0.22, y: 0.33 }] },
+  luks_moda_butigi: { ambient: 'night', fasciaCorners: [{ x: 0.23, y: 0.18 }, { x: 0.77, y: 0.18 }, { x: 0.77, y: 0.33 }, { x: 0.23, y: 0.33 }] },
+  mermer_alinlikli_magaza: { ambient: 'day', fasciaCorners: [{ x: 0.21, y: 0.16 }, { x: 0.79, y: 0.16 }, { x: 0.79, y: 0.31 }, { x: 0.21, y: 0.31 }] },
+  modern_showroom: { ambient: 'day', fasciaCorners: [{ x: 0.19, y: 0.16 }, { x: 0.81, y: 0.16 }, { x: 0.81, y: 0.31 }, { x: 0.19, y: 0.31 }] },
+  otel_girisi: { ambient: 'night', fasciaCorners: [{ x: 0.23, y: 0.20 }, { x: 0.77, y: 0.20 }, { x: 0.77, y: 0.34 }, { x: 0.23, y: 0.34 }] },
+  otomobil_showroom: { ambient: 'night', fasciaCorners: [{ x: 0.18, y: 0.15 }, { x: 0.82, y: 0.17 }, { x: 0.82, y: 0.32 }, { x: 0.18, y: 0.31 }] },
+  premium_ticari_kompleks: { ambient: 'golden', fasciaCorners: [{ x: 0.21, y: 0.17 }, { x: 0.79, y: 0.17 }, { x: 0.79, y: 0.32 }, { x: 0.21, y: 0.32 }] },
+  restoran_dogal_tas: { ambient: 'golden', fasciaCorners: [{ x: 0.21, y: 0.18 }, { x: 0.79, y: 0.18 }, { x: 0.79, y: 0.33 }, { x: 0.21, y: 0.33 }] },
+  restoran_teras: { ambient: 'golden', fasciaCorners: [{ x: 0.22, y: 0.18 }, { x: 0.78, y: 0.18 }, { x: 0.78, y: 0.33 }, { x: 0.22, y: 0.33 }] },
+  sampanya_metal_cephe: { ambient: 'day', fasciaCorners: [{ x: 0.20, y: 0.17 }, { x: 0.80, y: 0.17 }, { x: 0.80, y: 0.32 }, { x: 0.20, y: 0.32 }] },
+  traverten_kurumsal_giris: { ambient: 'day', fasciaCorners: [{ x: 0.21, y: 0.16 }, { x: 0.79, y: 0.16 }, { x: 0.79, y: 0.31 }, { x: 0.21, y: 0.31 }] },
+});
+
+const DEFAULT_FASCIA_CORNERS = [
+  { x: 0.21, y: 0.18 },
+  { x: 0.79, y: 0.18 },
+  { x: 0.79, y: 0.33 },
+  { x: 0.21, y: 0.33 },
+];
+
+export function getFacadeFasciaPreset(facadeId) {
+  const entry = FACADE_FASCIA_PRESETS[facadeId];
+  return {
+    ambient: entry?.ambient || 'day',
+    fasciaCorners: (entry?.fasciaCorners || DEFAULT_FASCIA_CORNERS).map(c => ({ x: c.x, y: c.y })),
+  };
+}
+
 export const DEFAULT_FACADES = Object.freeze([
   { id: 'elegan_modern_klinik_vitrini', label: 'Elegan Modern Klinik Vitrini', category: '01_klasik_isletme_cepheleri', src: './public/facades/01_klasik_isletme_cepheleri/elegan_modern_klinik_vitrini.webp', thumb: './public/facades/thumbs/01_klasik_isletme_cepheleri/elegan_modern_klinik_vitrini.webp' },
   { id: 'luks_altin_detayli_butik_cephesi', label: 'Lüks Altın Detaylı Butik Cephesi', category: '01_klasik_isletme_cepheleri', src: './public/facades/01_klasik_isletme_cepheleri/luks_altin_detayli_butik_cephesi.webp', thumb: './public/facades/thumbs/01_klasik_isletme_cepheleri/luks_altin_detayli_butik_cephesi.webp' },
@@ -78,7 +131,10 @@ function writePoolStore(pool, storage = typeof localStorage !== 'undefined' ? lo
 export function getActiveFacades(storage) {
   const pool = readPoolStore(storage);
   const hidden = new Set(pool.hiddenIds);
-  const builtins = DEFAULT_FACADES.filter(f => !hidden.has(f.id));
+  const builtins = DEFAULT_FACADES.filter(f => !hidden.has(f.id)).map(f => ({
+    ...f,
+    ...getFacadeFasciaPreset(f.id),
+  }));
   return [...(pool.custom || []), ...builtins];
 }
 

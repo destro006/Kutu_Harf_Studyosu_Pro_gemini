@@ -113,7 +113,95 @@ function loadImg(url) {
 }
 
 /**
- * Local zero-cost photorealistic atmospheric lighting & shadow pass on the Three.js composite.
+ * Parses natural Turkish AI Studio commands cleanly without requiring a cloud LLM.
+ */
+export function parseLocalTurkishSignageIntent(brief = '') {
+  const q = String(brief || '').toLocaleLowerCase('tr-TR');
+  const shouldPlaceOnFascia = /yerleştir|mekan|cephe|tak|koy|alınlı[kğ]|tabela|vitrin|ekli/i.test(q) || !q.trim();
+  const isNight = /gece|akşam|loş|karanlık|night|yağmur/i.test(q);
+  const isDay = /gündüz|güneş|sabah|day/i.test(q) && !isNight;
+  const night = isNight ? true : (isDay ? false : null);
+
+  let lightingMode = null;
+  if (/halo|arkadan/i.test(q)) lightingMode = 'halo';
+  else if (/çift\s*yön|hem\s*ön/i.test(q)) lightingMode = 'both';
+  else if (/ön\s*ışık|pleksi\s*ışık|front/i.test(q)) lightingMode = 'front';
+  else if (/ışıksız/i.test(q)) lightingMode = 'none';
+
+  let faceMaterial = null;
+  if (/altın|gold|pirinç/i.test(q)) faceMaterial = 'aynaAltin';
+  else if (/krom|gümüş|inox|paslanmaz/i.test(q)) faceMaterial = 'aynaKrom';
+  else if (/siyah|black|antrasit/i.test(q)) faceMaterial = 'matSiyah';
+
+  const rainy = /yağmur|ıslak|yansıma/i.test(q);
+  const warm = /sıcak|gün\s*ışığı|altın|3000k|warm/i.test(q);
+
+  return { shouldPlaceOnFascia, night, lightingMode, faceMaterial, rainy, warm };
+}
+
+/**
+ * Scans the upper storefront zone (y: 12%..42%) of an uploaded photo RGBA buffer
+ * to find the cleanest architectural signage fascia band instead of pasting in dead center.
+ */
+export function detectUpperFasciaBand(rgba, width, height) {
+  const defaultQuad = [
+    { x: 0.21, y: 0.18 },
+    { x: 0.79, y: 0.18 },
+    { x: 0.79, y: 0.34 },
+    { x: 0.21, y: 0.34 },
+  ];
+  if (!rgba || !width || !height) return defaultQuad;
+
+  const x0 = Math.floor(width * 0.16);
+  const x1 = Math.floor(width * 0.84);
+  const bandH = Math.max(8, Math.floor(height * 0.14));
+  const yStartMin = Math.floor(height * 0.12);
+  const yStartMax = Math.floor(height * 0.30);
+
+  let bestY = Math.floor(height * 0.18);
+  let bestScore = Infinity;
+
+  for (let yTop = yStartMin; yTop <= yStartMax; yTop += Math.max(2, Math.floor(height * 0.015))) {
+    let sum = 0;
+    let sumSq = 0;
+    let gradSum = 0;
+    let count = 0;
+    for (let y = yTop; y < Math.min(height - 1, yTop + bandH); y += 2) {
+      for (let x = x0; x < Math.min(width - 2, x1); x += 3) {
+        const i = (y * width + x) * 4;
+        const lum = 0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2];
+        const lumR = 0.299 * rgba[i + 4] + 0.587 * rgba[i + 5] + 0.114 * rgba[i + 6];
+        sum += lum;
+        sumSq += lum * lum;
+        gradSum += Math.abs(lum - lumR);
+        count++;
+      }
+    }
+    if (!count) continue;
+    const mean = sum / count;
+    const std = Math.sqrt(Math.max(0, sumSq / count - mean * mean));
+    const avgGrad = gradSum / count;
+    // Prefer smooth flat fascia bands without extreme blown highlights or pitch black
+    const extremePenalty = (mean < 18 || mean > 245) ? 18 : 0;
+    const score = std + avgGrad * 1.6 + extremePenalty;
+    if (score < bestScore) {
+      bestScore = score;
+      bestY = yTop;
+    }
+  }
+
+  const yNorm0 = Math.max(0.10, Math.min(0.32, bestY / height));
+  const yNorm1 = Math.min(0.44, yNorm0 + 0.155);
+  return [
+    { x: 0.21, y: Number(yNorm0.toFixed(3)) },
+    { x: 0.79, y: Number(yNorm0.toFixed(3)) },
+    { x: 0.79, y: Number(yNorm1.toFixed(3)) },
+    { x: 0.21, y: Number(yNorm1.toFixed(3)) },
+  ];
+}
+
+/**
+ * Local zero-cost photorealistic atmospheric lighting, specular & shadow pass on the Three.js composite.
  */
 async function localPhotorealisticPass(compositeDataUrl, masterPrompt) {
   const img = await loadImg(compositeDataUrl);
@@ -123,18 +211,18 @@ async function localPhotorealisticPass(compositeDataUrl, masterPrompt) {
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d');
-  const isNight = /gece|akşam|loş|night|halo/i.test(masterPrompt);
-  const isWarm = /sıcak|gün ışığı|altın|warm|3000k|4000k/i.test(masterPrompt);
+  const intent = parseLocalTurkishSignageIntent(masterPrompt);
+  const isNight = intent.night !== null ? intent.night : /gece|akşam|loş|night|halo/i.test(masterPrompt);
+  const isWarm = intent.warm || /3000k|4000k|altın/i.test(masterPrompt);
 
   ctx.drawImage(img, 0, 0, w, h);
 
-  // Subtle architectural contrast + atmospheric vignette matching Night/Day mood
   ctx.save();
   ctx.globalCompositeOperation = isNight ? 'multiply' : 'soft-light';
-  const grad = ctx.createRadialGradient(w * 0.5, h * 0.45, w * 0.12, w * 0.5, h * 0.5, w * 0.72);
+  const grad = ctx.createRadialGradient(w * 0.5, h * 0.34, w * 0.12, w * 0.5, h * 0.45, w * 0.74);
   if (isNight) {
     grad.addColorStop(0, 'rgba(255,255,255,1)');
-    grad.addColorStop(1, 'rgba(120,132,155,0.68)');
+    grad.addColorStop(1, 'rgba(110,124,150,0.65)');
   } else {
     grad.addColorStop(0, 'rgba(255,250,242,0.22)');
     grad.addColorStop(1, 'rgba(180,190,205,0.18)');
@@ -143,10 +231,20 @@ async function localPhotorealisticPass(compositeDataUrl, masterPrompt) {
   ctx.fillRect(0, 0, w, h);
   ctx.restore();
 
-  // Warm/cool ambient color harmony pass
+  if (intent.rainy) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    const wetGrad = ctx.createLinearGradient(0, h * 0.65, 0, h);
+    wetGrad.addColorStop(0, 'rgba(255,205,130,0)');
+    wetGrad.addColorStop(1, 'rgba(255,205,130,0.18)');
+    ctx.fillStyle = wetGrad;
+    ctx.fillRect(0, h * 0.65, w, h * 0.35);
+    ctx.restore();
+  }
+
   ctx.save();
   ctx.globalCompositeOperation = 'screen';
-  ctx.globalAlpha = isNight ? 0.14 : 0.06;
+  ctx.globalAlpha = isNight ? 0.16 : 0.06;
   ctx.fillStyle = isWarm ? '#ffbe73' : '#cfe3ff';
   ctx.fillRect(0, 0, w, h);
   ctx.restore();
