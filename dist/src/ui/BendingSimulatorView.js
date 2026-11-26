@@ -19,56 +19,65 @@ export function renderBendingSimulatorPane(job, simConfig = {}, simState = {}) {
     <div class="bending-sim-layout">
       <div class="sec bending-sim-left">
         <h3 class="sec-title">Makine &amp; Bobin Parametreleri</h3>
-        <div class="field-group">
-          <label>Büküm Makinesi / Post</label>
-          <select id="bendMachineSelect">
-            ${BENDING_MACHINE_PROFILES.map(m => `<option value="${m.id}" ${m.id === machineId ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}
+        <div class="bend-field-group">
+          <label for="bendMachineSelect">Büküm Makinesi / Post</label>
+          <select id="bendMachineSelect" class="bend-select" title="${esc(BENDING_MACHINE_PROFILES.find(m => m.id === machineId)?.label || '')}">
+            ${BENDING_MACHINE_PROFILES.map(m => `<option value="${m.id}" title="${esc(m.label)}" ${m.id === machineId ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}
           </select>
         </div>
-        <div class="field-group">
-          <label>Yan Bant Bobin Profili</label>
-          <select id="bendCoilSelect">
-            ${BENDING_COIL_PROFILES.map(c => `<option value="${c.id}" ${c.id === coilId ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}
+        <div class="bend-field-group">
+          <label for="bendCoilSelect">Yan Bant Bobin Profili</label>
+          <select id="bendCoilSelect" class="bend-select" title="${esc(BENDING_COIL_PROFILES.find(c => c.id === coilId)?.label || '')}">
+            ${BENDING_COIL_PROFILES.map(c => `<option value="${c.id}" title="${esc(c.label)}" ${c.id === coilId ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}
           </select>
         </div>
-        <div class="field-row two-col">
-          <div class="field-group">
-            <label>Bindirme Payı (mm)</label>
-            <input type="number" id="bendOverlapMm" min="0" max="40" step="1" value="${Number(simConfig.overlapMm ?? 6)}" />
+        <div class="bend-num-grid">
+          <div class="bend-field-group">
+            <label for="bendOverlapMm">Bindirme Payı</label>
+            <div class="bend-num-field">
+              <input type="number" id="bendOverlapMm" class="bend-num-input" min="0" max="40" step="1" value="${Number(simConfig.overlapMm ?? 6)}" />
+              <span class="bend-unit">mm</span>
+            </div>
           </div>
-          <div class="field-group">
-            <label>Yaylanma Telafisi (%)</label>
-            <input type="number" id="bendSpringbackPct" min="0" max="25" step="0.5" value="${Number(job?.springbackPct ?? 4)}" />
+          <div class="bend-field-group">
+            <label for="bendSpringbackPct">Yaylanma Telafisi</label>
+            <div class="bend-num-field">
+              <input type="number" id="bendSpringbackPct" class="bend-num-input" min="0" max="25" step="0.5" value="${Number(job?.springbackPct ?? 4)}" />
+              <span class="bend-unit">%</span>
+            </div>
           </div>
         </div>
-        <div class="field-group">
-          <label>V-Kerç Tetikleme Açısı (°)</label>
-          <input type="number" id="bendNotchAngleDeg" min="10" max="90" step="2" value="${Number(job?.notchAngleDeg ?? 30)}" />
+        <div class="bend-field-group">
+          <label for="bendNotchAngleDeg">V-Çentik Tetikleme Açısı</label>
+          <div class="bend-num-field">
+            <input type="number" id="bendNotchAngleDeg" class="bend-num-input" min="10" max="90" step="2" value="${Number(job?.notchAngleDeg ?? 30)}" />
+            <span class="bend-unit">°</span>
+          </div>
         </div>
-        <div class="field-group">
-          <label>Simüle Edilecek Harf / Kontur</label>
-          <select id="bendContourSelect" ${!contours.length ? 'disabled' : ''}>
+        <div class="bend-field-group">
+          <label for="bendContourSelect">Simüle Edilecek Harf / Kontur</label>
+          <select id="bendContourSelect" class="bend-select" ${!contours.length ? 'disabled' : ''}>
             ${contours.length
               ? contours.map((c, idx) => `<option value="${idx}" ${idx === activeIdx ? 'selected' : ''}>${esc(c.label)} (${c.contourType} · ${c.totalStripMm} mm)${c.collisionCount ? ' ⚠' : ''}</option>`).join('')
               : '<option>Sahnede harf/kontur yok</option>'}
           </select>
         </div>
-        <div class="tip-card" style="font-size:11.5px;line-height:1.45">
+        <div class="tip-card bend-tip-card">
           <strong>Akıllı Birleşim Yeri (Seam):</strong> Başlangıç noktası otomatik olarak harfin görünmeyen düz tabanına yerleştirildi. Tuvalde kenar üzerine tıklayarak birleşim yerini taşıyabilirsiniz.
         </div>
         ${active && active.collisionCount ? `
-          <div style="margin-top:8px;padding:8px;border-radius:7px;background:rgba(239,68,68,0.14);border:1px solid rgba(239,68,68,0.55);color:#fecaca;font-size:11.5px">
+          <div class="bend-collision-box">
             <strong>⚠ ${active.collisionCount} Büküm Çarpışma / Yarıçap Uyarısı</strong>
-            <ul style="margin:4px 0 0 16px;padding:0">${warningList}</ul>
+            <ul>${warningList}</ul>
           </div>` : ''}
       </div>
 
       <div class="sec bending-sim-center">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <div class="bend-center-head">
           <h3 class="sec-title" style="margin:0">Canlı Büküm &amp; Şerit Simülasyonu</h3>
-          <div style="display:flex;gap:6px;font-size:11px">
+          <div class="bend-legend">
             <span style="color:#4ade80">● Başlangıç / Birleşim</span>
-            <span style="color:#fbbf24">▲ V-Kerç</span>
+            <span style="color:#fbbf24">▲ V-Çentik</span>
             <span style="color:#38bdf8">▮ Flanş Kesimi</span>
             <span style="color:#f87171">⚠ Çarpışma Riski</span>
           </div>
@@ -76,12 +85,17 @@ export function renderBendingSimulatorPane(job, simConfig = {}, simState = {}) {
         <div class="bending-canvas-wrap">
           <canvas id="bendingSimCanvas" width="760" height="400"></canvas>
         </div>
-        <div class="bending-transport">
-          <button type="button" id="bendStepPrev" class="sec-btn" ${!active ? 'disabled' : ''}>⏮ Önceki</button>
-          <button type="button" id="bendPlayPause" class="cta-btn" style="min-width:110px" ${!active ? 'disabled' : ''}>${simState.playing ? '⏸ Duraklat' : '▶ Başlat'}</button>
-          <button type="button" id="bendStepNext" class="sec-btn" ${!active ? 'disabled' : ''}>Sonraki ⏭</button>
-          <input type="range" id="bendScrubber" min="0" max="1000" value="${Math.round(progress * 1000)}" style="flex:1;min-width:120px" ${!active ? 'disabled' : ''} />
-          <select id="bendSpeedSelect" style="width:74px">
+        <div class="bend-player-bar">
+          <div class="bend-player-btns">
+            <button type="button" id="bendStepPrev" class="bend-btn-step" ${!active ? 'disabled' : ''}>⏮ Önceki</button>
+            <button type="button" id="bendPlayPause" class="bend-btn-play" ${!active ? 'disabled' : ''}>${simState.playing ? '⏸ Duraklat' : '▶ Başlat'}</button>
+            <button type="button" id="bendStepNext" class="bend-btn-step" ${!active ? 'disabled' : ''}>Sonraki ⏭</button>
+          </div>
+          <div class="bend-player-scrub">
+            <input type="range" id="bendScrubber" class="bend-scrubber-input" min="0" max="1000" value="${Math.round(progress * 1000)}" ${!active ? 'disabled' : ''} />
+            <span class="bend-player-readout"><strong id="bendProgressMm">${active ? Math.round(active.totalStripMm * progress) : 0}</strong> / ${active ? active.totalStripMm : 0} mm</span>
+          </div>
+          <select id="bendSpeedSelect" class="bend-speed-select" aria-label="Simülasyon Hızı">
             ${[0.5, 1, 2, 4].map(sp => `<option value="${sp}" ${sp === speed ? 'selected' : ''}>${sp}x</option>`).join('')}
           </select>
         </div>
@@ -90,8 +104,7 @@ export function renderBendingSimulatorPane(job, simConfig = {}, simState = {}) {
             <span><strong>Kontur:</strong> ${esc(active.label)} (${active.contourType})</span>
             <span><strong>Net Çevre:</strong> ${active.perimeterMm} mm</span>
             <span><strong>Toplam Şerit (+Bindirme):</strong> ${active.totalStripMm} mm</span>
-            <span><strong>V-Kerç:</strong> ${active.vNotchCount} · <strong>Flanş:</strong> ${active.flangeCutCount}</span>
-            <span><strong>İlerleme:</strong> <span id="bendProgressMm">${Math.round(active.totalStripMm * progress)}</span> / ${active.totalStripMm} mm</span>
+            <span><strong>V-Çentik:</strong> ${active.vNotchCount} · <strong>Flanş:</strong> ${active.flangeCutCount}</span>
           ` : '<span>Simülasyon için 3D sahneye harf veya vektör ekleyin.</span>'}
         </div>
       </div>
@@ -101,12 +114,12 @@ export function renderBendingSimulatorPane(job, simConfig = {}, simState = {}) {
         <div class="bending-kpis">
           <div><span>Toplam Bant</span><strong>${job?.totalMeters || 0} m</strong></div>
           <div><span>Toplam Kontur</span><strong>${contours.length} adet</strong></div>
-          <div><span>V-Kerç</span><strong>${job?.totalVNotches || 0}</strong></div>
+          <div><span>V-Çentik</span><strong>${job?.totalVNotches || 0}</strong></div>
           <div><span>Uyarılar</span><strong style="color:${job?.totalCollisions ? '#f87171' : '#4ade80'}">${job?.totalCollisions || 0}</strong></div>
         </div>
         <div class="bending-table-wrap">
           <table class="bending-table">
-            <thead><tr><th>Harf</th><th>Net</th><th>Şerit</th><th>Kerç</th><th>Durum</th></tr></thead>
+            <thead><tr><th>Harf</th><th>Net</th><th>Şerit</th><th>Çentik</th><th>Durum</th></tr></thead>
             <tbody>
               ${contours.map((c, idx) => `
                 <tr data-bend-row="${idx}" class="${idx === activeIdx ? 'active' : ''}">
@@ -119,12 +132,12 @@ export function renderBendingSimulatorPane(job, simConfig = {}, simState = {}) {
             </tbody>
           </table>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
-          <button type="button" id="bendExpDxfR2000" class="cta-btn" ${!contours.length ? 'disabled' : ''}>DXF R2000 İndir</button>
-          <button type="button" id="bendExpDxfR12" class="sec-btn" ${!contours.length ? 'disabled' : ''}>DXF R12 İndir</button>
-          <button type="button" id="bendExpPlt" class="sec-btn" ${!contours.length ? 'disabled' : ''}>HPGL (.plt) İndir</button>
-          <button type="button" id="bendExpGcode" class="cta-btn" ${!contours.length ? 'disabled' : ''}>Büküm G-Code İndir</button>
-          <button type="button" id="bendPrintJobSheet" class="sec-btn" style="grid-column:1/-1" ${!contours.length ? 'disabled' : ''}>🖨 İş Emri (Job Sheet) Yazdır</button>
+        <div class="bend-export-grid">
+          <button type="button" id="bendExpDxfR2000" class="bend-exp-btn bend-exp-btn--primary" ${!contours.length ? 'disabled' : ''}>DXF R2000 İndir</button>
+          <button type="button" id="bendExpDxfR12" class="bend-exp-btn bend-exp-btn--secondary" ${!contours.length ? 'disabled' : ''}>DXF R12 İndir</button>
+          <button type="button" id="bendExpPlt" class="bend-exp-btn bend-exp-btn--secondary" ${!contours.length ? 'disabled' : ''}>HPGL (.plt) İndir</button>
+          <button type="button" id="bendExpGcode" class="bend-exp-btn bend-exp-btn--primary" ${!contours.length ? 'disabled' : ''}>Büküm G-Code İndir</button>
+          <button type="button" id="bendPrintJobSheet" class="bend-exp-btn bend-exp-btn--secondary bend-exp-btn--full" ${!contours.length ? 'disabled' : ''}>🖨 İş Emri (Job Sheet) Yazdır</button>
         </div>
       </div>
     </div>

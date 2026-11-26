@@ -124,5 +124,13 @@ const bendingHtml = renderCncCenter(st, {
   bendingSimState: { activeContourIdx: 0, progress: 0.5, playing: false, speed: 1 },
 });
 assert(bendingHtml.includes('id="bendingSimCanvas"') && bendingHtml.includes('id="bendExpDxfR2000"') && bendingHtml.includes('id="bendExpGcode"'));
+assert(
+  bendingHtml.includes('class="bend-select"') &&
+  bendingHtml.includes('class="bend-num-field"') &&
+  bendingHtml.includes('class="bend-unit"') &&
+  bendingHtml.includes('class="bend-player-bar"') &&
+  bendingHtml.includes('class="bend-export-grid"'),
+  'Redesigned Bending Simulator classes must be present',
+);
 
 console.log('✓ Phase 5 Module 10 (Bending Simulator, Collisions, Exporters & Workshop UI) verified cleanly');
