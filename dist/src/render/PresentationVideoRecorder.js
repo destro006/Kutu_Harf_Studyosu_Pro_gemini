@@ -2,8 +2,18 @@ import { computeSignageDimensionData, renderDimensions2DOverlay } from './Dimens
 
 /**
  * Local Zero-API-Cost Cinematic Client Presentation Video Recorder
- * Uses Three.js offscreen canvas + optional CAD dimension fade-in + MediaRecorder.
+ * - Exact wall-clock timing via performance.now() (12s selection => exact 12.0s video)
+ * - Smooth Catmull-Rom spline camera trajectories across 6 Turkish cinematography roles
  */
+export const VIDEO_ROLES = [
+  { id: 'luxury_arch', label: 'Lüks Mimari Sunum', desc: 'Geniş açılış, yörünge taraması ve gündüzden geceye halo geçişi', aspect: '16:9' },
+  { id: 'night_led', label: 'Gece & LED Şovu', desc: 'Karanlık cephede parlak ön ve arkadan halo ışık şovu', aspect: '16:9' },
+  { id: 'tech_dims', label: 'Teknik & Ölçülü Onay', desc: 'Önden net görünüm ile genişlik, yükseklik ve derinlik ölçüleri', aspect: '16:9' },
+  { id: 'detail_closeup', label: 'Detay & Malzeme Yakın Çekim', desc: 'Pah, fırça dokusu, krom yansıma ve yan bant derinlik taraması', aspect: '16:9' },
+  { id: 'orbit_360', label: '360° Ürün Turu', desc: 'Tabela ekseni etrafında kesintisiz 360 derece ürün dönüşü', aspect: '16:9' },
+  { id: 'reels_vertical', label: 'Sosyal Medya / Reels 9:16', desc: 'Instagram / TikTok dikey formatında dinamik yakın çekim akışı', aspect: '9:16' },
+];
+
 export const CHOREOGRAPHY_STAGES = [
   { id: 'bevel_pan', label: 'Yakın Pah & Derinlik Taraması', start: 0.0, end: 0.25 },
   { id: 'orbital_sweep', label: 'Metalik Yansıma Yörünge Turu', start: 0.25, end: 0.55 },
@@ -16,67 +26,118 @@ function easeInOutCubic(t) {
   return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 }
 
-function lerp(a, b, t) {
-  return a + (b - a) * t;
+function catmullRom(p0, p1, p2, p3, u) {
+  const u2 = u * u, u3 = u2 * u;
+  return 0.5 * (
+    2 * p1 +
+    (-p0 + p2) * u +
+    (2 * p0 - 5 * p1 + 4 * p2 - p3) * u2 +
+    (-p0 + 3 * p1 - 3 * p2 + p3) * u3
+  );
 }
+
+function sampleSplineTrack(keys, tNorm) {
+  const t = Math.max(0, Math.min(1, tNorm));
+  const segCount = keys.length - 1;
+  const scaled = t * segCount;
+  const idx = Math.min(segCount - 1, Math.floor(scaled));
+  const u = scaled - idx;
+  const k0 = keys[Math.max(0, idx - 1)];
+  const k1 = keys[idx];
+  const k2 = keys[Math.min(segCount, idx + 1)];
+  const k3 = keys[Math.min(segCount, idx + 2)];
+  return {
+    azimuth: catmullRom(k0.az, k1.az, k2.az, k3.az, u),
+    polar: catmullRom(k0.pol, k1.pol, k2.pol, k3.pol, u),
+    radiusMult: catmullRom(k0.rad, k1.rad, k2.rad, k3.rad, u),
+    targetOffsetX: catmullRom(k0.tx || 0, k1.tx || 0, k2.tx || 0, k3.tx || 0, u),
+    targetOffsetY: catmullRom(k0.ty || 0, k1.ty || 0, k2.ty || 0, k3.ty || 0, u),
+  };
+}
+
+const ROLE_TRACKS = {
+  luxury_arch: [
+    { az: -0.90, pol: 1.54, rad: 0.62, tx: -0.22 },
+    { az: -0.45, pol: 1.46, rad: 0.72, tx: 0.14 },
+    { az: 0.66, pol: 1.48, rad: 0.96, tx: 0.04 },
+    { az: 0.30, pol: 1.49, rad: 1.03, tx: 0 },
+    { az: 0.12, pol: 1.51, rad: 1.08, tx: 0 },
+  ],
+  night_led: [
+    { az: -0.68, pol: 1.52, rad: 0.74, tx: -0.18 },
+    { az: -0.15, pol: 1.44, rad: 0.85, tx: 0.08 },
+    { az: 0.55, pol: 1.49, rad: 0.98, tx: 0 },
+    { az: 0.18, pol: 1.52, rad: 1.04, tx: 0 },
+    { az: 0.0, pol: 1.54, rad: 1.06, tx: 0 },
+  ],
+  tech_dims: [
+    { az: -0.52, pol: 1.42, rad: 0.95, tx: -0.05 },
+    { az: -0.18, pol: 1.50, rad: 1.02, tx: 0 },
+    { az: 0.14, pol: 1.53, rad: 1.08, tx: 0 },
+    { az: 0.0, pol: 1.57, rad: 1.12, tx: 0 },
+  ],
+  detail_closeup: [
+    { az: -1.05, pol: 1.56, rad: 0.50, tx: -0.26, ty: -0.04 },
+    { az: -0.55, pol: 1.44, rad: 0.54, tx: -0.05, ty: 0.03 },
+    { az: 0.25, pol: 1.46, rad: 0.58, tx: 0.18, ty: -0.02 },
+    { az: 0.75, pol: 1.50, rad: 0.68, tx: 0.08, ty: 0.02 },
+    { az: 0.22, pol: 1.49, rad: 0.96, tx: 0, ty: 0 },
+  ],
+  orbit_360: [
+    { az: 0.0, pol: 1.50, rad: 1.02 },
+    { az: 1.57, pol: 1.45, rad: 1.08 },
+    { az: 3.14, pol: 1.48, rad: 1.12 },
+    { az: 4.71, pol: 1.45, rad: 1.08 },
+    { az: 6.28, pol: 1.50, rad: 1.02 },
+  ],
+  reels_vertical: [
+    { az: -0.78, pol: 1.55, rad: 0.68, tx: -0.18 },
+    { az: -0.20, pol: 1.45, rad: 0.78, tx: 0.08 },
+    { az: 0.42, pol: 1.49, rad: 0.92, tx: -0.04 },
+    { az: 0.10, pol: 1.52, rad: 1.14, tx: 0 },
+  ],
+};
 
 export function sampleChoreographyKeyframe(tNorm, options = {}) {
   const t = Math.max(0, Math.min(1, Number(tNorm) || 0));
   const showDimensions = options.showDimensions !== false;
+  const role = options.role || 'luxury_arch';
+  const track = ROLE_TRACKS[role] || ROLE_TRACKS.luxury_arch;
+  const easedT = easeInOutCubic(t) * 0.65 + t * 0.35;
+  const pos = sampleSplineTrack(track, easedT);
 
-  if (t < 0.25) {
-    const u = easeInOutCubic(t / 0.25);
-    return {
-      stage: CHOREOGRAPHY_STAGES[0],
-      azimuth: lerp(-0.88, -0.45, u),
-      polar: lerp(Math.PI / 2 - 0.02, Math.PI / 2 - 0.10, u),
-      radiusMult: lerp(0.62, 0.72, u),
-      targetOffsetX: lerp(-0.22, 0.16, u),
-      targetOffsetY: 0,
-      night: false,
-      lightingEnabled: false,
-      dimsOpacity: 0,
-    };
+  const stage = CHOREOGRAPHY_STAGES.find(s => t >= s.start && t <= s.end) || CHOREOGRAPHY_STAGES[3];
+
+  let night = true;
+  let lightingEnabled = true;
+  let dimsOpacity = 0;
+
+  if (role === 'night_led') {
+    night = true;
+    lightingEnabled = t >= 0.08;
+    dimsOpacity = showDimensions && t >= 0.75 ? Math.min(1, (t - 0.75) / 0.18) : 0;
+  } else if (role === 'tech_dims') {
+    night = false;
+    lightingEnabled = false;
+    dimsOpacity = showDimensions ? Math.min(1, t * 2.4) : 0;
+  } else {
+    const switchAt = role === 'detail_closeup' ? 0.65 : 0.62;
+    night = t >= switchAt;
+    lightingEnabled = t >= switchAt;
+    dimsOpacity = showDimensions && t >= 0.80 ? Math.min(1, (t - 0.80) / 0.14) : 0;
   }
-  if (t < 0.55) {
-    const u = easeInOutCubic((t - 0.25) / 0.30);
-    return {
-      stage: CHOREOGRAPHY_STAGES[1],
-      azimuth: lerp(-0.45, 0.68, u),
-      polar: lerp(Math.PI / 2 - 0.10, Math.PI / 2 - 0.06, u),
-      radiusMult: lerp(0.72, 0.96, u),
-      targetOffsetX: lerp(0.16, 0, u),
-      targetOffsetY: 0,
-      night: false,
-      lightingEnabled: false,
-      dimsOpacity: 0,
-    };
-  }
-  if (t < 0.80) {
-    const u = easeInOutCubic((t - 0.55) / 0.25);
-    return {
-      stage: CHOREOGRAPHY_STAGES[2],
-      azimuth: lerp(0.68, 0.28, u),
-      polar: lerp(Math.PI / 2 - 0.06, Math.PI / 2 - 0.08, u),
-      radiusMult: lerp(0.96, 1.02, u),
-      targetOffsetX: 0,
-      targetOffsetY: 0,
-      night: u >= 0.30,
-      lightingEnabled: u >= 0.30,
-      dimsOpacity: 0,
-    };
-  }
-  const u = easeInOutCubic((t - 0.80) / 0.20);
+
   return {
-    stage: CHOREOGRAPHY_STAGES[3],
-    azimuth: lerp(0.28, 0.14, u),
-    polar: lerp(Math.PI / 2 - 0.08, Math.PI / 2 - 0.05, u),
-    radiusMult: lerp(1.02, 1.08, u),
-    targetOffsetX: 0,
-    targetOffsetY: 0,
-    night: true,
-    lightingEnabled: true,
-    dimsOpacity: showDimensions ? Math.min(1, u * 1.6) : 0,
+    stage,
+    role,
+    azimuth: pos.azimuth,
+    polar: pos.polar,
+    radiusMult: pos.radiusMult,
+    targetOffsetX: pos.targetOffsetX,
+    targetOffsetY: pos.targetOffsetY,
+    night,
+    lightingEnabled,
+    dimsOpacity,
   };
 }
 
@@ -106,6 +167,7 @@ export async function recordPresentationVideo({
   height = 720,
   durationSec = 8,
   fps = 30,
+  role = 'luxury_arch',
   showDimensions = true,
   onProgress = () => {},
   signal = null,
@@ -134,7 +196,6 @@ export async function recordPresentationVideo({
     recorder.onerror = e => reject(e?.error || new Error('Video kaydı başarısız.'));
   });
 
-  // Snapshot original camera & scene flags so we always restore them cleanly.
   const origOrbit = {
     az: signEngine.orbit.azimuth,
     pol: signEngine.orbit.polar,
@@ -169,14 +230,20 @@ export async function recordPresentationVideo({
     signEngine.camera.updateProjectionMatrix();
 
     const baseRadius = signEngine.orbit.fitRadius || signEngine.orbit.radius || 3.5;
-    const totalFrames = Math.max(30, Math.round(durationSec * fps));
-    const frameIntervalMs = 1000 / fps;
+    const totalMs = Math.max(2000, Number(durationSec) * 1000);
+    const frameIntervalMs = 1000 / Math.max(15, fps);
     recorder.start(250);
 
-    for (let f = 0; f <= totalFrames; f++) {
+    // Strictly synchronized to real wall-clock elapsed time so selected 12s outputs exact 12.0s video.
+    const startTime = performance.now();
+    let frameIndex = 0;
+
+    while (true) {
       if (signal?.aborted) throw new DOMException('Video kaydı iptal edildi.', 'AbortError');
-      const tNorm = f / totalFrames;
-      const kf = sampleChoreographyKeyframe(tNorm, { showDimensions });
+      const now = performance.now();
+      const elapsedMs = now - startTime;
+      const progress = Math.min(elapsedMs / totalMs, 1);
+      const kf = sampleChoreographyKeyframe(progress, { showDimensions, role });
 
       if (kf.night !== curNight || kf.lightingEnabled !== curLit) {
         curNight = kf.night;
@@ -209,8 +276,13 @@ export async function recordPresentationVideo({
         });
       }
 
-      onProgress({ percent: Math.round(tNorm * 100), stageLabel: kf.stage.label });
-      await new Promise(res => setTimeout(res, Math.max(8, Math.min(34, frameIntervalMs * 0.5))));
+      onProgress({ percent: Math.round(progress * 100), stageLabel: kf.stage.label });
+      if (progress >= 1) break;
+
+      frameIndex++;
+      const targetNextMs = frameIndex * frameIntervalMs;
+      const waitMs = Math.max(4, Math.min(50, targetNextMs - (performance.now() - startTime)));
+      await new Promise(res => setTimeout(res, waitMs));
     }
 
     recorder.stop();

@@ -239,6 +239,7 @@ export class Vector2DCanvas {
     const selSet = new Set(state.selectedIds || []);
     const objsSvg = [];
     let selMinX = Infinity, selMaxX = -Infinity, selMinY = Infinity, selMaxY = -Infinity;
+    let allMinX = Infinity, allMaxX = -Infinity, allMinY = Infinity, allMaxY = -Infinity;
 
     for (const obj of (state.objects || [])) {
       if (!obj.visible) continue;
@@ -253,15 +254,51 @@ export class Vector2DCanvas {
           <path d="${d}" fill="${fillCol}" fill-opacity="${isSel ? 0.34 : 0.2}" stroke="${isSel ? '#ffb547' : '#cbd5e1'}" stroke-width="${(isSel ? 2.2 : 1.3) / z}" fill-rule="evenodd" />
         </g>
       `);
-      if (isSel) {
-        for (const p of polys) {
-          for (const pt of p.outer) {
+      for (const p of polys) {
+        for (const pt of p.outer) {
+          if (pt.x < allMinX) allMinX = pt.x;
+          if (pt.x > allMaxX) allMaxX = pt.x;
+          if (-pt.y < allMinY) allMinY = -pt.y;
+          if (-pt.y > allMaxY) allMaxY = -pt.y;
+          if (isSel) {
             if (pt.x < selMinX) selMinX = pt.x;
             if (pt.x > selMaxX) selMaxX = pt.x;
             if (-pt.y < selMinY) selMinY = -pt.y;
             if (-pt.y > selMaxY) selMaxY = -pt.y;
           }
         }
+      }
+    }
+
+    // 2D CAD Dimension Overlay — strictly synchronized with state.scene.showDimensions
+    let dimsSvg = '';
+    if (state.scene?.showDimensions) {
+      const dx0 = Number.isFinite(selMinX) ? selMinX : allMinX;
+      const dx1 = Number.isFinite(selMaxX) ? selMaxX : allMaxX;
+      const dy0 = Number.isFinite(selMinY) ? selMinY : allMinY;
+      const dy1 = Number.isFinite(selMaxY) ? selMaxY : allMaxY;
+      if (Number.isFinite(dx0) && dx1 > dx0) {
+        const wMm = Math.round(dx1 - dx0);
+        const hMm = Math.round(dy1 - dy0);
+        const off = 28 / z;
+        const fs = 12 / z;
+        const sw = 1.6 / z;
+        const wy = dy1 + off;
+        const hx = dx0 - off;
+        dimsSvg = `
+          <g data-v2d-dims="1" pointer-events="none">
+            <line x1="${dx0}" y1="${dy1 + 4 / z}" x2="${dx0}" y2="${wy + 5 / z}" stroke="rgba(248,250,252,0.5)" stroke-dasharray="${3 / z} ${3 / z}" stroke-width="${1 / z}" />
+            <line x1="${dx1}" y1="${dy1 + 4 / z}" x2="${dx1}" y2="${wy + 5 / z}" stroke="rgba(248,250,252,0.5)" stroke-dasharray="${3 / z} ${3 / z}" stroke-width="${1 / z}" />
+            <line x1="${dx0}" y1="${wy}" x2="${dx1}" y2="${wy}" stroke="#f8fafc" stroke-width="${sw}" />
+            <rect x="${(dx0 + dx1) * 0.5 - 42 / z}" y="${wy - 10 / z}" width="${84 / z}" height="${20 / z}" rx="${5 / z}" fill="#0b0f19" stroke="#38bdf8" stroke-width="${1.2 / z}" />
+            <text x="${(dx0 + dx1) * 0.5}" y="${wy + 4 / z}" fill="#f8fafc" font-size="${fs}" font-weight="700" text-anchor="middle">G: ${wMm} mm</text>
+            <line x1="${dx0 - 4 / z}" y1="${dy0}" x2="${hx - 5 / z}" y2="${dy0}" stroke="rgba(248,250,252,0.5)" stroke-dasharray="${3 / z} ${3 / z}" stroke-width="${1 / z}" />
+            <line x1="${dx0 - 4 / z}" y1="${dy1}" x2="${hx - 5 / z}" y2="${dy1}" stroke="rgba(248,250,252,0.5)" stroke-dasharray="${3 / z} ${3 / z}" stroke-width="${1 / z}" />
+            <line x1="${hx}" y1="${dy0}" x2="${hx}" y2="${dy1}" stroke="#f8fafc" stroke-width="${sw}" />
+            <rect x="${hx - 42 / z}" y="${(dy0 + dy1) * 0.5 - 10 / z}" width="${84 / z}" height="${20 / z}" rx="${5 / z}" fill="#0b0f19" stroke="#38bdf8" stroke-width="${1.2 / z}" />
+            <text x="${hx}" y="${(dy0 + dy1) * 0.5 + 4 / z}" fill="#f8fafc" font-size="${fs}" font-weight="700" text-anchor="middle">Y: ${hMm} mm</text>
+          </g>
+        `;
       }
     }
 
@@ -304,7 +341,7 @@ export class Vector2DCanvas {
       }
     }
 
-    this.svg.innerHTML = `${gridSvg}${pageSvg}${objsSvg.join('')}${selSvg}${nodesSvg}`;
+    this.svg.innerHTML = `${gridSvg}${pageSvg}${objsSvg.join('')}${selSvg}${nodesSvg}${dimsSvg}`;
     if (this.marquee) this._drawMarquee();
   }
 

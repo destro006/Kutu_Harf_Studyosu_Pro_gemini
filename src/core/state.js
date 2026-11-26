@@ -104,6 +104,7 @@ export function createDefaultState() {
       transparentBg: false,
       cameraPreset: 'hero',
       showRuler: true,
+      showDimensions: false,
       guidesMm: [],
     },
 

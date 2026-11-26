@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Kutu Harf Stüdyosu — Profesyonel 3D Tabela CAD/CAM &amp; İmalat Stüdyosu</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161a'/%3E%3Crect x='9' y='7' width='14' height='18' rx='3' fill='%23ffb547'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./src/styles/studio.css?v=20261126-v34">
+  <link rel="stylesheet" href="./src/styles/studio.css?v=20261126-v35">
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -464,6 +464,17 @@
           <div class="field-row" style="margin:0"><label for="vidResolution">Çözünürlük</label><select id="vidResolution"><option value="1280x720" selected>HD · 1280 × 720</option><option value="1920x1080">Full HD · 1920 × 1080</option></select></div>
           <div class="field-row" style="margin:0"><label for="vidDuration">Süre</label><select id="vidDuration"><option value="8" selected>8 saniye (Hızlı)</option><option value="12">12 saniye (Sinematik)</option></select></div>
         </div>
+        <div class="field-row" style="margin:0">
+          <label for="vidRole">Kamera Senaryosu / Rol</label>
+          <select id="vidRole">
+            <option value="luxury_arch" selected>Lüks Mimari Sunum</option>
+            <option value="night_led">Gece &amp; LED Şovu</option>
+            <option value="tech_dims">Teknik &amp; Ölçülü Onay</option>
+            <option value="detail_closeup">Detay &amp; Malzeme Yakın Çekim</option>
+            <option value="orbit_360">360° Ürün Turu</option>
+            <option value="reels_vertical">Sosyal Medya / Reels 9:16</option>
+          </select>
+        </div>
         <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer">
           <input type="checkbox" id="vidShowDims" checked>
           <span>Videoda Detaylı Ölçüleri Göster (Genişlik, Yükseklik, Derinlik)</span>
@@ -558,11 +569,23 @@
           <strong style="font-size:13px">Tek Tıkla Artırılmış Gerçeklik (AR) Çıktısı</strong>
           <p style="margin:0;font-size:12px;color:var(--muted)">Müşteriniz telefon kamerasıyla tabelayı mağaza cephesinde gerçek 1:1 ölçeğinde görebilir (Android: GLB · iPhone/iPad Quick Look: USDZ).</p>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" id="btnLaunchMobileAr" class="cta-btn">📱 Mağazanda Gör (AR)</button>
             <button type="button" id="btnDownloadArGlb" class="sec-btn">⬇ AR Paketi İndir (.glb)</button>
             <button type="button" id="btnDownloadArUsdz" class="sec-btn">⬇ iOS AR İndir (.usdz)</button>
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Canlı WebXR / Quick Look AR Önizleme Modalı -->
+  <div id="arViewerModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="arViewerTitle">
+    <div class="modal-card" style="max-width:600px">
+      <div class="modal-head">
+        <h3 id="arViewerTitle">📱 Mağazanda Gör — 1:1 Artırılmış Gerçeklik (AR)</h3>
+        <button type="button" id="btnCloseArViewer" class="close-btn" aria-label="Kapat">✕</button>
+      </div>
+      <div id="arViewerBody" class="modal-body" style="display:flex;flex-direction:column;gap:10px"></div>
     </div>
   </div>
 
@@ -599,6 +622,6 @@
   </aside>
 
   <script defer src="./public/vendor/pdfjs/pdf.min.js"></script>
-  <script type="module" src="./src/main.js?v=20261126-v34"></script>
+  <script type="module" src="./src/main.js?v=20261126-v35"></script>
 </body>
 </html>

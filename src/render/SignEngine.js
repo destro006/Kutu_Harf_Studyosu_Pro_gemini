@@ -123,6 +123,7 @@ export class SignEngine {
     this.lastSizeM = { w: 2.0, h: 0.4 };
     this._wallScale = 1.0;
     this._wallDims = null;
+    this._clientModePerf = false;
     this.quality = 'high';
     this.isDisposed = false;
 
@@ -446,10 +447,19 @@ export class SignEngine {
   }
 
   invalidate(shadows=false){this._renderDirty=true;if(shadows&&this.renderer)this.renderer.shadowMap.needsUpdate=true;}
+  setClientModePerformance(enabled) {
+    const next = Boolean(enabled);
+    if (this._clientModePerf === next) return;
+    this._clientModePerf = next;
+    this._resize(true);
+  }
+
   _resize(force=false) {
     if(!this.container.clientWidth||!this.container.clientHeight)return;
     const w=Math.max(100,this.container.clientWidth),h=Math.max(100,this.container.clientHeight);
-    const dpr=computeQualityPixelRatio(this.quality,window.devicePixelRatio||1,w,h),key=w+'x'+h+'@'+dpr;
+    let dpr=computeQualityPixelRatio(this.quality,window.devicePixelRatio||1,w,h);
+    if (this._clientModePerf) dpr = Math.min(dpr, 1.5);
+    const key=w+'x'+h+'@'+dpr;
     if(!force&&this._sizeKey===key)return;
     this._sizeKey=key;this.renderer.setPixelRatio(dpr);this.invalidate();
     this.renderer.setSize(w, h, false);

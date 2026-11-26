@@ -11,7 +11,7 @@ import { renderPropertyBar } from './ui/PropertyBar.js?v=20261125-v15';
 import { polygonSize, nominalSize, roundMm, resizeObjectToMm } from './core/ObjectDimensions.js';
 import { PAGE_SIZE_PRESETS, normalizeDisplayUnit, formatMmAsUnit, displayToMm, formatDimensions, formatPresetLabel, formatAreaM2 } from './core/units.js';
 import { attachMenuBar } from './ui/MenuBar.js?v=qa8';
-import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v34';
+import { renderNestingCenter, renderCncCenter, renderCostCenter } from './ui/CentralWorkspaces.js?v=20261126-v35';
 import {
   buildBendingJob,
   buildBendingJobSheetHtml,
@@ -3464,6 +3464,10 @@ function setMainWorkspace(ws) {
   document.getElementById('costCenterWrap')?.classList.toggle('hidden', ws !== 'cost');
   if(is3D){const engine=ensureSignEngine();engine?.setActive?.(true);if(previous!==ws)scheduleRebuild(true);}
   else signEngine?.setActive?.(false);
+  if (typeof dims3DController !== 'undefined' && dims3DController) {
+    dims3DController.setEnabled(ws === 'model3d' && Boolean(store.get().scene?.showDimensions));
+    document.getElementById('btnToggle3DDims')?.classList.toggle('on', Boolean(store.get().scene?.showDimensions));
+  }
   syncWorkspaceRail(ws);
 
   if (ws === 'materials') {
@@ -5452,10 +5456,14 @@ function init() {
   );
   document.getElementById('btnToggle3DDims')?.addEventListener('click', () => {
     const btn = document.getElementById('btnToggle3DDims');
-    const next = !dims3DController.enabled;
-    dims3DController.setEnabled(next);
+    const next = !Boolean(store.get().scene?.showDimensions);
+    store.updateScoped(['scene'], s => { s.scene.showDimensions = next; });
+    dims3DController.setEnabled(next && store.get().mainWorkspace === 'model3d');
+    if (!next) { measurePoints = []; measureHover = null; }
     btn?.classList.toggle('on', next);
-    studioToast(next ? '3D ölçüler gösteriliyor.' : '3D ölçüler gizlendi.');
+    vector2D?.render(store.get(), fontMap);
+    drawCadOverlay(store.get());
+    studioToast(next ? 'Ölçüler 2D ve 3D görünümde açıldı.' : 'Ölçüler tüm görünümlerde gizlendi.');
   });
   let videoRecController = null;
   let lastVideoBlobUrl = null;
@@ -5482,8 +5490,10 @@ function init() {
     const pctEl = document.getElementById('vidPctLabel');
     const barEl = document.getElementById('vidProgressBar');
     const previewEl = document.getElementById('vidPreviewEl');
-    const [w, h] = String(document.getElementById('vidResolution')?.value || '1280x720').split('x').map(Number);
+    let [w, h] = String(document.getElementById('vidResolution')?.value || '1280x720').split('x').map(Number);
     const dur = Number(document.getElementById('vidDuration')?.value || 8);
+    const role = document.getElementById('vidRole')?.value || 'luxury_arch';
+    if (role === 'reels_vertical' && w > h) { const tmp = w; w = h; h = tmp; }
     const showDims = Boolean(document.getElementById('vidShowDims')?.checked);
     const ctrl = new AbortController();
     videoRecController = ctrl;
@@ -5501,6 +5511,7 @@ function init() {
         width: w || 1280,
         height: h || 720,
         durationSec: dur || 8,
+        role,
         showDimensions: showDims,
         signal: ctrl.signal,
         onProgress: ({ percent, stageLabel }) => {
@@ -5754,7 +5765,56 @@ function init() {
     splitCompare.open();
   });
 
-  const showClientApprovalBanner = (projectKey, projectName) => {
+  let activeArGlbUrl = null;
+  let activeArUsdzUrl = null;
+  const ensureModelViewerScript = () => {
+    if (document.getElementById('modelViewerLibScript') || customElements.get('model-viewer')) return;
+    const sc = document.createElement('script');
+    sc.id = 'modelViewerLibScript';
+    sc.type = 'module';
+    sc.src = 'https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js';
+    document.head.appendChild(sc);
+  };
+  const buildRealScaleArGroups = () => {
+    const eng = ensureSignEngine();
+    if (!eng || eng.isDisposed) throw new Error('3D sahne hazır değil.');
+    if (!eng.signGroup?.children?.length) eng.updateScene(store.get(), fontMap);
+    return collectSignTriangles(eng.signGroup);
+  };
+  const launchMobileAr = () => {
+    try {
+      const groups = buildRealScaleArGroups();
+      if (activeArGlbUrl) URL.revokeObjectURL(activeArGlbUrl);
+      if (activeArUsdzUrl) URL.revokeObjectURL(activeArUsdzUrl);
+      const glbBytes = writeGlb(groups);
+      const usdzBytes = writeUsdz(groups);
+      activeArGlbUrl = URL.createObjectURL(new Blob([glbBytes], { type: 'model/gltf-binary' }));
+      activeArUsdzUrl = URL.createObjectURL(new Blob([usdzBytes], { type: 'model/vnd.usdz+zip' }));
+      ensureModelViewerScript();
+      const body = document.getElementById('arViewerBody');
+      const modal = document.getElementById('arViewerModal');
+      if (body && modal) {
+        body.innerHTML = `
+          <model-viewer class="ar-model-viewer" src="${activeArGlbUrl}" ios-src="${activeArUsdzUrl}" ar ar-modes="webxr scene-viewer quick-look" camera-controls auto-rotate shadow-intensity="1" alt="3D Kutu Harf AR">
+            <button slot="ar-button" class="cta-btn" style="position:absolute;right:12px;bottom:12px">📱 Kamerada Aç (AR)</button>
+          </model-viewer>
+          <p style="margin:0;font-size:12px;color:var(--muted)">1:1 gerçek metre ölçeği (1 birim = 1 m). iPhone/iPad için Quick Look, Android için Scene Viewer / WebXR ile mağaza cephenizde görüntüleyin.</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <a rel="ar" href="${activeArUsdzUrl}" download="${escapeAttr((store.get().projectName || 'tabela') + '_ar.usdz')}" class="cta-btn" style="text-decoration:none">🍎 iOS AR Quick Look Başlat</a>
+            <a href="${activeArGlbUrl}" download="${escapeAttr((store.get().projectName || 'tabela') + '_ar.glb')}" class="sec-btn" style="text-decoration:none">🤖 Android .GLB İndir</a>
+          </div>`;
+        modal.classList.remove('hidden');
+      }
+    } catch (err) {
+      studioToast(err?.message || 'AR önizlemesi hazırlanamadı.', true);
+    }
+  };
+  document.getElementById('btnCloseArViewer')?.addEventListener('click', () => document.getElementById('arViewerModal')?.classList.add('hidden'));
+  document.getElementById('arViewerModal')?.addEventListener('click', e => { if (e.target.id === 'arViewerModal') e.target.classList.add('hidden'); });
+
+  const showClientApprovalBanner = (projectKey, projectName, fullClientMode = false) => {
+    const app = document.getElementById('app');
+    if (fullClientMode) app?.classList.add('client-preview-mode');
     const banner = document.getElementById('clientApprovalBanner');
     if (!banner) return;
     const renderBanner = () => {
@@ -5762,18 +5822,20 @@ function init() {
       banner.classList.remove('hidden');
       banner.innerHTML = `
         <div>
-          <strong style="color:#fef3c7">👁 Canlı Müşteri 3D Önizleme · ${escapeHtml(projectName)}</strong>
+          <strong style="color:#fef3c7">👁 Canlı 3D Müşteri Önizleme · ${escapeHtml(projectName)}</strong>
           <div style="font-size:12px;color:var(--muted)">360° döndürmek için sahneyi sürükleyin · ${existing ? `<span style="color:#86efac">✓ Onaylandı (${escapeHtml(existing.approverName)} · ${escapeHtml(existing.approvedAtLabel)})</span>` : 'Onay bekliyor'}</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button type="button" id="cabToggleNight" class="sec-btn">${store.get().scene?.night !== false ? '☀ Gündüz Gör' : '🌙 Gece Gör'}</button>
+          <button type="button" id="cabToggleNight" class="sec-btn">${store.get().scene?.night !== false ? '☀ Gündüz' : '🌙 Gece'}</button>
+          <button type="button" id="cabLaunchAr" class="sec-btn">📱 AR ile Gör</button>
           <button type="button" id="cabApproveBtn" class="cta-btn">✓ Tasarımı Onayla</button>
-          <button type="button" id="cabExitBtn" class="sec-btn">Çıkış</button>
+          ${fullClientMode ? '' : '<button type="button" id="cabExitBtn" class="sec-btn">Çıkış</button>'}
         </div>`;
       banner.querySelector('#cabToggleNight')?.addEventListener('click', () => {
         mutate('Ortam', s => { s.scene.night = !s.scene.night; });
         renderBanner();
       });
+      banner.querySelector('#cabLaunchAr')?.addEventListener('click', launchMobileAr);
       banner.querySelector('#cabApproveBtn')?.addEventListener('click', () => {
         const who = window.prompt('Onaylayan adı / firma:', store.get().quote?.customerName || 'Müşteri Yetkilisi');
         if (!who) return;
@@ -5781,7 +5843,10 @@ function init() {
         renderBanner();
         studioToast(`✓ Tasarım "${entry.approverName}" tarafından onaylandı (${entry.approvedAtLabel}).`);
       });
-      banner.querySelector('#cabExitBtn')?.addEventListener('click', () => banner.classList.add('hidden'));
+      banner.querySelector('#cabExitBtn')?.addEventListener('click', () => {
+        banner.classList.add('hidden');
+        app?.classList.remove('client-preview-mode');
+      });
     };
     renderBanner();
   };
@@ -5820,61 +5885,87 @@ function init() {
     const s = store.get();
     showClientApprovalBanner(s.projectName || 'default', s.projectName || 'Tabela Tasarımı');
   });
+  document.getElementById('btnLaunchMobileAr')?.addEventListener('click', () => {
+    document.getElementById('clientShareArModal')?.classList.add('hidden');
+    launchMobileAr();
+  });
   document.getElementById('btnDownloadArGlb')?.addEventListener('click', () => {
-    const eng = ensureSignEngine();
-    if (!eng || eng.isDisposed) return;
-    const groups = collectSignTriangles(eng.signGroup);
-    if (!groups.length) { studioToast('3D sahnede model yok.', true); return; }
-    downloadBlob(`${store.get().projectName || 'tabela'}_ar.glb`, writeGlb(groups), 'model/gltf-binary');
-    studioToast('Android / Web AR için .glb indirildi.');
+    try {
+      const groups = buildRealScaleArGroups();
+      downloadBlob(`${store.get().projectName || 'tabela'}_ar.glb`, writeGlb(groups), 'model/gltf-binary');
+      studioToast('Android / Web AR için .glb (1:1 m) indirildi.');
+    } catch (err) {
+      studioToast(err?.message || '3D sahnede model yok veya GLB oluşturulamadı.', true);
+    }
   });
   document.getElementById('btnDownloadArUsdz')?.addEventListener('click', () => {
-    const eng = ensureSignEngine();
-    if (!eng || eng.isDisposed) return;
-    const groups = collectSignTriangles(eng.signGroup);
-    if (!groups.length) { studioToast('3D sahnede model yok.', true); return; }
-    downloadBlob(`${store.get().projectName || 'tabela'}_ar.usdz`, writeUsdz(groups), 'model/vnd.usdz+zip');
-    studioToast('iPhone / iPad Quick Look AR için .usdz indirildi.');
+    try {
+      const groups = buildRealScaleArGroups();
+      downloadBlob(`${store.get().projectName || 'tabela'}_ar.usdz`, writeUsdz(groups), 'model/vnd.usdz+zip');
+      studioToast('iPhone / iPad Quick Look AR için .usdz (1:1 m) indirildi.');
+    } catch (err) {
+      studioToast(err?.message || '3D sahnede model yok veya USDZ oluşturulamadı.', true);
+    }
   });
 
-  // Client Kiosk Mode
+  // Client Kiosk Mode (Müşteri Modu) with DPR cap + debounced input + Sunum Videosu button
   let kioskMode = false;
+  let kioskTextTimer = null;
+  const syncKioskLiveSummary = () => {
+    const dimsEl = document.getElementById('kioskDimsVal');
+    const priceEl = document.getElementById('kioskPriceVal');
+    if (dimsEl) dimsEl.textContent = formatDimensions(lastMetrics?.totalWidthMm || 0, lastMetrics?.totalHeightMm || 0, store.get().pageLayout?.displayUnit);
+    if (priceEl) priceEl.textContent = formatMoney(lastCosts?.grandTotal || 0, lastCosts?.currency || 'TRY');
+  };
   const syncKioskUi = () => {
     const app = document.getElementById('app');
     const host = document.getElementById('kioskOverlayPanel');
     const btn = document.getElementById('btnKioskMode');
     app?.classList.toggle('kiosk-mode', kioskMode);
     btn?.classList.toggle('on', kioskMode);
+    signEngine?.setClientModePerformance?.(kioskMode);
+    if (kioskMode && unmountBendingCanvas) {
+      unmountBendingCanvas();
+      unmountBendingCanvas = null;
+    }
     if (!host) return;
     host.classList.toggle('hidden', !kioskMode);
     if (!kioskMode) { host.innerHTML = ''; return; }
     host.innerHTML = renderKioskPanel(store.get(), lastMetrics, lastCosts);
     host.querySelector('#btnKioskExit')?.addEventListener('click', () => { kioskMode = false; syncKioskUi(); });
-    host.querySelector('#kioskTextInput')?.addEventListener('change', e => {
-      const txt = e.target.value.trim();
-      if (!txt) return;
-      mutate('Müşteri modu yazısı', s => {
-        const t = s.objects.find(o => o.kind === 'text');
-        if (t) t.text = txt;
-      });
-      syncKioskUi();
+    host.querySelector('#kioskTextInput')?.addEventListener('input', e => {
+      const txt = e.target.value;
+      clearTimeout(kioskTextTimer);
+      kioskTextTimer = setTimeout(() => {
+        const cleaned = txt.trim();
+        if (!cleaned) return;
+        mutate('Müşteri modu yazısı', s => {
+          const t = s.objects.find(o => o.kind === 'text');
+          if (t) t.text = cleaned;
+        });
+        syncKioskLiveSummary();
+      }, 220);
     });
     host.querySelector('#kioskLogoInput')?.addEventListener('change', async e => {
       const f = e.target.files?.[0];
       e.target.value = '';
-      if (f) { await handleLogoUpload(f); syncKioskUi(); }
+      if (f) { await handleLogoUpload(f); syncKioskLiveSummary(); }
     });
     host.querySelectorAll('[data-kiosk-preset]').forEach(b => b.addEventListener('click', () => {
       mutate('Sektör sahnesi', s => applyIndustryScenePreset(s, b.dataset.kioskPreset));
-      syncKioskUi();
+      syncKioskLiveSummary();
     }));
     host.querySelectorAll('[data-kiosk-mat]').forEach(b => b.addEventListener('click', () => {
       mutate('Malzeme', s => applySurfaceMaterialPreset(s, b.dataset.kioskMat));
-      syncKioskUi();
+      syncKioskLiveSummary();
     }));
-    host.querySelector('#kioskToggleNight')?.addEventListener('click', () => {
+    host.querySelector('#kioskToggleNight')?.addEventListener('click', e => {
       mutate('Ortam', s => { s.scene.night = !s.scene.night; });
-      syncKioskUi();
+      e.currentTarget.textContent = store.get().scene?.night !== false ? '🌙 Gece' : '☀ Gündüz';
+      syncKioskLiveSummary();
+    });
+    host.querySelector('#kioskVideoBtn')?.addEventListener('click', () => {
+      document.getElementById('presentationVideoModal')?.classList.remove('hidden');
     });
     host.querySelector('#kioskShareBtn')?.addEventListener('click', openShareArModal);
   };
@@ -5884,38 +5975,46 @@ function init() {
     syncKioskUi();
   });
 
-  // Load ?clientPreview=<token> if opened from client WhatsApp link
+  // Load ?clientPreview=<token> into dedicated clean mobile-first Client Approval View
+  let clientPreviewBoot = null;
   try {
     const previewToken = new URLSearchParams(window.location.search).get('clientPreview');
     if (previewToken) {
       const snap = decodeClientShareState(previewToken);
       store.update(s => {
+        s.mainWorkspace = 'model3d';
         s.projectName = snap.p || s.projectName;
         s.constructionType = snap.ct || s.constructionType;
         if (snap.sc) s.scene = { ...s.scene, ...snap.sc };
         if (snap.lt) s.lighting = { ...s.lighting, ...snap.lt };
         if (snap.mt) s.materials = { ...s.materials, ...snap.mt };
         if (Array.isArray(snap.objs) && snap.objs.length) {
-          s.objects = snap.objs.map((o, i) => ({
-            ...createShapeObject(o.kind || 'text', s, {
-              id: o.id || `shared_${i}`,
-              name: o.name || `Parça ${i + 1}`,
-              text: o.text || 'MARKANIZ',
-              fontId: o.fontId || 'cinzel',
-              heightMm: o.h || 400,
-              depthMm: o.d || 80,
-              xMm: o.x || 0,
-              yMm: o.y || 0,
-              rotationDeg: o.r || 0,
-              constructionType: o.ct || s.constructionType,
-              faceMaterial: o.fm || s.materials.faceId,
-              faceColor: o.fc || s.materials.faceColor,
-              lightingMode: o.lm || s.lighting.mode,
-            }),
-          }));
+          s.objects = snap.objs.map((o, i) => {
+            const kind = o.polygonsMm?.length ? 'polygon' : (o.kind || 'text');
+            return {
+              ...createShapeObject(kind, s, {
+                id: o.id || `shared_${i}`,
+                name: o.name || `Parça ${i + 1}`,
+                text: o.text || 'MARKANIZ',
+                fontId: o.fontId || 'cinzel',
+                heightMm: o.h || 400,
+                widthMm: o.w || 400,
+                depthMm: o.d || 80,
+                xMm: o.x || 0,
+                yMm: o.y || 0,
+                rotationDeg: o.r || 0,
+                polygonsMm: o.polygonsMm || null,
+                constructionType: o.ct || s.constructionType,
+                faceMaterial: o.fm || s.materials.faceId,
+                faceColor: o.fc || s.materials.faceColor,
+                lightingMode: o.lm || s.lighting.mode,
+              }),
+            };
+          });
         }
       });
-      setTimeout(() => showClientApprovalBanner(snap.p || 'default', snap.p || 'Tabela Tasarımı'), 350);
+      document.getElementById('app')?.classList.add('client-preview-mode');
+      clientPreviewBoot = { key: snap.p || 'default', name: snap.p || 'Tabela Tasarımı' };
     }
   } catch { /* ignore invalid share query */ }
 
@@ -6522,6 +6621,17 @@ function init() {
   updateUndoRedoButtons();
   scheduleRebuild(true);
   renderActiveWorkspace();
+  if (clientPreviewBoot) {
+    const eng = ensureSignEngine();
+    eng?.setClientModePerformance?.(true);
+    eng?._resize?.(true);
+    showClientApprovalBanner(clientPreviewBoot.key, clientPreviewBoot.name, true);
+    setTimeout(() => {
+      const activeEng = ensureSignEngine();
+      activeEng?._resize?.(true);
+      activeEng?.setCameraPreset?.('fit');
+    }, 450);
+  }
 }
 
 let placingObjId = null;

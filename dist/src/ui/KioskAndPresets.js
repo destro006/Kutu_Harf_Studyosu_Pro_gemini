@@ -139,8 +139,9 @@ export function renderKioskPanel(state, metrics, costs) {
         <section class="kiosk-step kiosk-step-price">
           <div class="kiosk-step-num">3. 3D Önizleme &amp; Tahmini Tutar</div>
           <div class="kiosk-price-box">
-            <div><small>${dimsTxt} · KDV Dahil</small><strong>${totalTxt}</strong></div>
+            <div><small><span id="kioskDimsVal">${dimsTxt}</span> · KDV Dahil</small><strong id="kioskPriceVal">${totalTxt}</strong></div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button type="button" id="kioskVideoBtn" class="sec-btn">🎬 Sunum Videosu</button>
               <button type="button" id="kioskShareBtn" class="cta-btn">🔗 Onay Linki / WhatsApp</button>
             </div>
           </div>

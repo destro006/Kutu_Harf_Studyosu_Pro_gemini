@@ -3,10 +3,52 @@ import { formatMmAsUnit, normalizeDisplayUnit } from '../core/units.js';
 
 /**
  * Architectural CAD-style 3D Dimension Overlay (Width, Height, Extrusion Depth)
- * Projects live Three.js bounding box corners onto an overlay 2D canvas.
+ * Projects live Three.js bounding box corners onto an overlay 2D canvas with auto-contrast theming.
  */
+const LIGHT_WALL_IDS = new Set([
+  'traverten',
+  'beyazSiva',
+  'beyazMermer',
+  'acikMermer',
+  'kremTugla',
+  'betonAcik',
+  'alci',
+  'mermerAcik',
+  'white',
+  'light',
+]);
+
+export function resolveDimensionTheme(state) {
+  const isNight = state?.scene?.night !== false;
+  const wallId = String(state?.scene?.wallId || '');
+  const isLightBackdrop = !isNight && (LIGHT_WALL_IDS.has(wallId) || /beyaz|traverten|acik|krem|light/i.test(wallId));
+  if (isLightBackdrop) {
+    return {
+      isLight: true,
+      lineColor: '#111827',
+      extColor: 'rgba(17, 24, 39, 0.65)',
+      depthColor: '#111827',
+      pillBg: '#111827',
+      pillStroke: '#FFFFFF',
+      pillText: '#FFFFFF',
+      lineWidth: 2.2,
+    };
+  }
+  return {
+    isLight: false,
+    lineColor: '#F8FAFC',
+    extColor: 'rgba(248, 250, 252, 0.58)',
+    depthColor: '#38BDF8',
+    pillBg: 'rgba(11, 15, 25, 0.92)',
+    pillStroke: '#38BDF8',
+    pillText: '#F8FAFC',
+    lineWidth: 2.0,
+  };
+}
+
 export function computeSignageDimensionData(signEngine, state, metrics = null) {
   const unit = normalizeDisplayUnit(state?.pageLayout?.displayUnit);
+  const theme = resolveDimensionTheme(state);
   const selectedIds = new Set(state?.selectedIds || []);
   const box = new THREE.Box3();
   let found = false;
@@ -25,7 +67,7 @@ export function computeSignageDimensionData(signEngine, state, metrics = null) {
     const wMm = Math.round(metrics?.totalWidthMm || 0);
     const hMm = Math.round(metrics?.totalHeightMm || 0);
     const dMm = Math.round(state?.dimensions?.depthMm || 80);
-    if (!(wMm > 0 && hMm > 0)) return { valid: false, unit };
+    if (!(wMm > 0 && hMm > 0)) return { valid: false, unit, theme };
     const hw = wMm * 0.0005, hh = hMm * 0.0005, dz = dMm * 0.001;
     box.set(new THREE.Vector3(-hw, -hh, 0), new THREE.Vector3(hw, hh, dz));
   }
@@ -37,6 +79,7 @@ export function computeSignageDimensionData(signEngine, state, metrics = null) {
   return {
     valid: true,
     unit,
+    theme,
     box,
     widthMm: Math.round(size.x * 1000),
     heightMm: Math.round(size.y * 1000),
@@ -53,7 +96,7 @@ function projectPoint(v, camera, w, h) {
   };
 }
 
-function drawArrowHead(ctx, x, y, dx, dy, size = 7) {
+function drawArrowHead(ctx, x, y, dx, dy, size = 8) {
   const len = Math.hypot(dx, dy) || 1;
   const ux = dx / len, uy = dy / len;
   const px = -uy, py = ux;
@@ -65,20 +108,20 @@ function drawArrowHead(ctx, x, y, dx, dy, size = 7) {
   ctx.fill();
 }
 
-function drawDimPill(ctx, cx, cy, text, bgColor = 'rgba(13, 18, 26, 0.88)', strokeColor = '#fbbf24') {
-  ctx.font = '600 12px "Segoe UI", system-ui, sans-serif';
+function drawDimPill(ctx, cx, cy, text, theme) {
+  ctx.font = '700 12px "Segoe UI", system-ui, sans-serif';
   const tw = ctx.measureText(text).width;
-  const pw = tw + 16, ph = 22;
+  const pw = tw + 18, ph = 24;
   const rx = cx - pw / 2, ry = cy - ph / 2;
   ctx.save();
-  ctx.fillStyle = bgColor;
-  ctx.strokeStyle = strokeColor;
-  ctx.lineWidth = 1.25;
+  ctx.fillStyle = theme.pillBg;
+  ctx.strokeStyle = theme.pillStroke;
+  ctx.lineWidth = 1.6;
   ctx.beginPath();
   ctx.roundRect(rx, ry, pw, ph, 6);
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = '#fef3c7';
+  ctx.fillStyle = theme.pillText;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, cx, cy + 0.5);
@@ -91,35 +134,34 @@ export function renderDimensions2DOverlay(ctx, width, height, camera, dimData, o
   if (opacity <= 0.01) return;
 
   const { box, widthMm, heightMm, depthMm, unit } = dimData;
+  const theme = dimData.theme || resolveDimensionTheme(options.state);
   const fmt = mm => `${formatMmAsUnit(mm, unit)} ${unit}`;
   camera.updateMatrixWorld();
 
-  // Bottom width line (minY front edge)
   const bl = projectPoint(new THREE.Vector3(box.min.x, box.min.y, box.max.z), camera, width, height);
   const br = projectPoint(new THREE.Vector3(box.max.x, box.min.y, box.max.z), camera, width, height);
-  // Left height line (minX front edge)
   const tl = projectPoint(new THREE.Vector3(box.min.x, box.max.y, box.max.z), camera, width, height);
-  // Depth edge (top-right back -> front)
   const trBack = projectPoint(new THREE.Vector3(box.max.x, box.max.y, box.min.z), camera, width, height);
   const trFront = projectPoint(new THREE.Vector3(box.max.x, box.max.y, box.max.z), camera, width, height);
 
   ctx.save();
   ctx.globalAlpha = opacity;
-  ctx.strokeStyle = '#fbbf24';
-  ctx.fillStyle = '#fbbf24';
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = theme.lineColor;
+  ctx.fillStyle = theme.lineColor;
+  ctx.lineWidth = theme.lineWidth;
 
   // 1. Horizontal Total Width below bottom edge
-  const wOffY = 26;
+  const wOffY = 28;
   const wx1 = bl.x, wy1 = bl.y + wOffY;
   const wx2 = br.x, wy2 = br.y + wOffY;
   if (Math.hypot(wx2 - wx1, wy2 - wy1) > 16) {
     ctx.save();
-    ctx.strokeStyle = 'rgba(251, 191, 36, 0.55)';
-    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = theme.extColor;
+    ctx.lineWidth = 1.4;
+    ctx.setLineDash([4, 3]);
     ctx.beginPath();
-    ctx.moveTo(bl.x, bl.y + 4); ctx.lineTo(wx1, wy1 + 5);
-    ctx.moveTo(br.x, br.y + 4); ctx.lineTo(wx2, wy2 + 5);
+    ctx.moveTo(bl.x, bl.y + 4); ctx.lineTo(wx1, wy1 + 6);
+    ctx.moveTo(br.x, br.y + 4); ctx.lineTo(wx2, wy2 + 6);
     ctx.stroke();
     ctx.restore();
 
@@ -128,20 +170,21 @@ export function renderDimensions2DOverlay(ctx, width, height, camera, dimData, o
     ctx.stroke();
     drawArrowHead(ctx, wx1, wy1, wx1 - wx2, wy1 - wy2);
     drawArrowHead(ctx, wx2, wy2, wx2 - wx1, wy2 - wy1);
-    drawDimPill(ctx, (wx1 + wx2) * 0.5, (wy1 + wy2) * 0.5, `G: ${fmt(widthMm)}`);
+    drawDimPill(ctx, (wx1 + wx2) * 0.5, (wy1 + wy2) * 0.5, `G: ${fmt(widthMm)}`, theme);
   }
 
   // 2. Vertical Total Height left of left edge
-  const hOffX = -28;
+  const hOffX = -30;
   const hx1 = tl.x + hOffX, hy1 = tl.y;
   const hx2 = bl.x + hOffX, hy2 = bl.y;
   if (Math.hypot(hx2 - hx1, hy2 - hy1) > 16) {
     ctx.save();
-    ctx.strokeStyle = 'rgba(251, 191, 36, 0.55)';
-    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = theme.extColor;
+    ctx.lineWidth = 1.4;
+    ctx.setLineDash([4, 3]);
     ctx.beginPath();
-    ctx.moveTo(tl.x - 4, tl.y); ctx.lineTo(hx1 - 5, hy1);
-    ctx.moveTo(bl.x - 4, bl.y); ctx.lineTo(hx2 - 5, hy2);
+    ctx.moveTo(tl.x - 4, tl.y); ctx.lineTo(hx1 - 6, hy1);
+    ctx.moveTo(bl.x - 4, bl.y); ctx.lineTo(hx2 - 6, hy2);
     ctx.stroke();
     ctx.restore();
 
@@ -150,27 +193,28 @@ export function renderDimensions2DOverlay(ctx, width, height, camera, dimData, o
     ctx.stroke();
     drawArrowHead(ctx, hx1, hy1, hx1 - hx2, hy1 - hy2);
     drawArrowHead(ctx, hx2, hy2, hx2 - hx1, hy2 - hy1);
-    drawDimPill(ctx, (hx1 + hx2) * 0.5, (hy1 + hy2) * 0.5, `Y: ${fmt(heightMm)}`);
+    drawDimPill(ctx, (hx1 + hx2) * 0.5, (hy1 + hy2) * 0.5, `Y: ${fmt(heightMm)}`, theme);
   }
 
   // 3. Depth callout at top-right extrusion edge
   if (options.showDepth !== false) {
     const mx = (trBack.x + trFront.x) * 0.5;
     const my = (trBack.y + trFront.y) * 0.5;
-    const lx = Math.min(width - 78, Math.max(78, mx + 52));
-    const ly = Math.max(24, my - 26);
+    const lx = Math.min(width - 82, Math.max(82, mx + 54));
+    const ly = Math.max(26, my - 28);
     ctx.save();
-    ctx.strokeStyle = '#38bdf8';
-    ctx.fillStyle = '#38bdf8';
+    ctx.strokeStyle = theme.depthColor;
+    ctx.fillStyle = theme.depthColor;
+    ctx.lineWidth = theme.lineWidth;
     ctx.beginPath();
-    ctx.arc(mx, my, 3, 0, Math.PI * 2);
+    ctx.arc(mx, my, 3.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
     ctx.moveTo(mx, my);
     ctx.lineTo(lx, ly);
     ctx.stroke();
     ctx.restore();
-    drawDimPill(ctx, lx, ly, `Derinlik: ${fmt(depthMm)}`, 'rgba(13, 18, 26, 0.90)', '#38bdf8');
+    drawDimPill(ctx, lx, ly, `Derinlik: ${fmt(depthMm)}`, theme);
   }
   ctx.restore();
 }
